@@ -212,14 +212,16 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options) {
 		if part.Grammar != "" {
 			label += " " + part.Grammar
 		}
-		var means []string
 		for i, sense := range part.Senses {
-			means = append(means, renderSense(sense, []int{i + 1})...)
+			// Bob's parts field is an ordinary array and does not require part
+			// labels to be unique. Giving each top-level sense its own Part lets
+			// Bob provide the visual separation instead of turning a whole POS
+			// group into one dense means block. Subsenses remain with their parent.
+			means := renderSense(sense, []int{i + 1})
+			if len(means) > 0 {
+				dict.Parts = append(dict.Parts, Part{Part: label, Means: means})
+			}
 		}
-		if len(means) == 0 {
-			continue
-		}
-		dict.Parts = append(dict.Parts, Part{Part: label, Means: means})
 		if opts.IncludeExamples {
 			if value := renderExamples(part, opts.MaxExamplesPerPart); value != "" {
 				dict.Additions = append(dict.Additions, Addition{Name: "Examples · " + label, Value: value})
@@ -311,13 +313,13 @@ func renderExamples(part entryir.Part, limit int) string {
 				}
 				line := "• " + example.Text
 				if example.Translation != "" {
-					line += " — " + example.Translation
+					line += "\n  — " + example.Translation
 				}
 				examples = append(examples, line)
 				count++
 			}
 			if len(examples) > 0 {
-				groups = append(groups, formatDisplayNumber(path)+"\n"+strings.Join(examples, "\n"))
+				groups = append(groups, "释义 "+formatDisplayNumber(path)+"\n\n"+strings.Join(examples, "\n"))
 			}
 			walk(sense.Subsenses, path)
 		}

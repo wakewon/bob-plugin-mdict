@@ -29,8 +29,8 @@ function load(options, respond) {
 function bobQuery(input, complete) {
     const query = {
         text: input.text,
-        detectFrom: 'en',
-        detectTo: 'zh-Hans',
+        detectFrom: input.detectFrom || 'en',
+        detectTo: input.detectTo || 'zh-Hans',
         cancelSignal: { test: true },
         onCompletion: complete
     };
@@ -107,6 +107,20 @@ test('normal words use preprocessed text and are unaffected', () => {
         request.handler(response(200, { bob: { word: 'good', parts: [] } }));
     });
     loaded.context.translate(bobQuery({ text: 'good', originalText: 'good' }, () => {}));
+});
+
+test('Chinese queries are passed through instead of being rejected by language', () => {
+    let completion;
+    const loaded = load({}, request => {
+        assert.equal(request.method, 'POST');
+        assert.equal(request.body.query, '放弃');
+        request.handler(response(404, {}));
+    });
+    loaded.context.translate(bobQuery({
+        text: '放弃', originalText: '放弃', detectFrom: 'zh-Hans', detectTo: 'en'
+    }, value => { completion = value; }));
+    assert.equal(loaded.requests.length, 1);
+    assert.equal(completion.error.type, 'notFound');
 });
 
 test('/list reports an empty registry and transport failure clearly', () => {

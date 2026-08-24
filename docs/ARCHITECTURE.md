@@ -109,6 +109,10 @@ requests only that dictionary. Users who want several pinned dictionaries add
 several Bob MDict service instances, keeping cards, ordering and enablement
 under Bob's control.
 
+Within that entry, each top-level sense becomes one Bob `Part`. The part label
+may repeat for consecutive senses of the same POS, while subsenses stay in the
+same `Part` as their parent.
+
 ## Memory
 
 The bundled engine's `BuildIndex` constructs three maps over every entry, one of

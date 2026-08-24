@@ -116,6 +116,11 @@ or renaming a folder or MDX file does not change an ID. They normally change
 when the dictionary edition changes. Earlier development builds used path-based
 IDs; if such an ID stops working, query `/list` once and replace it.
 
+Lookup direction comes from the installed MDX headword index. Many
+English-Chinese dictionaries index only English headwords; their Chinese
+translations are not reverse-search keys. For Chinese-to-English lookup,
+install an MDX whose headword index contains Chinese entries.
+
 ## Plugin settings
 
 | Setting | Default | Meaning |

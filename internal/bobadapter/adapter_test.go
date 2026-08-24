@@ -69,12 +69,12 @@ func TestRenderProducesBobShape(t *testing.T) {
 		t.Error("uk and us share one audio url")
 	}
 
-	if len(dict.Parts) != 1 || dict.Parts[0].Part != "verb [transitive]" {
+	if len(dict.Parts) != 2 || dict.Parts[0].Part != "verb [transitive]" || dict.Parts[1].Part != "verb [transitive]" {
 		t.Fatalf("parts = %+v", dict.Parts)
 	}
 	means := dict.Parts[0].Means
-	if len(means) != 3 {
-		t.Fatalf("means = %d lines, want 3 (two senses plus one subsense): %v", len(means), means)
+	if len(means) != 2 {
+		t.Fatalf("first sense means = %d lines, want parent plus subsense: %v", len(means), means)
 	}
 	if !strings.Contains(means[0], "1.") || !strings.Contains(means[0], "(informal)") ||
 		!strings.Contains(means[0], "[SHAPING]") || !strings.Contains(means[0], "抹平黏土") {
@@ -85,8 +85,8 @@ func TestRenderProducesBobShape(t *testing.T) {
 	if !strings.HasPrefix(means[1], "1.1.") {
 		t.Errorf("subsense has no generated hierarchical number: %q", means[1])
 	}
-	if !strings.HasPrefix(means[2], "2.") {
-		t.Errorf("sense 2 should follow the subsense: %q", means[2])
+	if got := dict.Parts[1].Means; len(got) != 1 || !strings.HasPrefix(got[0], "2.") {
+		t.Errorf("sense 2 should be a separate repeated Bob part: %+v", dict.Parts[1])
 	}
 
 	if len(dict.Exchanges) != 1 || dict.Exchanges[0].Name != "past tense" {
@@ -151,14 +151,38 @@ func TestDisplayNumbersResetPerPOSWithoutMutatingSource(t *testing.T) {
 		{POS: "noun", Senses: []entryir.Sense{{Number: "5", Definition: "tool"}}},
 	}}
 	dict := Render(entry, DefaultOptions())
-	if got := dict.Parts[0].Means; len(got) != 2 || !strings.HasPrefix(got[0], "1.") || !strings.HasPrefix(got[1], "2.") {
-		t.Fatalf("verb display numbering = %v", got)
+	if len(dict.Parts) != 3 {
+		t.Fatalf("parts = %+v, want one Bob part per top-level sense", dict.Parts)
 	}
-	if got := dict.Parts[1].Means; len(got) != 1 || !strings.HasPrefix(got[0], "1.") {
-		t.Fatalf("noun display numbering did not reset: %v", got)
+	want := []struct {
+		part   string
+		prefix string
+	}{{"verb", "1."}, {"verb", "2."}, {"noun", "1."}}
+	for i, expected := range want {
+		if dict.Parts[i].Part != expected.part || len(dict.Parts[i].Means) != 1 || !strings.HasPrefix(dict.Parts[i].Means[0], expected.prefix) {
+			t.Errorf("part %d = %+v, want %s %s", i, dict.Parts[i], expected.part, expected.prefix)
+		}
 	}
 	if entry.Parts[0].Senses[0].Number != "3" || entry.Parts[1].Senses[0].Number != "5" {
 		t.Fatal("source numbering was mutated by presentation rendering")
+	}
+}
+
+func TestSubsensesRemainWithTheirTopLevelSense(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{
+		{Definition: "parent", Subsenses: []entryir.Sense{{Definition: "first child"}, {Definition: "second child"}}},
+		{Definition: "another parent"},
+	}}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Parts) != 2 {
+		t.Fatalf("parts = %+v, want two top-level sense blocks", dict.Parts)
+	}
+	if got := dict.Parts[0].Means; len(got) != 3 || !strings.HasPrefix(got[0], "1.") ||
+		!strings.HasPrefix(got[1], "1.1.") || !strings.HasPrefix(got[2], "1.2.") {
+		t.Fatalf("subsenses were split away from parent: %v", got)
+	}
+	if got := dict.Parts[1].Means; len(got) != 1 || !strings.HasPrefix(got[0], "2.") {
+		t.Fatalf("second parent = %v", got)
 	}
 }
 
@@ -172,13 +196,18 @@ func TestExamplesAreGroupedOncePerDisplaySense(t *testing.T) {
 		t.Fatalf("additions = %+v", dict.Additions)
 	}
 	value := dict.Additions[0].Value
-	if strings.Count(value, "\n1\n") > 0 || strings.Count(value, "1\n") != 1 || strings.Count(value, "2\n") != 1 {
-		t.Fatalf("sense headers are not grouped once: %q", value)
+	for _, line := range strings.Split(value, "\n") {
+		if line == "1" || line == "2" {
+			t.Fatalf("example group still uses a standalone number: %q", value)
+		}
 	}
-	for _, want := range []string{"• Example A — 译文甲", "• Example B", "• Example C"} {
+	for _, want := range []string{"释义 1", "释义 2", "• Example A\n  — 译文甲", "• Example B", "• Example C"} {
 		if !strings.Contains(value, want) {
 			t.Errorf("grouped examples missing %q: %q", want, value)
 		}
+	}
+	if strings.Contains(value, "义项") || strings.Contains(value, "Sense ") || strings.Contains(value, "【") || strings.Contains(value, "〔") {
+		t.Fatalf("example headings use unwanted terminology or decoration: %q", value)
 	}
 	if strings.Contains(value, "1. Example") || strings.Contains(value, "2. Example") {
 		t.Fatalf("examples still look individually misnumbered: %q", value)

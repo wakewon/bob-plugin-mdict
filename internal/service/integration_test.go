@@ -160,13 +160,37 @@ func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.
 		}
 
 		rendered := bobadapter.Render(entry, bobadapter.DefaultOptions())
-		for _, part := range rendered.Parts {
-			for senseIndex, meaning := range part.Means {
-				wantPrefix := strconv.Itoa(senseIndex+1) + "."
-				if !strings.HasPrefix(meaning, wantPrefix) {
-					t.Fatalf("%s part %q display sense %d does not start with %q",
-						shortName(match.DictionaryTitle), part.Part, senseIndex, wantPrefix)
-				}
+		type expectedPart struct {
+			label  string
+			number int
+		}
+		var expected []expectedPart
+		for _, sourcePart := range entry.Parts {
+			label := sourcePart.POS
+			if label == "" {
+				label = "definition"
+			}
+			if sourcePart.Grammar != "" {
+				label += " " + sourcePart.Grammar
+			}
+			for senseIndex := range sourcePart.Senses {
+				expected = append(expected, expectedPart{label: label, number: senseIndex + 1})
+			}
+		}
+		if len(rendered.Parts) != len(expected) {
+			t.Fatalf("%s rendered %d Bob parts, want %d top-level senses",
+				shortName(match.DictionaryTitle), len(rendered.Parts), len(expected))
+		}
+		for partIndex, part := range rendered.Parts {
+			want := expected[partIndex]
+			if part.Part != want.label {
+				t.Fatalf("%s Bob part %d label = %q, want repeated label %q",
+					shortName(match.DictionaryTitle), partIndex, part.Part, want.label)
+			}
+			wantPrefix := strconv.Itoa(want.number) + "."
+			if len(part.Means) == 0 || !strings.HasPrefix(part.Means[0], wantPrefix) {
+				t.Fatalf("%s Bob part %d first meaning = %q, want prefix %q",
+					shortName(match.DictionaryTitle), partIndex, strings.Join(part.Means, " | "), wantPrefix)
 			}
 			if strings.EqualFold(strings.TrimSpace(part.Part), "see also") {
 				t.Fatalf("%s still rendered See also as a Bob part", shortName(match.DictionaryTitle))
