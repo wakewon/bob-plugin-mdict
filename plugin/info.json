@@ -1,6 +1,6 @@
 {
   "identifier": "com.github.wakewon.mdict",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "category": "translate",
   "name": "MDict",
   "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典自带的真人发音。",
@@ -56,9 +56,9 @@
     {
       "identifier": "maxExamples",
       "type": "text",
-      "title": "每个词性最多例句数",
+      "title": "每个释义最多例句数",
       "defaultValue": "3",
-      "desc": "部分词典每个义项收录了几十条语料例句，全部展示会难以阅读。",
+      "desc": "限制每个释义或子释义显示的例句数，避免大型语料区过长。",
       "textConfig": {
         "type": "visible",
         "placeholderText": "3"

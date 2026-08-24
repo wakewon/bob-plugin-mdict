@@ -121,6 +121,11 @@ English-Chinese dictionaries index only English headwords; their Chinese
 translations are not reverse-search keys. For Chinese-to-English lookup,
 install an MDX whose headword index contains Chinese entries.
 
+Examples are grouped directly by their displayed sense, such as
+`Examples · verb 1` and `Examples · verb 2`. See also references are exposed
+through Bob's structured `relatedWordParts` representation when possible;
+phrases and other explanatory sections remain additions.
+
 ## Plugin settings
 
 | Setting | Default | Meaning |
@@ -128,8 +133,8 @@ install an MDX whose headword index contains Chinese entries.
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
 | Show examples | on | Show examples and bilingual translations. |
-| Show extras | on | Show phrases, idioms, phrasal verbs, cross-references, forms and notes. |
-| Max examples per POS | `3` | Limit long corpus-example sections. |
+| Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
+| Max examples per sense | `3` | Limit examples independently for each sense or subsense. |
 
 `pluginValidate` checks service identity and API version, the presence of a
 healthy dictionary, and a configured Dictionary ID before the first lookup.

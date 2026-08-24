@@ -197,14 +197,19 @@ func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.
 			}
 		}
 		if len(entry.CrossReferences) > 0 {
-			found := false
-			for _, addition := range rendered.Additions {
-				if strings.EqualFold(addition.Name, "See also") {
-					found = true
+			foundStructured := false
+			for _, relatedPart := range rendered.RelatedWordParts {
+				if relatedPart.Part == "See also" && len(relatedPart.Words) > 0 {
+					foundStructured = true
 				}
 			}
-			if !found {
-				t.Fatalf("%s has cross-references but no See also addition", shortName(match.DictionaryTitle))
+			if !foundStructured {
+				t.Fatalf("%s has cross-references but no structured See also group", shortName(match.DictionaryTitle))
+			}
+			for _, addition := range rendered.Additions {
+				if addition.Name == "See also" {
+					t.Fatalf("%s duplicated structured See also as an addition", shortName(match.DictionaryTitle))
+				}
 			}
 		}
 		t.Logf("%s preserves source-global numbering while Bob numbering resets per POS",
@@ -213,6 +218,58 @@ func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.
 	}
 
 	t.Skip("no real matching entry exposed source-global numbering across multiple POS groups")
+}
+
+func TestRealAbandonBobPresentationV012(t *testing.T) {
+	svc := newService(t)
+	result, err := svc.Lookup("abandon", service.LookupOptions{Mode: service.ModeExact})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, match := range result.Matches {
+		if !strings.Contains(strings.ToLower(match.DictionaryTitle), "collins") {
+			continue
+		}
+		dict := bobadapter.Render(match.Entry, bobadapter.DefaultOptions())
+		wantParts := []struct {
+			label  string
+			prefix string
+		}{{"verb", "1."}, {"verb", "2."}, {"verb", "3."}, {"verb", "4."}, {"noun", "1."}}
+		if len(dict.Parts) != len(wantParts) {
+			t.Fatalf("abandon parts = %+v", dict.Parts)
+		}
+		for i, want := range wantParts {
+			if dict.Parts[i].Part != want.label || len(dict.Parts[i].Means) == 0 || !strings.HasPrefix(dict.Parts[i].Means[0], want.prefix) {
+				t.Errorf("abandon part %d = %+v, want %s %s", i, dict.Parts[i], want.label, want.prefix)
+			}
+		}
+
+		additionNames := make(map[string]bool)
+		for _, addition := range dict.Additions {
+			additionNames[addition.Name] = true
+			if addition.Name == "See also" || strings.Contains(addition.Value, "释义 ") {
+				t.Errorf("obsolete Bob presentation survived: %+v", addition)
+			}
+		}
+		for _, want := range []string{"Examples · verb 1", "Examples · verb 2", "Examples · noun 1", "Phrases"} {
+			if !additionNames[want] {
+				t.Errorf("abandon missing addition %q; have %+v", want, additionNames)
+			}
+		}
+		foundSeeAlso := false
+		for _, relatedPart := range dict.RelatedWordParts {
+			if relatedPart.Part == "See also" && len(relatedPart.Words) > 0 {
+				foundSeeAlso = true
+			}
+		}
+		if !foundSeeAlso {
+			t.Fatalf("abandon relatedWordParts = %+v", dict.RelatedWordParts)
+		}
+		t.Logf("abandon: %d definition parts, %d example/extra additions, %d related-word groups",
+			len(dict.Parts), len(dict.Additions), len(dict.RelatedWordParts))
+		return
+	}
+	t.Skip("Collins abandon entry is not installed")
 }
 
 // TestRealLookupsProduceStructure is the anti-"pseudo-completion" check: every
@@ -415,9 +472,19 @@ func TestBobRenderingIsValid(t *testing.T) {
 			t.Errorf("part %+v is empty", part)
 		}
 	}
+	for _, relatedPart := range dict.RelatedWordParts {
+		if len(relatedPart.Words) == 0 {
+			t.Errorf("related word part %+v has no words", relatedPart)
+		}
+		for _, word := range relatedPart.Words {
+			if strings.TrimSpace(word.Word) == "" {
+				t.Errorf("related word part %+v contains an empty word", relatedPart)
+			}
+		}
+	}
 	payload, _ := json.MarshalIndent(dict, "", "  ")
-	t.Logf("toDict: %d phonetics, %d parts, %d exchanges, %d additions, %d bytes",
-		len(dict.Phonetics), len(dict.Parts), len(dict.Exchanges), len(dict.Additions), len(payload))
+	t.Logf("toDict: %d phonetics, %d parts, %d exchanges, %d related groups, %d additions, %d bytes",
+		len(dict.Phonetics), len(dict.Parts), len(dict.Exchanges), len(dict.RelatedWordParts), len(dict.Additions), len(payload))
 }
 
 // TestLookupLatency records the interactive-path timings the product promises.

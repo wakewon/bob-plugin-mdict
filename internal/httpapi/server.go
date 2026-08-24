@@ -220,7 +220,7 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 
 	bobOpts := bobadapter.DefaultOptions()
 	if req.MaxExamples > 0 {
-		bobOpts.MaxExamplesPerPart = req.MaxExamples
+		bobOpts.MaxExamplesPerSense = req.MaxExamples
 	}
 	if req.IncludeExamples != nil {
 		bobOpts.IncludeExamples = *req.IncludeExamples

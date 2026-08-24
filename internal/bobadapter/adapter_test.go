@@ -1,6 +1,8 @@
 package bobadapter
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,12 +99,12 @@ func TestRenderProducesBobShape(t *testing.T) {
 	for _, addition := range dict.Additions {
 		names[addition.Name] = addition.Value
 	}
-	for _, want := range []string{"Examples · verb [transitive]", "Idioms", "Phrasal verbs", "Synonyms", "Origin"} {
+	for _, want := range []string{"Examples · verb [transitive] 1", "Idioms", "Phrasal verbs", "Synonyms", "Origin"} {
 		if _, ok := names[want]; !ok {
 			t.Errorf("missing addition %q; have %v", want, keys(names))
 		}
 	}
-	if !strings.Contains(names["Examples · verb [transitive]"], "她抹平了它。") {
+	if !strings.Contains(names["Examples · verb [transitive] 1"], "她抹平了它。") {
 		t.Error("example translation was dropped")
 	}
 }
@@ -186,31 +188,116 @@ func TestSubsensesRemainWithTheirTopLevelSense(t *testing.T) {
 	}
 }
 
-func TestExamplesAreGroupedOncePerDisplaySense(t *testing.T) {
-	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{
-		{Number: "7", Definition: "first", Examples: []entryir.Example{{Text: "Example A", Translation: "译文甲"}, {Text: "Example B"}}},
-		{Number: "9", Definition: "second", Examples: []entryir.Example{{Text: "Example C"}}},
-	}}}}
+func TestExamplesUseOneAdditionPerDisplaySense(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{
+		{POS: "verb", Senses: []entryir.Sense{
+			{Number: "7", Definition: "first", Examples: []entryir.Example{{Text: "Example A", Translation: "译文甲"}, {Text: "Example B"}}},
+			{Number: "9", Definition: "second", Examples: []entryir.Example{{Text: "Example C"}}},
+		}},
+		{POS: "noun", Senses: []entryir.Sense{{Number: "10", Definition: "tool", Examples: []entryir.Example{{Text: "Example D"}}}}},
+	}}
 	dict := Render(entry, DefaultOptions())
-	if len(dict.Additions) != 1 {
+	if len(dict.Additions) != 3 {
 		t.Fatalf("additions = %+v", dict.Additions)
 	}
-	value := dict.Additions[0].Value
-	for _, line := range strings.Split(value, "\n") {
-		if line == "1" || line == "2" {
-			t.Fatalf("example group still uses a standalone number: %q", value)
+	wantNames := []string{"Examples · verb 1", "Examples · verb 2", "Examples · noun 1"}
+	for i, want := range wantNames {
+		if dict.Additions[i].Name != want {
+			t.Errorf("addition %d name = %q, want %q", i, dict.Additions[i].Name, want)
 		}
 	}
-	for _, want := range []string{"释义 1", "释义 2", "• Example A\n  — 译文甲", "• Example B", "• Example C"} {
-		if !strings.Contains(value, want) {
-			t.Errorf("grouped examples missing %q: %q", want, value)
+	if value := dict.Additions[0].Value; !strings.Contains(value, "• Example A\n  — 译文甲") || !strings.Contains(value, "• Example B") {
+		t.Errorf("first sense examples = %q", value)
+	}
+	for _, addition := range dict.Additions {
+		if addition.Name == "Examples · verb" || strings.Contains(addition.Value, "释义 ") {
+			t.Fatalf("examples still have redundant POS aggregation or sense heading: %+v", addition)
+		}
+		for _, line := range strings.Split(addition.Value, "\n") {
+			if line == "1" || line == "2" {
+				t.Fatalf("example value contains standalone numbering: %q", addition.Value)
+			}
 		}
 	}
-	if strings.Contains(value, "义项") || strings.Contains(value, "Sense ") || strings.Contains(value, "【") || strings.Contains(value, "〔") {
-		t.Fatalf("example headings use unwanted terminology or decoration: %q", value)
+	if entry.Parts[0].Senses[0].Number != "7" || entry.Parts[1].Senses[0].Number != "10" {
+		t.Fatal("example presentation mutated source numbering")
 	}
-	if strings.Contains(value, "1. Example") || strings.Contains(value, "2. Example") {
-		t.Fatalf("examples still look individually misnumbered: %q", value)
+}
+
+func TestSubsenseExamplesUseHierarchicalAdditionNames(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{{
+		Definition: "parent", Examples: []entryir.Example{{Text: "Main"}}, Subsenses: []entryir.Sense{
+			{Definition: "first child", Examples: []entryir.Example{{Text: "Child one"}}},
+			{Definition: "second child", Examples: []entryir.Example{{Text: "Child two"}}},
+			{Definition: "child without example"},
+		},
+	}}}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Additions) != 3 {
+		t.Fatalf("additions = %+v", dict.Additions)
+	}
+	for i, want := range []string{"Examples · verb 1", "Examples · verb 1.1", "Examples · verb 1.2"} {
+		if dict.Additions[i].Name != want {
+			t.Errorf("addition %d = %q, want %q", i, dict.Additions[i].Name, want)
+		}
+	}
+}
+
+func TestExampleLimitAppliesIndependentlyPerSense(t *testing.T) {
+	examples := []entryir.Example{{Text: "A"}, {Text: "B"}, {Text: "C"}}
+	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{
+		{Definition: "first", Examples: examples}, {Definition: "second", Examples: examples},
+	}}}}
+	opts := DefaultOptions()
+	opts.MaxExamplesPerSense = 2
+	dict := Render(entry, opts)
+	if len(dict.Additions) != 2 {
+		t.Fatalf("additions = %+v", dict.Additions)
+	}
+	for _, addition := range dict.Additions {
+		if got := strings.Count(addition.Value, "• "); got != 2 {
+			t.Errorf("%s contains %d examples, want per-sense limit 2", addition.Name, got)
+		}
+	}
+}
+
+func TestCrossReferencesAndRelatedUseStructuredRelatedWords(t *testing.T) {
+	entry := &entryir.Entry{
+		Headword:        "flimber",
+		CrossReferences: []string{"flimbered", "flimbery"},
+		Related:         []string{"flimbered", "cousin", "US", "us"},
+		Forms:           []entryir.Form{{Name: "past tense", Words: []string{"flimbered"}}},
+	}
+	beforeCrossReferences := append([]string(nil), entry.CrossReferences...)
+	beforeRelated := append([]string(nil), entry.Related...)
+
+	dict := Render(entry, DefaultOptions())
+	if len(dict.RelatedWordParts) != 2 {
+		t.Fatalf("relatedWordParts = %+v", dict.RelatedWordParts)
+	}
+	if got := dict.RelatedWordParts[0]; got.Part != "See also" || len(got.Words) != 2 || got.Words[0].Word != "flimbered" || got.Words[1].Word != "flimbery" {
+		t.Errorf("See also group = %+v", got)
+	}
+	if got := dict.RelatedWordParts[1]; got.Part != "Related" || len(got.Words) != 3 || got.Words[0].Word != "cousin" || got.Words[1].Word != "US" || got.Words[2].Word != "us" {
+		t.Errorf("Related group = %+v", got)
+	}
+	for _, addition := range dict.Additions {
+		if addition.Name == "See also" || addition.Name == "Related" {
+			t.Fatalf("structured related words were duplicated as an addition: %+v", addition)
+		}
+	}
+	if len(dict.Exchanges) != 1 || dict.Exchanges[0].Name != "past tense" {
+		t.Fatalf("cross-references leaked into exchanges: %+v", dict.Exchanges)
+	}
+	payload, err := json.Marshal(dict.RelatedWordParts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "means") {
+		t.Fatalf("related words invented meanings: %s", payload)
+	}
+	if !reflect.DeepEqual(entry.CrossReferences, beforeCrossReferences) || !reflect.DeepEqual(entry.Related, beforeRelated) {
+		t.Fatal("Bob presentation mutated Entry IR")
 	}
 }
 

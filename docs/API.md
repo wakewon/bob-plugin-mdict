@@ -15,7 +15,7 @@ an older plugin.
 ```json
 {
   "service": "bob-mdict",
-  "serviceVersion": "0.1.1",
+  "serviceVersion": "0.1.2",
   "buildCommit": "abcdef1",
   "apiVersion": "v1",
   "platform": "darwin",
@@ -95,7 +95,7 @@ a reason in `diagnostics`; the others stay usable.
 | `mode` | `exact` (default) tries exact, Unicode-normalized and case-insensitive. `smart` also returns prefix suggestions on a miss. |
 | `dictionaries` | Restrict and order the search. Empty means all, in registry order. |
 | `limit` | Stop after this many dictionaries answer. |
-| `maxExamples` | Cap parsed examples per sense and displayed examples per POS. |
+| `maxExamples` | Cap parsed and displayed examples independently per sense or subsense. |
 | `includeExamples` / `includeExtras` | Trim the rendered `toDict`. |
 | `debug` | Attach parser provenance notes to each entry. |
 

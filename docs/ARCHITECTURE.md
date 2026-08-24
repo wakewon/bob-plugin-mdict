@@ -113,6 +113,11 @@ Within that entry, each top-level sense becomes one Bob `Part`. The part label
 may repeat for consecutive senses of the same POS, while subsenses stay in the
 same `Part` as their parent.
 
+Examples use one addition per sense or subsense (`Examples · verb 1`,
+`Examples · verb 1.1`). Cross-references stay dictionary-neutral in the IR and
+are mapped only here to Bob's `relatedWordParts`; they are never presented as
+inflection exchanges.
+
 ## Memory
 
 The bundled engine's `BuildIndex` constructs three maps over every entry, one of

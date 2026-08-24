@@ -12,7 +12,7 @@
 | Encrypted key blocks (RIPEMD-128) | Supported by the underlying engine |
 | `@@@LINK=` redirects | Followed, with loop detection |
 | `sound://`, `snd://`, `file://`, bare paths | Resolved against the MDD index |
-| `entry://` cross-references | Surfaced as synonyms and related words |
+| `entry://` cross-references | Surfaced through Bob's structured related words |
 | MP3 / WAV / OGG audio | Served directly |
 | Ogg-Speex (`.spx`) audio | Transcoded to WAV, cached on disk (needs `speexdec`) |
 | Images and CSS in MDD | Addressable through the resource endpoint |

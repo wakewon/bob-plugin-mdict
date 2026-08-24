@@ -32,27 +32,41 @@ type Exchange struct {
 	Words []string `json:"words"`
 }
 
+// RelatedWordPart and RelatedWord mirror Bob's documented related-word
+// presentation schema. Means is optional, so cross-references can be expressed
+// without inventing definitions that are not present in the dictionary.
+type RelatedWordPart struct {
+	Part  string        `json:"part,omitempty"`
+	Words []RelatedWord `json:"words"`
+}
+
+type RelatedWord struct {
+	Word  string   `json:"word"`
+	Means []string `json:"means,omitempty"`
+}
+
 type Addition struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
 type Dict struct {
-	Word      string     `json:"word"`
-	Phonetics []Phonetic `json:"phonetics,omitempty"`
-	Parts     []Part     `json:"parts,omitempty"`
-	Exchanges []Exchange `json:"exchanges,omitempty"`
-	Additions []Addition `json:"additions,omitempty"`
+	Word             string            `json:"word"`
+	Phonetics        []Phonetic        `json:"phonetics,omitempty"`
+	Parts            []Part            `json:"parts,omitempty"`
+	Exchanges        []Exchange        `json:"exchanges,omitempty"`
+	RelatedWordParts []RelatedWordPart `json:"relatedWordParts,omitempty"`
+	Additions        []Addition        `json:"additions,omitempty"`
 }
 
 type Options struct {
-	IncludeExamples    bool
-	IncludeExtras      bool
-	MaxExamplesPerPart int
+	IncludeExamples     bool
+	IncludeExtras       bool
+	MaxExamplesPerSense int
 }
 
 func DefaultOptions() Options {
-	return Options{IncludeExamples: true, IncludeExtras: true, MaxExamplesPerPart: 8}
+	return Options{IncludeExamples: true, IncludeExtras: true, MaxExamplesPerSense: 8}
 }
 
 // Render converts exactly one dictionary entry into one toDict. Multi-source
@@ -62,8 +76,8 @@ func Render(entry *entryir.Entry, opts Options) *Dict {
 	if entry == nil {
 		return nil
 	}
-	if opts.MaxExamplesPerPart <= 0 {
-		opts.MaxExamplesPerPart = DefaultOptions().MaxExamplesPerPart
+	if opts.MaxExamplesPerSense <= 0 {
+		opts.MaxExamplesPerSense = DefaultOptions().MaxExamplesPerSense
 	}
 
 	dict := &Dict{Word: entry.Headword}
@@ -223,9 +237,7 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options) {
 			}
 		}
 		if opts.IncludeExamples {
-			if value := renderExamples(part, opts.MaxExamplesPerPart); value != "" {
-				dict.Additions = append(dict.Additions, Addition{Name: "Examples · " + label, Value: value})
-			}
+			appendExampleAdditions(dict, label, part.Senses, opts.MaxExamplesPerSense)
 		}
 	}
 
@@ -239,8 +251,9 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options) {
 	appendPhraseAddition(dict, "Idioms", entry.Idioms)
 	appendPhraseAddition(dict, "Phrasal verbs", entry.PhrasalVerbs)
 	appendPhraseAddition(dict, "Derivatives", entry.Derivatives)
-	appendListAddition(dict, "See also", entry.CrossReferences)
-	appendListAddition(dict, "Related", entry.Related)
+	seenRelatedWords := make(map[string]struct{}, len(entry.CrossReferences)+len(entry.Related))
+	appendRelatedWordPart(dict, "See also", entry.CrossReferences, seenRelatedWords)
+	appendRelatedWordPart(dict, "Related", entry.Related, seenRelatedWords)
 	appendListAddition(dict, "Collocations", entry.Collocations)
 	appendListAddition(dict, "Synonyms", entry.Synonyms)
 	appendListAddition(dict, "Antonyms", entry.Antonyms)
@@ -296,19 +309,14 @@ func renderSense(sense entryir.Sense, displayPath []int) []string {
 	return out
 }
 
-func renderExamples(part entryir.Part, limit int) string {
-	var groups []string
-	count := 0
+func appendExampleAdditions(dict *Dict, label string, senses []entryir.Sense, limit int) {
 	var walk func([]entryir.Sense, []int)
 	walk = func(senses []entryir.Sense, parent []int) {
 		for i, sense := range senses {
-			if count >= limit {
-				return
-			}
 			path := append(append([]int(nil), parent...), i+1)
 			var examples []string
-			for _, example := range sense.Examples {
-				if count >= limit {
+			for exampleIndex, example := range sense.Examples {
+				if exampleIndex >= limit {
 					break
 				}
 				line := "• " + example.Text
@@ -316,16 +324,17 @@ func renderExamples(part entryir.Part, limit int) string {
 					line += "\n  — " + example.Translation
 				}
 				examples = append(examples, line)
-				count++
 			}
 			if len(examples) > 0 {
-				groups = append(groups, "释义 "+formatDisplayNumber(path)+"\n\n"+strings.Join(examples, "\n"))
+				dict.Additions = append(dict.Additions, Addition{
+					Name:  "Examples · " + label + " " + formatDisplayNumber(path),
+					Value: strings.Join(examples, "\n\n"),
+				})
 			}
 			walk(sense.Subsenses, path)
 		}
 	}
-	walk(part.Senses, nil)
-	return strings.Join(groups, "\n\n")
+	walk(senses, nil)
 }
 
 func formatDisplayNumber(path []int) string {
@@ -355,6 +364,26 @@ func appendPhraseAddition(dict *Dict, name string, entries []entryir.PhraseEntry
 
 func appendListAddition(dict *Dict, name string, values []string) {
 	appendTextAddition(dict, name, strings.Join(values, "\n"))
+}
+
+func appendRelatedWordPart(dict *Dict, part string, values []string, seen map[string]struct{}) {
+	words := make([]RelatedWord, 0, len(values))
+	for _, value := range values {
+		word := strings.TrimSpace(value)
+		if word == "" {
+			continue
+		}
+		// Exact, case-sensitive comparison preserves legitimate distinctions
+		// such as US/us while removing repeated presentation targets.
+		if _, exists := seen[word]; exists {
+			continue
+		}
+		seen[word] = struct{}{}
+		words = append(words, RelatedWord{Word: word})
+	}
+	if len(words) > 0 {
+		dict.RelatedWordParts = append(dict.RelatedWordParts, RelatedWordPart{Part: part, Words: words})
+	}
 }
 
 func appendTextAddition(dict *Dict, name, value string) {
