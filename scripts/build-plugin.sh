@@ -81,13 +81,14 @@ if [ -f "appcast.json" ]; then
     jq --arg version "$VERSION" \
        --arg sha256 "$SHA256" \
        --arg minBob "$MIN_BOB_VERSION" \
+       --arg commit "$COMMIT" \
        --arg repo "$GITHUB_REPO" \
        --arg plugin "$PLUGIN_NAME" \
        --argjson timestamp "$TIMESTAMP" '
         if (.versions | map(.version) | index($version)) then
             .versions |= map(
                 if .version == $version then
-                    .sha256 = $sha256 | .timestamp = $timestamp | .minBobVersion = $minBob
+                    .sha256 = $sha256 | .timestamp = $timestamp | .minBobVersion = $minBob | .buildCommit = $commit
                 else . end
             )
         else
@@ -97,6 +98,7 @@ if [ -f "appcast.json" ]; then
                 "sha256": $sha256,
                 "url": "https://github.com/\($repo)/releases/download/v\($version)/\($plugin)-v\($version).bobplugin",
                 "minBobVersion": $minBob,
+                "buildCommit": $commit,
                 "timestamp": $timestamp
             }] + .versions
         end

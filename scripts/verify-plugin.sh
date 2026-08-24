@@ -42,7 +42,6 @@ VERSION=$(printf '%s' "$INFO" | jq -r '.version')
 CATEGORY=$(printf '%s' "$INFO" | jq -r '.category')
 MIN_BOB_VERSION=$(printf '%s' "$INFO" | jq -r '.minBobVersion')
 SOURCE_VERSION=$(tr -d ' \t\n\r' < VERSION)
-BUILD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 if [ "$CATEGORY" != "translate" ]; then
     echo "❌ category 应为 translate，实际为 $CATEGORY"
@@ -72,11 +71,6 @@ if ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var PLUGIN_VERSION = '$VERSION';";
     echo "❌ packaged main.js 未注入 plugin version $VERSION"
     FAILED=1
 fi
-if ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var PLUGIN_BUILD_COMMIT = '$BUILD_COMMIT';"; then
-    echo "❌ packaged main.js 未注入 build commit $BUILD_COMMIT"
-    FAILED=1
-fi
-
 # appcast 必须与包内实际内容对得上，否则 Bob 会拒绝更新。
 if [ -f appcast.json ]; then
     APPCAST_ID=$(jq -r '.identifier' appcast.json)
@@ -91,10 +85,15 @@ if [ -f appcast.json ]; then
     else
         EXPECTED_SHA=$(shasum -a 256 "$PACKAGE" | awk '{print $1}')
         ACTUAL_SHA=$(printf '%s' "$ENTRY" | jq -r '.sha256')
+        APPCAST_COMMIT=$(printf '%s' "$ENTRY" | jq -r '.buildCommit // ""')
         if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
             echo "❌ appcast.json 中的 sha256 与实际包不符"
             echo "     期望 $EXPECTED_SHA"
             echo "     实际 $ACTUAL_SHA"
+            FAILED=1
+        fi
+        if [ -z "$APPCAST_COMMIT" ] || ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var PLUGIN_BUILD_COMMIT = '$APPCAST_COMMIT';"; then
+            echo "❌ packaged main.js build commit 与 appcast.json 不一致"
             FAILED=1
         fi
         TS=$(printf '%s' "$ENTRY" | jq -r '.timestamp')
