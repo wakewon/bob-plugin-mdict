@@ -42,7 +42,7 @@ func run() error {
 		check        = flag.Bool("check", false, "verify the installation and exit")
 		listDicts    = flag.Bool("list-dictionaries", false, "list discovered dictionaries and exit")
 		rescanOnly   = flag.Bool("rescan", false, "rescan dictionaries, report the result and exit")
-		debugLookup  = flag.String("debug-lookup", "", "parse one word, print the Entry IR as JSON, and exit")
+		debugLookup  = flag.String("debug-lookup", "", "parse one word, print the EntrySet IR as JSON, and exit")
 		dictionaries = flag.String("dictionary-dir", "", "override the dictionary directory")
 		port         = flag.Int("port", 0, "override the loopback port")
 		debug        = flag.Bool("debug", false, "enable verbose logging")

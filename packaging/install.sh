@@ -80,7 +80,7 @@ fi
 # 确认服务真的起来了，而不是只写了个 plist 就宣布成功。
 STARTED=0
 for _ in $(seq 1 60); do
-    if curl -sf --max-time 1 "http://127.0.0.1:15321/v1/status" > /dev/null 2>&1; then
+    if curl -sf --max-time 1 "http://127.0.0.1:15321/v2/status" > /dev/null 2>&1; then
         STARTED=1
         break
     fi

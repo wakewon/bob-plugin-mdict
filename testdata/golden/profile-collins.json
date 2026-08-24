@@ -14,7 +14,7 @@
       "audio": {
         "resourceRef": "sound://synthetic/collins/uk-flimber.mp3",
         "token": "TOKEN",
-        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "url": "http://127.0.0.1:15321/v2/resource/TOKEN",
         "mimeType": "audio/mpeg"
       },
       "confidence": 0.95,
@@ -27,7 +27,7 @@
       "audio": {
         "resourceRef": "sound://synthetic/collins/us-flimber.mp3",
         "token": "TOKEN",
-        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "url": "http://127.0.0.1:15321/v2/resource/TOKEN",
         "mimeType": "audio/mpeg"
       },
       "confidence": 0.95,

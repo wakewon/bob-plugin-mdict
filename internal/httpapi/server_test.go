@@ -15,6 +15,7 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/config"
 	"github.com/wakewon/bob-plugin-mdict/internal/httpapi"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
+	"github.com/wakewon/bob-plugin-mdict/internal/testmdx"
 	"github.com/wakewon/bob-plugin-mdict/internal/version"
 )
 
@@ -48,7 +49,7 @@ func TestDictionaryListIncludesUnavailableAndExplicitIDErrorsAreActionable(t *te
 	handler := newTestServerForDir(t, root)
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v1/dictionaries", nil))
+	handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v2/dictionaries", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("list status = %d", recorder.Code)
 	}
@@ -69,7 +70,7 @@ func TestDictionaryListIncludesUnavailableAndExplicitIDErrorsAreActionable(t *te
 	} {
 		body := `{"query":"flimber","dictionaries":["` + tc.id + `"]}`
 		recorder = httptest.NewRecorder()
-		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v1/lookup", strings.NewReader(body)))
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(body)))
 		var failure httpapi.ErrorResponse
 		if err := json.Unmarshal(recorder.Body.Bytes(), &failure); err != nil {
 			t.Fatal(err)
@@ -91,7 +92,7 @@ func newRequest(method, path string, body io.Reader) *http.Request {
 func TestStatusReportsContract(t *testing.T) {
 	handler := newTestServer(t)
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v1/status", nil))
+	handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v2/status", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
@@ -122,7 +123,7 @@ func TestStatusReportsContract(t *testing.T) {
 func TestLookupWithoutDictionariesExplainsWhatToDo(t *testing.T) {
 	handler := newTestServer(t)
 	recorder := httptest.NewRecorder()
-	request := newRequest(http.MethodPost, "/v1/lookup", strings.NewReader(`{"query":"hello"}`))
+	request := newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(`{"query":"hello"}`))
 	handler.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -154,11 +155,59 @@ func TestLookupRejectsBadInput(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v1/lookup", strings.NewReader(tc.body)))
+			handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(tc.body)))
 			if recorder.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400", recorder.Code)
 			}
 		})
+	}
+}
+
+func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
+	root := t.TempDir()
+	markup := func(pos, definition string) string {
+		return `<article><h1>flimber</h1><div class="sense"><span class="pos">` + pos +
+			`</span><span class="definition">` + definition + `</span></div></article>`
+	}
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{
+		{Key: "flimber", HTML: markup("noun", "synthetic noun definition")},
+		{Key: "flimber", HTML: markup("verb", "synthetic verb definition")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
+		strings.NewReader(`{"query":"flimber","format":"bob","limit":1}`)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Matches []map[string]json.RawMessage `json:"matches"`
+		Bob     struct {
+			Parts []struct {
+				Part string `json:"part"`
+			} `json:"parts"`
+		} `json:"bob"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Matches) != 1 {
+		t.Fatalf("matches=%d", len(payload.Matches))
+	}
+	if _, legacy := payload.Matches[0]["entry"]; legacy {
+		t.Fatalf("v2 response contains legacy entry field: %s", recorder.Body.String())
+	}
+	var records []struct {
+		RecordOrdinal int `json:"recordOrdinal"`
+	}
+	if err := json.Unmarshal(payload.Matches[0]["records"], &records); err != nil || len(records) != 2 ||
+		records[0].RecordOrdinal != 1 || records[1].RecordOrdinal != 2 {
+		t.Fatalf("records=%+v err=%v", records, err)
+	}
+	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ noun" || payload.Bob.Parts[1].Part != "² verb" {
+		t.Fatalf("Bob parts=%+v", payload.Bob.Parts)
 	}
 }
 
@@ -176,7 +225,7 @@ func TestCrossOriginRequestsAreRefused(t *testing.T) {
 		"file:///etc/passwd",
 	} {
 		recorder := httptest.NewRecorder()
-		request := newRequest(http.MethodPost, "/v1/lookup", strings.NewReader(`{"query":"hello"}`))
+		request := newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(`{"query":"hello"}`))
 		request.Header.Set("Origin", origin)
 		handler.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusForbidden {
@@ -189,7 +238,7 @@ func TestLoopbackOriginsAreAccepted(t *testing.T) {
 	handler := newTestServer(t)
 	for _, origin := range []string{"http://127.0.0.1:15321", "http://localhost:3000", "null"} {
 		recorder := httptest.NewRecorder()
-		request := newRequest(http.MethodGet, "/v1/status", nil)
+		request := newRequest(http.MethodGet, "/v2/status", nil)
 		request.Header.Set("Origin", origin)
 		handler.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -201,7 +250,7 @@ func TestLoopbackOriginsAreAccepted(t *testing.T) {
 func TestNonLoopbackClientsAreRefused(t *testing.T) {
 	handler := newTestServer(t)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v2/status", nil)
 	request.RemoteAddr = "192.168.1.50:44444"
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusForbidden {
@@ -221,7 +270,7 @@ func TestResourceTokensCannotBeForged(t *testing.T) {
 		strings.Repeat("A", 512),
 	} {
 		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v1/resource/"+token, nil))
+		handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v2/resource/"+token, nil))
 		if recorder.Code == http.StatusOK {
 			t.Errorf("token %q was served with 200", token)
 		}
@@ -232,7 +281,7 @@ func TestOversizedRequestBodyIsRejected(t *testing.T) {
 	handler := newTestServer(t)
 	huge := bytes.NewReader([]byte(`{"query":"` + strings.Repeat("a", 128<<10) + `"}`))
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v1/lookup", huge))
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", huge))
 	if recorder.Code == http.StatusOK {
 		t.Errorf("an oversized body was accepted (status %d)", recorder.Code)
 	}
@@ -243,7 +292,7 @@ func TestRescanTakesNoPathArgument(t *testing.T) {
 	// Even if a caller supplies a path, the endpoint only ever walks the
 	// configured directory.
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v1/rescan", strings.NewReader(`{"path":"/etc"}`)))
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/rescan", strings.NewReader(`{"path":"/etc"}`)))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
 	}
@@ -258,7 +307,7 @@ func TestRescanTakesNoPathArgument(t *testing.T) {
 
 func TestUnknownRoutesAreNotFound(t *testing.T) {
 	handler := newTestServer(t)
-	for _, path := range []string{"/", "/v1", "/v2/status", "/v1/shell", "/v1/fetch"} {
+	for _, path := range []string{"/", "/v1", "/v1/status", "/v2/shell", "/v2/fetch"} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, newRequest(http.MethodGet, path, nil))
 		if recorder.Code != http.StatusNotFound {

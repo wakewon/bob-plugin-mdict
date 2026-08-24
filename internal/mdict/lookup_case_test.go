@@ -120,3 +120,92 @@ func TestPrefixMatchesCaseInsensitivelyAndPreservesVariants(t *testing.T) {
 		t.Fatalf("Prefix = %v, want both original spellings", got)
 	}
 }
+
+func TestLookupAllExpandsExactDuplicatesInSourceOrder(t *testing.T) {
+	dict := syntheticDictionary(t, []testmdx.Entry{
+		{Key: "flimber", HTML: "synthetic noun record"},
+		{Key: "flimber", HTML: "@@@LINK=flimber-target\x00"},
+		{Key: "flimber-target", HTML: "synthetic verb record"},
+		{Key: "flimber-target", HTML: "synthetic adjective record"},
+	})
+	set, err := dict.LookupAll("flimber")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.MatchedKey != "flimber" || len(set.Records) != 3 {
+		t.Fatalf("LookupAll = %+v", set)
+	}
+	want := []struct {
+		key, content, redirected string
+		rawOrdinal               int
+	}{
+		{"flimber", "synthetic noun record", "", 1},
+		{"flimber-target", "synthetic verb record", "flimber", 1},
+		{"flimber-target", "synthetic adjective record", "flimber", 2},
+	}
+	for i, expected := range want {
+		got := set.Records[i]
+		if got.MatchedKey != expected.key || string(got.HTML) != expected.content ||
+			got.RedirectedFrom != expected.redirected || got.RawRecordOrdinal != expected.rawOrdinal {
+			t.Errorf("record %d = %+v, want %+v", i, got, expected)
+		}
+	}
+	first, err := dict.Lookup("flimber")
+	if err != nil || string(first.HTML) != "synthetic noun record" {
+		t.Fatalf("Lookup convenience result = %+v, %v", first, err)
+	}
+}
+
+func TestLookupAllDeduplicatesResolvedRedirectContentAndKeepsValidSiblings(t *testing.T) {
+	dict := syntheticDictionary(t, []testmdx.Entry{
+		{Key: "cycle", HTML: "@@@LINK=cycle\x00"},
+		{Key: "cycle", HTML: "synthetic surviving sibling"},
+		{Key: "duplicate", HTML: "@@@LINK=target\x00"},
+		{Key: "duplicate", HTML: "@@@LINK=target\x00"},
+		{Key: "target", HTML: "synthetic shared target"},
+	})
+	for _, tc := range []struct {
+		query, content string
+	}{
+		{"duplicate", "synthetic shared target"},
+		{"cycle", "synthetic surviving sibling"},
+	} {
+		set, err := dict.LookupAll(tc.query)
+		if err != nil {
+			t.Fatalf("LookupAll(%q): %v", tc.query, err)
+		}
+		if len(set.Records) != 1 || string(set.Records[0].HTML) != tc.content {
+			t.Errorf("LookupAll(%q) = %+v", tc.query, set)
+		}
+	}
+}
+
+func TestLookupAllResolvesCaseBeforeDuplicateExpansion(t *testing.T) {
+	dict := syntheticDictionary(t, []testmdx.Entry{
+		{Key: "China", HTML: "title record A"},
+		{Key: "China", HTML: "title record B"},
+		{Key: "china", HTML: "lower record C"},
+		{Key: "china", HTML: "lower record D"},
+	})
+	for _, tc := range []struct {
+		query, matched string
+		contents       []string
+	}{
+		{"China", "China", []string{"title record A", "title record B"}},
+		{"china", "china", []string{"lower record C", "lower record D"}},
+		{"CHINA", "china", []string{"lower record C", "lower record D"}},
+	} {
+		set, err := dict.LookupAll(tc.query)
+		if err != nil {
+			t.Fatalf("LookupAll(%q): %v", tc.query, err)
+		}
+		if set.MatchedKey != tc.matched || len(set.Records) != len(tc.contents) {
+			t.Fatalf("LookupAll(%q) = %+v", tc.query, set)
+		}
+		for i, content := range tc.contents {
+			if string(set.Records[i].HTML) != content {
+				t.Errorf("LookupAll(%q) record %d = %q, want %q", tc.query, i, set.Records[i].HTML, content)
+			}
+		}
+	}
+}

@@ -25,7 +25,7 @@ func (fakeAudio) ResolveAudio(ref string) *entryir.Audio {
 	return &entryir.Audio{
 		ResourceRef: ref,
 		Token:       "TOKEN",
-		URL:         "http://127.0.0.1:15321/v1/resource/TOKEN",
+		URL:         "http://127.0.0.1:15321/v2/resource/TOKEN",
 		MIMEType:    "audio/mpeg",
 	}
 }

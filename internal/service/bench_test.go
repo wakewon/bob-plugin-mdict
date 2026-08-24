@@ -94,9 +94,11 @@ func BenchmarkAudioResolution(b *testing.B) {
 	}
 	var token string
 	for _, match := range result.Matches {
-		for _, pronunciation := range match.Entry.Pronunciations {
-			if pronunciation.Audio != nil {
-				token = pronunciation.Audio.Token
+		for _, record := range match.Records {
+			for _, pronunciation := range record.Entry.Pronunciations {
+				if pronunciation.Audio != nil {
+					token = pronunciation.Audio.Token
+				}
 			}
 		}
 	}

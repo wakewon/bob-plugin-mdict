@@ -17,8 +17,8 @@ func sampleEntry() *entryir.Entry {
 	return &entryir.Entry{
 		Headword: "flimber",
 		Pronunciations: []entryir.Pronunciation{
-			{IPARegion: entryir.RegionUK, IPA: "ˈflɪmbə", AudioRegion: entryir.RegionUK, Audio: audio("http://127.0.0.1:15321/v1/resource/UK")},
-			{IPARegion: entryir.RegionUS, IPA: "ˈflɪmbər", AudioRegion: entryir.RegionUS, Audio: audio("http://127.0.0.1:15321/v1/resource/US")},
+			{IPARegion: entryir.RegionUK, IPA: "ˈflɪmbə", AudioRegion: entryir.RegionUK, Audio: audio("http://127.0.0.1:15321/v2/resource/UK")},
+			{IPARegion: entryir.RegionUS, IPA: "ˈflɪmbər", AudioRegion: entryir.RegionUS, Audio: audio("http://127.0.0.1:15321/v2/resource/US")},
 		},
 		Parts: []entryir.Part{{
 			POS:     "verb",
@@ -348,6 +348,97 @@ func TestExtrasCanBeDisabled(t *testing.T) {
 func TestRenderEmptyInput(t *testing.T) {
 	if Render(nil, DefaultOptions()) != nil {
 		t.Error("Render(nil) should be nil")
+	}
+}
+
+func TestRenderEntrySetPreservesEveryRecordBoundary(t *testing.T) {
+	record := func(pos, ipa string, region entryir.Region, url string) *entryir.Entry {
+		return &entryir.Entry{
+			Headword: "flimber",
+			Pronunciations: []entryir.Pronunciation{{
+				IPARegion: region, IPA: ipa, AudioRegion: region, Audio: audio(url),
+			}},
+			Parts: []entryir.Part{{POS: pos, Senses: []entryir.Sense{{
+				Definition: "synthetic " + pos + " meaning",
+				Examples:   []entryir.Example{{Text: "synthetic " + pos + " example"}},
+			}}}},
+			Forms:           []entryir.Form{{Name: "form", Words: []string{pos + "-form"}}},
+			Phrases:         []entryir.PhraseEntry{{Phrase: pos + " phrase"}},
+			CrossReferences: []string{pos + "-related"},
+			UsageNotes:      []entryir.Section{{Title: "note", Body: pos + " usage"}},
+			Etymology:       pos + " origin",
+		}
+	}
+	set := &entryir.EntrySet{Headword: "flimber", Records: []entryir.EntryRecord{
+		{RecordOrdinal: 1, Entry: record("noun", "alpha", entryir.RegionUK, "http://127.0.0.1/uk-one")},
+		{RecordOrdinal: 2, Entry: record("verb", "beta", entryir.RegionUK, "http://127.0.0.1/uk-two")},
+		{RecordOrdinal: 3, Entry: record("adjective", "gamma", entryir.RegionUS, "http://127.0.0.1/us-three")},
+	}}
+
+	dict := RenderEntrySet(set, DefaultOptions())
+	if len(dict.Phonetics) != 3 {
+		t.Fatalf("phonetics = %+v", dict.Phonetics)
+	}
+	if dict.Phonetics[0].Type != "uk" || dict.Phonetics[1].Type != "uk" || dict.Phonetics[2].Type != "us" {
+		t.Fatalf("repeated regional carriers were collapsed: %+v", dict.Phonetics)
+	}
+	for i, suffix := range []string{" · ¹", " · ²", " · ³"} {
+		if !strings.HasSuffix(dict.Phonetics[i].Value, suffix) || dict.Phonetics[i].TTS == nil {
+			t.Errorf("phonetic %d lost record provenance/audio: %+v", i, dict.Phonetics[i])
+		}
+	}
+
+	if len(dict.Parts) != 3 || dict.Parts[0].Part != "¹ noun" || dict.Parts[1].Part != "² verb" || dict.Parts[2].Part != "³ adjective" {
+		t.Fatalf("parts = %+v", dict.Parts)
+	}
+	for i, want := range []string{"1. synthetic noun meaning", "1. synthetic verb meaning", "1. synthetic adjective meaning"} {
+		if len(dict.Parts[i].Means) != 1 || dict.Parts[i].Means[0] != want {
+			t.Errorf("part %d means = %v, want %q", i, dict.Parts[i].Means, want)
+		}
+	}
+	if len(dict.Exchanges) != 3 || dict.Exchanges[0].Name != "¹ form" || dict.Exchanges[1].Name != "² form" {
+		t.Fatalf("exchanges = %+v", dict.Exchanges)
+	}
+	if len(dict.RelatedWordParts) != 3 || dict.RelatedWordParts[0].Part != "¹ See also" || dict.RelatedWordParts[1].Part != "² See also" {
+		t.Fatalf("relatedWordParts = %+v", dict.RelatedWordParts)
+	}
+
+	names := make(map[string]bool)
+	for _, addition := range dict.Additions {
+		names[addition.Name] = true
+	}
+	for _, want := range []string{
+		"Examples · ¹ noun 1", "Examples · ² verb 1", "Examples · ³ adjective 1",
+		"¹ Phrases", "² Phrases", "¹ Usage · note", "² Usage · note", "¹ Origin", "² Origin",
+	} {
+		if !names[want] {
+			t.Errorf("missing addition %q in %+v", want, dict.Additions)
+		}
+	}
+}
+
+func TestRenderEntrySetSingleRecordDoesNotShowOrdinal(t *testing.T) {
+	entry := sampleEntry()
+	direct := Render(entry, DefaultOptions())
+	set := RenderEntrySet(&entryir.EntrySet{Headword: entry.Headword, Records: []entryir.EntryRecord{{
+		RecordOrdinal: 1,
+		Entry:         entry,
+	}}}, DefaultOptions())
+	if !reflect.DeepEqual(direct, set) {
+		t.Fatalf("single-record EntrySet changed presentation\ndirect=%+v\nset=%+v", direct, set)
+	}
+	payload, err := json.Marshal(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "¹") {
+		t.Fatalf("single-record output exposed ordinal: %s", payload)
+	}
+}
+
+func TestSuperscriptOrdinalSupportsMultipleDigits(t *testing.T) {
+	if got := superscriptOrdinal(10); got != "¹⁰" {
+		t.Fatalf("superscriptOrdinal(10) = %q", got)
 	}
 }
 

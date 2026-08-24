@@ -24,7 +24,7 @@
 
 ```text
 Bob 插件 → http://127.0.0.1:15321 → MDX/MDD → 语义解析器
-                                               → Entry IR → Bob toDict
+                                               → EntrySet IR → Bob toDict
 ```
 
 `bob-mdict` 是负责索引、解析和 MDD 资源的本地 Go 服务。Bob 插件只是轻量
@@ -141,7 +141,7 @@ bob-mdict --version              # 程序版本与 API 版本
 bob-mdict --check                # 安装、词典和音频解码检查
 bob-mdict --list-dictionaries    # 名称、ID、词条数和解析 Profile
 bob-mdict --rescan               # 重新发现并建立索引
-bob-mdict --debug-lookup WORD    # 输出结构化 Entry IR，供开发调试
+bob-mdict --debug-lookup WORD    # 输出结构化 EntrySet IR，供开发调试
 ```
 
 本地 HTTP API 见 [docs/API.md](docs/API.md)。
@@ -152,7 +152,7 @@ bob-mdict --debug-lookup WORD    # 输出结构化 Entry IR，供开发调试
 
 ```bash
 brew services start bob-mdict
-curl http://127.0.0.1:15321/v1/status
+curl http://127.0.0.1:15321/v2/status
 ```
 
 确认插件中的“本地服务地址”与服务实际端口一致。状态响应中的

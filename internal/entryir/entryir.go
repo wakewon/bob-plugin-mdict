@@ -116,6 +116,35 @@ type Source struct {
 	RedirectedFrom string `json:"redirectedFrom,omitempty"`
 	// Profile names the parser profile that handled this entry, or "generic".
 	Profile string `json:"profile"`
+	// RawRecordOrdinal is the one-based position among the exact MDX records
+	// for MatchedKey, before resolved-content dedupe and empty filtering.
+	RawRecordOrdinal int `json:"rawRecordOrdinal,omitempty"`
+	// RecordStartOffset is a stable low-level locator for local diagnostics.
+	RecordStartOffset int64 `json:"recordStartOffset,omitempty"`
+}
+
+// EntryRecord preserves one independently parsed semantic record. Its ordinal
+// is assigned only after safe dedupe and empty filtering, so visible records
+// are always numbered consecutively in source order.
+type EntryRecord struct {
+	RecordOrdinal int    `json:"recordOrdinal"`
+	Entry         *Entry `json:"entry"`
+}
+
+// EntrySet is the dictionary-neutral aggregate produced for one exact key.
+// Parser remains strictly one raw record -> one Entry; adapters decide how to
+// present the preserved record boundaries.
+type EntrySet struct {
+	Headword string        `json:"headword"`
+	Records  []EntryRecord `json:"records"`
+}
+
+// Primary returns the first semantic record, if one exists.
+func (s *EntrySet) Primary() *Entry {
+	if s == nil || len(s.Records) == 0 {
+		return nil
+	}
+	return s.Records[0].Entry
 }
 
 // Entry is the complete parsed dictionary entry.
@@ -168,6 +197,8 @@ func countSubsenses(s Sense) int {
 // IsEmpty reports whether the parse yielded nothing worth showing.
 func (e *Entry) IsEmpty() bool {
 	return e.SenseCount() == 0 &&
+		len(e.Pronunciations) == 0 &&
+		len(e.Forms) == 0 &&
 		len(e.Sections) == 0 &&
 		len(e.Phrases) == 0 &&
 		len(e.Idioms) == 0 &&

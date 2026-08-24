@@ -6,7 +6,7 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 )
 
-// entryCacheKey identifies one parsed entry.
+// entryCacheKey identifies one parsed duplicate-aware entry set.
 type entryCacheKey struct {
 	dictionaryID string
 	// query is TrimSpace + NFC, preserving case because differently cased
@@ -26,8 +26,8 @@ type entryCache struct {
 }
 
 type cacheItem struct {
-	key   entryCacheKey
-	entry *entryir.Entry
+	key entryCacheKey
+	set *entryir.EntrySet
 }
 
 func newEntryCache(capacity int) *entryCache {
@@ -41,22 +41,22 @@ func newEntryCache(capacity int) *entryCache {
 	}
 }
 
-func (c *entryCache) get(key entryCacheKey) (*entryir.Entry, bool) {
+func (c *entryCache) get(key entryCacheKey) (*entryir.EntrySet, bool) {
 	element, ok := c.items[key]
 	if !ok {
 		return nil, false
 	}
 	c.order.MoveToFront(element)
-	return element.Value.(*cacheItem).entry, true
+	return element.Value.(*cacheItem).set, true
 }
 
-func (c *entryCache) put(key entryCacheKey, entry *entryir.Entry) {
+func (c *entryCache) put(key entryCacheKey, set *entryir.EntrySet) {
 	if element, ok := c.items[key]; ok {
-		element.Value.(*cacheItem).entry = entry
+		element.Value.(*cacheItem).set = set
 		c.order.MoveToFront(element)
 		return
 	}
-	element := c.order.PushFront(&cacheItem{key: key, entry: entry})
+	element := c.order.PushFront(&cacheItem{key: key, set: set})
 	c.items[key] = element
 	for c.order.Len() > c.capacity {
 		oldest := c.order.Back()

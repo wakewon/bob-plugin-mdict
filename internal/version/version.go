@@ -9,8 +9,8 @@ var Commit = "dev"
 
 // APIVersion is the HTTP API contract version. The Bob plugin refuses to talk
 // to a service advertising a different value, so bump it only on breaking
-// changes to the request/response shapes under /v1.
-const APIVersion = "v1"
+// changes to the request/response shapes under the current route major.
+const APIVersion = "v2"
 
 // DefaultPort is the loopback port the service listens on by default.
 const DefaultPort = 15321

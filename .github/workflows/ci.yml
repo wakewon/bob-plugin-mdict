@@ -78,7 +78,7 @@ jobs:
           identity=$(./release/bob-mdict-darwin-arm64 --version)
           version=$(tr -d ' \n' < VERSION)
           commit=$(git rev-parse --short HEAD)
-          echo "$identity" | grep -F "bob-mdict $version ($commit) api=v1"
+          echo "$identity" | grep -F "bob-mdict $version ($commit) api=v2"
 
       - name: Generate and style-check Homebrew formula
         run: |
@@ -103,21 +103,21 @@ jobs:
           mkdir -p "$RUNNER_TEMP/dicts"
           ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --port 15399 &
           for _ in $(seq 1 30); do
-            curl -sf http://127.0.0.1:15399/v1/status > /dev/null && break
+            curl -sf http://127.0.0.1:15399/v2/status > /dev/null && break
             sleep 1
           done
-          status=$(curl -sf http://127.0.0.1:15399/v1/status)
-          echo "$status" | tee /dev/stderr | grep -q '"apiVersion":"v1"'
+          status=$(curl -sf http://127.0.0.1:15399/v2/status)
+          echo "$status" | tee /dev/stderr | grep -q '"apiVersion":"v2"'
           echo "$status" | grep -q "\"serviceVersion\":\"$(tr -d ' \n' < VERSION)\""
           echo "$status" | grep -q "\"buildCommit\":\"$(git rev-parse --short HEAD)\""
-          curl -sf http://127.0.0.1:15399/v1/dictionaries > /dev/null
+          curl -sf http://127.0.0.1:15399/v2/dictionaries > /dev/null
           # With no dictionaries installed the service must say so clearly
           # rather than failing opaquely.
-          curl -s -X POST http://127.0.0.1:15399/v1/lookup \
+          curl -s -X POST http://127.0.0.1:15399/v2/lookup \
             -H 'Content-Type: application/json' -d '{"query":"hello"}' | grep -q 'noDictionaries'
           # A cross-origin request must be refused.
           code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' \
-            http://127.0.0.1:15399/v1/status)
+            http://127.0.0.1:15399/v2/status)
           [ "$code" = "403" ] || { echo "cross-origin request was not refused ($code)"; exit 1; }
           kill %1
 

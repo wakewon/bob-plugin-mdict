@@ -4,6 +4,7 @@
 package mdict
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -62,10 +63,13 @@ type Dictionary struct {
 	mdx  *mdx.Mdict
 	mdds []*mdx.Mdict
 
-	// exact maps headwords verbatim; folded maps a case- and
-	// diacritic-normalized form for the fallback pass.
-	exact  map[string]*mdx.MDictKeywordEntry
-	folded map[string]*mdx.MDictKeywordEntry
+	// exact maps each headword to its first record. exactExtras is allocated
+	// only for keys with duplicate records, so the hundreds of thousands of
+	// ordinary single-record keys do not each pay for a slice header. folded
+	// remains the case- and diacritic-normalized fallback index.
+	exact       map[string]*mdx.MDictKeywordEntry
+	exactExtras map[string][]*mdx.MDictKeywordEntry
+	folded      map[string]*mdx.MDictKeywordEntry
 	// mddIdx maps a normalized resource key to the volume holding it.
 	mddIdx map[string]mddLocation
 
@@ -202,6 +206,7 @@ func (d *Dictionary) Load() error {
 		return d.err
 	}
 	d.exact = make(map[string]*mdx.MDictKeywordEntry, len(entries))
+	d.exactExtras = make(map[string][]*mdx.MDictKeywordEntry)
 	d.folded = make(map[string]*mdx.MDictKeywordEntry)
 	for _, entry := range entries {
 		if entry == nil {
@@ -209,6 +214,8 @@ func (d *Dictionary) Load() error {
 		}
 		if _, exists := d.exact[entry.KeyWord]; !exists {
 			d.exact[entry.KeyWord] = entry
+		} else {
+			d.exactExtras[entry.KeyWord] = append(d.exactExtras[entry.KeyWord], entry)
 		}
 		// Only headwords whose folded form differs from themselves need a
 		// second entry: for an already-lowercase headword the fallback pass
@@ -304,66 +311,158 @@ type LookupResult struct {
 	RedirectedFrom string
 	// HTML is the raw record content.
 	HTML []byte
+	// RawRecordOrdinal is the one-based source position among exact records
+	// with the same MatchedKey. It is stable diagnostic provenance, not the
+	// visible ordinal assigned after semantic filtering.
+	RawRecordOrdinal int
+	// RecordStartOffset is a stable low-level locator useful in debug reports.
+	RecordStartOffset int64
+}
+
+// LookupSet is the duplicate-aware result of resolving one query. MatchedKey
+// is chosen once using exact-case, NFC, then deterministic case fallback.
+// Records contains only that key's records (plus records reached through their
+// redirects), in source order and deduplicated by resolved bytes.
+type LookupSet struct {
+	MatchedKey string
+	Records    []*LookupResult
 }
 
 const maxRedirectDepth = 8
 
-// Lookup resolves a headword, following @@@LINK redirects with loop detection.
+// LookupAll resolves a headword and returns every exact record belonging to the
+// selected key. Case resolution happens before duplicate expansion: folded
+// candidates with other spellings are never mixed into the result.
 //
 // The bundled engine's own redirect handling matches the prefix "@@LINK=" while
 // real MDict files use "@@@LINK=", and it does not strip the trailing NUL that
 // terminates these records, so redirects are resolved here instead.
-func (d *Dictionary) Lookup(word string) (*LookupResult, error) {
+func (d *Dictionary) LookupAll(word string) (*LookupSet, error) {
 	if err := d.Load(); err != nil {
 		return nil, err
 	}
 	d.mu.RLock()
-	dict := d.mdx
-	d.mu.RUnlock()
-	if dict == nil {
+	defer d.mu.RUnlock()
+	if d.mdx == nil {
 		return nil, ErrNotFound
 	}
 
-	seen := make(map[string]struct{})
-	original := word
-	current := word
+	_, matchedKey, ok := d.findEntry(word)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	records, err := d.resolveRecords(word, matchedKey, 0, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	for depth := 0; depth <= maxRedirectDepth; depth++ {
-		entry, key, ok := d.findEntry(current)
-		if !ok {
-			if depth == 0 {
-				return nil, ErrNotFound
+	seenContent := make(map[[32]byte][][]byte, len(records))
+	unique := records[:0]
+	for _, record := range records {
+		hash := sha256.Sum256(record.HTML)
+		duplicate := false
+		for _, content := range seenContent[hash] {
+			if bytes.Equal(content, record.HTML) {
+				duplicate = true
+				break
 			}
-			// A dangling redirect target is a defect in the dictionary, not a
-			// reason to fail: report the redirect chain as not found.
-			return nil, ErrNotFound
 		}
-		// Cycle identity follows the dictionary key that actually matched, not
-		// the redirect text. A target such as "A" may case-fold back to an
-		// already visited key even when its own spelling looks new.
-		identity := NormalizeExactKey(key)
-		if _, looped := seen[identity]; looped {
-			return nil, ErrNotFound
+		if duplicate {
+			continue
 		}
-		seen[identity] = struct{}{}
+		seenContent[hash] = append(seenContent[hash], record.HTML)
+		unique = append(unique, record)
+	}
+	if len(unique) == 0 {
+		return nil, ErrNotFound
+	}
+	return &LookupSet{MatchedKey: matchedKey, Records: unique}, nil
+}
 
-		content, err := dict.ResolveEntry(entry)
+// Lookup is the single-record convenience API. LookupAll owns all matching,
+// redirect and deduplication semantics so the two paths cannot diverge.
+func (d *Dictionary) Lookup(word string) (*LookupResult, error) {
+	set, err := d.LookupAll(word)
+	if err != nil {
+		return nil, err
+	}
+	return set.Records[0], nil
+}
+
+// resolveRecords expands every record under the key selected for word. A
+// redirect record fans out to every record at its target. Each branch owns its
+// visited-key set, allowing sibling records to resolve independently while
+// retaining case-sensitive, actual-MatchedKey cycle detection.
+func (d *Dictionary) resolveRecords(word, original string, depth int, seen map[string]struct{}) ([]*LookupResult, error) {
+	if depth > maxRedirectDepth {
+		return nil, ErrNotFound
+	}
+	_, key, ok := d.findEntry(word)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	identity := NormalizeExactKey(key)
+	if _, looped := seen[identity]; looped {
+		return nil, ErrNotFound
+	}
+	branchSeen := make(map[string]struct{}, len(seen)+1)
+	for visited := range seen {
+		branchSeen[visited] = struct{}{}
+	}
+	branchSeen[identity] = struct{}{}
+
+	entries := d.exactRecords(key)
+	var out []*LookupResult
+	var firstErr error
+	for index, entry := range entries {
+		content, err := d.mdx.ResolveEntry(entry)
 		if err != nil {
-			return nil, err
-		}
-
-		target, isRedirect := ParseLinkTarget(content)
-		if !isRedirect {
-			result := &LookupResult{MatchedKey: key, HTML: content}
-			if depth > 0 {
-				result.RedirectedFrom = original
+			if firstErr == nil {
+				firstErr = err
 			}
-			return result, nil
+			continue
 		}
-
-		current = target
+		target, redirect := ParseLinkTarget(content)
+		if redirect {
+			resolved, resolveErr := d.resolveRecords(target, original, depth+1, branchSeen)
+			if resolveErr != nil {
+				if firstErr == nil && !errors.Is(resolveErr, ErrNotFound) {
+					firstErr = resolveErr
+				}
+				continue
+			}
+			out = append(out, resolved...)
+			continue
+		}
+		result := &LookupResult{
+			MatchedKey:        key,
+			HTML:              content,
+			RawRecordOrdinal:  index + 1,
+			RecordStartOffset: entry.RecordStartOffset,
+		}
+		if depth > 0 {
+			result.RedirectedFrom = original
+		}
+		out = append(out, result)
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	if firstErr != nil {
+		return nil, firstErr
 	}
 	return nil, ErrNotFound
+}
+
+func (d *Dictionary) exactRecords(key string) []*mdx.MDictKeywordEntry {
+	first := d.exact[key]
+	if first == nil {
+		return nil
+	}
+	extras := d.exactExtras[key]
+	entries := make([]*mdx.MDictKeywordEntry, 1, 1+len(extras))
+	entries[0] = first
+	return append(entries, extras...)
 }
 
 // findEntry tries exact, then Unicode-normalized, then case-insensitive match.
@@ -509,6 +608,7 @@ func (d *Dictionary) Close() {
 	d.mdds = nil
 	d.mddIdx = nil
 	d.exact = nil
+	d.exactExtras = nil
 	d.folded = nil
 }
 

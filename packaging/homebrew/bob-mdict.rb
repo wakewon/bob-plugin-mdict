@@ -73,6 +73,6 @@ class BobMdict < Formula
 
   test do
     assert_match "bob-mdict", shell_output("#{bin}/bob-mdict --version")
-    assert_match "api=v1", shell_output("#{bin}/bob-mdict --version")
+    assert_match "api=v2", shell_output("#{bin}/bob-mdict --version")
   end
 end

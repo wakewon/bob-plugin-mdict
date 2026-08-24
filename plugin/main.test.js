@@ -48,7 +48,7 @@ test('blank ID uses first match and explicit ID restricts lookup', () => {
     for (const [dictionaryID, expected] of [['', undefined], ['abc123', ['abc123']]]) {
         let completion;
         const loaded = load({ dictionaryID }, request => {
-            assert.equal(request.url, 'http://127.0.0.1:15321/v1/lookup');
+            assert.equal(request.url, 'http://127.0.0.1:15321/v2/lookup');
             assert.equal(request.body.limit, 1);
             assert.equal(JSON.stringify(request.body.dictionaries), JSON.stringify(expected));
             request.handler(response(200, { bob: { word: 'flimber', parts: [] } }));
@@ -65,8 +65,8 @@ test('Bob-preprocessed /list uses originalText and never performs a lookup', () 
         let completion;
         const loaded = load({}, request => {
             assert.equal(request.method, 'GET');
-            assert.equal(request.url, 'http://127.0.0.1:15321/v1/dictionaries');
-            assert.equal(request.url.endsWith('/v1/lookup'), false);
+            assert.equal(request.url, 'http://127.0.0.1:15321/v2/dictionaries');
+			assert.equal(request.url.endsWith('/v2/lookup'), false);
             assert.equal(request.cancelSignal.test, true);
             request.handler(response(200, {
                 directory: '/synthetic/dictionaries',
@@ -156,9 +156,9 @@ test('/list reports an empty registry and transport failure clearly', () => {
 test('invalid configured dictionary is rejected during pluginValidate', () => {
     let completion;
     const loaded = load({ dictionaryID: 'expired-id' }, request => {
-        if (request.url.endsWith('/v1/status')) {
+        if (request.url.endsWith('/v2/status')) {
             request.handler(response(200, {
-                service: 'bob-mdict', apiVersion: 'v1', serviceVersion: '0.1.2', buildCommit: 'service1', healthyDictionaryCount: 1
+                service: 'bob-mdict', apiVersion: 'v2', serviceVersion: '0.1.2', buildCommit: 'service1', healthyDictionaryCount: 1
             }));
             return;
         }
@@ -169,7 +169,7 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     assert.match(completion.error.message, /expired-id/);
     assert.match(completion.error.addition, /\/list/);
     assert.match(loaded.logs[0], /MDict plugin 0\.1\.2-test \(test123\)/);
-    assert.match(loaded.logs[0], /bob-mdict 0\.1\.2 \(service1\), API v1/);
+    assert.match(loaded.logs[0], /bob-mdict 0\.1\.2 \(service1\), API v2/);
 });
 
 test('lookup maps invalid ID service errors to actionable guidance', () => {

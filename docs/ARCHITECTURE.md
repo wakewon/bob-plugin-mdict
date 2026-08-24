@@ -7,15 +7,16 @@ Bob
  │  selected text
  ▼
 plugin/main.js                 thin: no MDX, no HTML parsing, no libraries
- │  POST /v1/lookup {query, format:"bob"}
+ │  POST /v2/lookup {query, format:"bob"}
  ▼
 bob-mdict  (127.0.0.1 only)
  │
  ├── registry      recursive discovery, stable IDs, per-dictionary health
- ├── mdict         MDX/MDD access, @@@LINK redirects, O(1) resource index
+ ├── mdict         MDX/MDD access, duplicate-aware lookup, redirects, resources
  ├── profiles      declarative per-dictionary selectors, fingerprint-matched
- ├── parser        generic semantic parser + profile overrides → Entry IR
- ├── bobadapter    Entry IR → Bob toDict
+ ├── parser        one resolved MDX record + profile overrides → one Entry IR
+ ├── entryir       EntrySet aggregate preserving semantic record boundaries
+ ├── bobadapter    EntrySet IR → one Bob toDict
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
 ```
 
@@ -27,12 +28,15 @@ an index over a million headwords are not things to attempt there. Putting all
 of it behind loopback HTTP keeps the plugin at a few hundred lines with no
 dependencies, and lets the heavy part be a single native binary.
 
-## The Entry IR is the contract
+## Entry and EntrySet are the contract
 
 The parser does not produce Bob objects. It produces an `Entry` — headword,
 pronunciations, parts, senses, subsenses, examples, forms, phrases, idioms,
 cross-references, usage notes and etymology — that models **what dictionaries
-contain**, not what Bob can currently display.
+contain**, not what Bob can currently display. Duplicate exact MDX keys are
+resolved before parsing; each resolved record is parsed independently and then
+wrapped in an `EntrySet`. The parser never merges DOM trees or attempts to
+classify homographs.
 
 `internal/bobadapter` is the only package that knows Bob exists. That boundary
 is the reason a future Bob with richer display needs one new adapter rather than
@@ -104,12 +108,15 @@ no synthesis path anywhere in the codebase.
 
 The server remains multi-dictionary: callers can search all dictionaries,
 restrict by ID, or stop at the first match. The Bob adapter renders exactly one
-entry. A blank plugin Dictionary ID requests the first match; a populated ID
+EntrySet from one dictionary. A blank plugin Dictionary ID requests the first match; a populated ID
 requests only that dictionary. Users who want several pinned dictionaries add
 several Bob MDict service instances, keeping cards, ordering and enablement
 under Bob's control.
 
-Within that entry, each top-level sense becomes one Bob `Part`. The part label
+Within a single-record EntrySet, presentation remains unchanged. In a
+multi-record EntrySet, compact superscript ordinals (`¹`, `²`, …) label
+phonetics, parts, exchanges, related words and additions without changing the
+sense/subsense numbering inside each record. Each top-level sense becomes one Bob `Part`. The part label
 may repeat for consecutive senses of the same POS, while subsenses stay in the
 same `Part` as their parent.
 
@@ -157,7 +164,7 @@ something worth protecting even though it only listens on loopback:
 - Resolution consults an in-memory index, never the filesystem. Path traversal,
   symlink escape and arbitrary file reads are structurally impossible rather
   than filtered.
-- No endpoint accepts a path. `/v1/rescan` walks the configured directory and
+- No endpoint accepts a path. `/v2/rescan` walks the configured directory and
   nothing else.
 - Request bodies are capped; no shell, no outbound fetch, no filesystem paths in
   any response.

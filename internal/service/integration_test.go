@@ -76,6 +76,20 @@ func newService(t *testing.T) *service.Service {
 	return svc
 }
 
+func primaryEntry(match *service.Match) *entryir.Entry {
+	if match == nil || len(match.Records) == 0 {
+		return nil
+	}
+	return match.Records[0].Entry
+}
+
+func matchEntrySet(match *service.Match) *entryir.EntrySet {
+	if match == nil {
+		return nil
+	}
+	return &entryir.EntrySet{Headword: match.Headword, Records: match.Records}
+}
+
 func TestRealDictionariesAreDiscoveredAndHealthy(t *testing.T) {
 	svc := newService(t)
 	total, healthy := svc.Registry().Counts()
@@ -131,7 +145,7 @@ func TestBobRenderingNeverAggregatesMultipleDictionaries(t *testing.T) {
 	if err != nil || len(result.Matches) < 2 {
 		t.Skipf("need two matching dictionaries for aggregation guard: matches=%d err=%v", len(result.Matches), err)
 	}
-	want := bobadapter.Render(result.Matches[0].Entry, opts)
+	want := bobadapter.RenderEntrySet(matchEntrySet(&result.Matches[0]), opts)
 	if !reflect.DeepEqual(result.Bob, want) {
 		t.Fatal("Bob output was not rendered exclusively from the first dictionary match")
 	}
@@ -145,7 +159,7 @@ func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.
 	}
 
 	for _, match := range result.Matches {
-		entry := match.Entry
+		entry := primaryEntry(&match)
 		if len(entry.Parts) < 2 {
 			continue
 		}
@@ -230,7 +244,7 @@ func TestRealAbandonBobPresentationV012(t *testing.T) {
 		if !strings.Contains(strings.ToLower(match.DictionaryTitle), "collins") {
 			continue
 		}
-		dict := bobadapter.Render(match.Entry, bobadapter.DefaultOptions())
+		dict := bobadapter.RenderEntrySet(matchEntrySet(&match), bobadapter.DefaultOptions())
 		wantParts := []struct {
 			label  string
 			prefix string
@@ -292,7 +306,7 @@ func TestRealLookupsProduceStructure(t *testing.T) {
 					continue
 				}
 				hits++
-				entry := result.Matches[0].Entry
+				entry := primaryEntry(&result.Matches[0])
 				if entry.SenseCount() > 0 {
 					withSenses++
 				}
@@ -335,7 +349,7 @@ func TestRealAudioResolvesFromMDD(t *testing.T) {
 		if err != nil || len(result.Matches) == 0 {
 			continue
 		}
-		entry := result.Matches[0].Entry
+		entry := primaryEntry(&result.Matches[0])
 
 		var withAudio int
 		for _, pronunciation := range entry.Pronunciations {
@@ -384,7 +398,7 @@ func TestUKAndUSAudioDifferOnRealDictionaries(t *testing.T) {
 				continue
 			}
 			var uk, us *entryir.Audio
-			for _, pronunciation := range result.Matches[0].Entry.Pronunciations {
+			for _, pronunciation := range primaryEntry(&result.Matches[0]).Pronunciations {
 				switch pronunciation.AudioRegion {
 				case entryir.RegionUK:
 					uk = pronunciation.Audio
@@ -414,17 +428,20 @@ func TestRedirectsAreFollowed(t *testing.T) {
 	}
 	sawRedirect := false
 	for _, match := range result.Matches {
-		payload, _ := json.Marshal(match.Entry)
+		payload, _ := json.Marshal(match.Records)
 		if strings.Contains(string(payload), "@@@LINK") || strings.Contains(string(payload), "@@LINK") {
 			t.Errorf("%s leaked a redirect stub into the entry", shortName(match.DictionaryTitle))
 		}
-		if match.Entry.Source.RedirectedFrom != "" {
-			sawRedirect = true
-			t.Logf("%s: %q redirected to %q",
-				shortName(match.DictionaryTitle), match.Entry.Source.RedirectedFrom, match.Entry.Source.MatchedKey)
-		}
-		if match.Entry.IsEmpty() {
-			t.Errorf("%s produced an empty entry for 'hello'", shortName(match.DictionaryTitle))
+		for _, record := range match.Records {
+			entry := record.Entry
+			if entry.Source.RedirectedFrom != "" {
+				sawRedirect = true
+				t.Logf("%s: %q redirected to %q",
+					shortName(match.DictionaryTitle), entry.Source.RedirectedFrom, entry.Source.MatchedKey)
+			}
+			if entry.IsEmpty() {
+				t.Errorf("%s produced an empty entry for 'hello'", shortName(match.DictionaryTitle))
+			}
 		}
 	}
 	if !sawRedirect {

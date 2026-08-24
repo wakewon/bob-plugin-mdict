@@ -69,23 +69,56 @@ func DefaultOptions() Options {
 	return Options{IncludeExamples: true, IncludeExtras: true, MaxExamplesPerSense: 8}
 }
 
-// Render converts exactly one dictionary entry into one toDict. Multi-source
-// lookup remains a service capability, but Bob results are intentionally never
-// aggregated across dictionaries.
+// Render is the single-record convenience renderer. RenderEntrySet owns the
+// presentation implementation so single- and multi-record paths cannot drift.
 func Render(entry *entryir.Entry, opts Options) *Dict {
 	if entry == nil {
+		return nil
+	}
+	return RenderEntrySet(&entryir.EntrySet{
+		Headword: entry.Headword,
+		Records:  []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+	}, opts)
+}
+
+// RenderEntrySet renders every semantic record from one exact dictionary key
+// into one Bob card. Record ordinals are shown only when more than one visible
+// record remains after service-level filtering.
+func RenderEntrySet(set *entryir.EntrySet, opts Options) *Dict {
+	if set == nil || len(set.Records) == 0 {
 		return nil
 	}
 	if opts.MaxExamplesPerSense <= 0 {
 		opts.MaxExamplesPerSense = DefaultOptions().MaxExamplesPerSense
 	}
 
-	dict := &Dict{Word: entry.Headword}
-	var pronunciationNotes []string
-	dict.Phonetics, pronunciationNotes = renderPhonetics(entry.Pronunciations)
-	renderEntry(dict, entry, opts)
-	for _, note := range pronunciationNotes {
-		appendTextAddition(dict, "发音说明", note)
+	headword := set.Headword
+	if headword == "" && set.Primary() != nil {
+		headword = set.Primary().Headword
+	}
+	dict := &Dict{Word: headword}
+	multi := len(set.Records) > 1
+	for index, record := range set.Records {
+		if record.Entry == nil {
+			continue
+		}
+		ordinal := ""
+		if multi {
+			value := record.RecordOrdinal
+			if value <= 0 {
+				value = index + 1
+			}
+			ordinal = superscriptOrdinal(value)
+		}
+		phonetics, pronunciationNotes := renderPhonetics(record.Entry.Pronunciations)
+		for i := range phonetics {
+			phonetics[i].Value = appendPhoneticOrdinal(phonetics[i].Value, ordinal)
+		}
+		dict.Phonetics = append(dict.Phonetics, phonetics...)
+		renderEntry(dict, record.Entry, opts, ordinal)
+		for _, note := range pronunciationNotes {
+			appendTextAddition(dict, ordinalLabel(ordinal, "发音说明"), note)
+		}
 	}
 	return dict
 }
@@ -217,7 +250,7 @@ func renderPhonetics(items []entryir.Pronunciation) ([]Phonetic, []string) {
 	return out, notes
 }
 
-func renderEntry(dict *Dict, entry *entryir.Entry, opts Options) {
+func renderEntry(dict *Dict, entry *entryir.Entry, opts Options, ordinal string) {
 	for _, part := range entry.Parts {
 		label := part.POS
 		if label == "" {
@@ -226,6 +259,7 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options) {
 		if part.Grammar != "" {
 			label += " " + part.Grammar
 		}
+		label = ordinalLabel(ordinal, label)
 		for i, sense := range part.Senses {
 			// Bob's parts field is an ordinary array and does not require part
 			// labels to be unique. Giving each top-level sense its own Part lets
@@ -242,32 +276,65 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options) {
 	}
 
 	for _, form := range entry.Forms {
-		dict.Exchanges = append(dict.Exchanges, Exchange{Name: form.Name, Words: form.Words})
+		dict.Exchanges = append(dict.Exchanges, Exchange{Name: ordinalLabel(ordinal, form.Name), Words: form.Words})
 	}
 	if !opts.IncludeExtras {
 		return
 	}
-	appendPhraseAddition(dict, "Phrases", entry.Phrases)
-	appendPhraseAddition(dict, "Idioms", entry.Idioms)
-	appendPhraseAddition(dict, "Phrasal verbs", entry.PhrasalVerbs)
-	appendPhraseAddition(dict, "Derivatives", entry.Derivatives)
+	appendPhraseAddition(dict, ordinalLabel(ordinal, "Phrases"), entry.Phrases)
+	appendPhraseAddition(dict, ordinalLabel(ordinal, "Idioms"), entry.Idioms)
+	appendPhraseAddition(dict, ordinalLabel(ordinal, "Phrasal verbs"), entry.PhrasalVerbs)
+	appendPhraseAddition(dict, ordinalLabel(ordinal, "Derivatives"), entry.Derivatives)
 	seenRelatedWords := make(map[string]struct{}, len(entry.CrossReferences)+len(entry.Related))
-	appendRelatedWordPart(dict, "See also", entry.CrossReferences, seenRelatedWords)
-	appendRelatedWordPart(dict, "Related", entry.Related, seenRelatedWords)
-	appendListAddition(dict, "Collocations", entry.Collocations)
-	appendListAddition(dict, "Synonyms", entry.Synonyms)
-	appendListAddition(dict, "Antonyms", entry.Antonyms)
-	appendListAddition(dict, "Word family", entry.WordFamily)
+	appendRelatedWordPart(dict, ordinalLabel(ordinal, "See also"), entry.CrossReferences, seenRelatedWords)
+	appendRelatedWordPart(dict, ordinalLabel(ordinal, "Related"), entry.Related, seenRelatedWords)
+	appendListAddition(dict, ordinalLabel(ordinal, "Collocations"), entry.Collocations)
+	appendListAddition(dict, ordinalLabel(ordinal, "Synonyms"), entry.Synonyms)
+	appendListAddition(dict, ordinalLabel(ordinal, "Antonyms"), entry.Antonyms)
+	appendListAddition(dict, ordinalLabel(ordinal, "Word family"), entry.WordFamily)
 	for _, note := range entry.UsageNotes {
-		appendTextAddition(dict, "Usage · "+note.Title, note.Body)
+		appendTextAddition(dict, ordinalLabel(ordinal, "Usage · "+note.Title), note.Body)
 	}
 	for _, note := range entry.GrammarNotes {
-		appendTextAddition(dict, "Grammar · "+note.Title, note.Body)
+		appendTextAddition(dict, ordinalLabel(ordinal, "Grammar · "+note.Title), note.Body)
 	}
-	appendTextAddition(dict, "Origin", entry.Etymology)
+	appendTextAddition(dict, ordinalLabel(ordinal, "Origin"), entry.Etymology)
 	for _, section := range entry.Sections {
-		appendTextAddition(dict, section.Title, section.Body)
+		appendTextAddition(dict, ordinalLabel(ordinal, section.Title), section.Body)
 	}
+}
+
+func ordinalLabel(ordinal, label string) string {
+	if ordinal == "" {
+		return label
+	}
+	if label == "" {
+		return ordinal
+	}
+	return ordinal + " " + label
+}
+
+func appendPhoneticOrdinal(value, ordinal string) string {
+	if ordinal == "" {
+		return value
+	}
+	if value == "" {
+		return ordinal
+	}
+	return value + " · " + ordinal
+}
+
+func superscriptOrdinal(value int) string {
+	if value <= 0 {
+		return ""
+	}
+	digits := [...]rune{'⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'}
+	plain := fmt.Sprintf("%d", value)
+	var builder strings.Builder
+	for _, digit := range plain {
+		builder.WriteRune(digits[digit-'0'])
+	}
+	return builder.String()
 }
 
 // renderSense generates presentation numbering from position within the Bob

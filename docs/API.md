@@ -10,14 +10,14 @@ an older plugin.
 
 ---
 
-## `GET /v1/status`
+## `GET /v2/status`
 
 ```json
 {
   "service": "bob-mdict",
   "serviceVersion": "0.1.2",
   "buildCommit": "abcdef1",
-  "apiVersion": "v1",
+  "apiVersion": "v2",
   "platform": "darwin",
   "architecture": "arm64",
   "dictionaryDirectory": "/Users/you/Library/Application Support/bob-mdict/dictionaries",
@@ -37,7 +37,7 @@ port; it is not required to equal the independently packaged plugin commit.
 
 ---
 
-## `GET /v1/dictionaries`
+## `GET /v2/dictionaries`
 
 ```json
 {
@@ -72,7 +72,7 @@ a reason in `diagnostics`; the others stay usable.
 
 ---
 
-## `POST /v1/lookup`
+## `POST /v2/lookup`
 
 ```json
 {
@@ -91,7 +91,7 @@ a reason in `diagnostics`; the others stay usable.
 | Field | Meaning |
 |---|---|
 | `query` | Required. |
-| `format` | `ir` (default) returns the Entry IR only. `bob` adds one `toDict` rendered from the first match. Multiple dictionaries are never aggregated into one Bob card. |
+| `format` | `ir` (default) returns the duplicate-aware EntrySet IR. `bob` adds one `toDict` rendered from the first dictionary match. Multiple dictionaries are never aggregated into one Bob card. |
 | `mode` | `exact` (default) prefers an exactly cased headword, then tries Unicode-normalized and case-insensitive fallback matches. `smart` also returns prefix suggestions on a miss. |
 | `dictionaries` | Restrict and order the search. Empty means all, in registry order. |
 | `limit` | Stop after this many dictionaries answer. |
@@ -104,8 +104,28 @@ match list. An invalid explicit ID returns `404 dictionaryNotFound`; an existing
 but unhealthy ID returns `503 dictionaryUnavailable`; both include a `/list`
 hint. An empty registry returns `503 noDictionaries` with the directory.
 
-Each match carries the dictionary-neutral `entry`; `format: "bob"` adds a
-top-level `bob` object that is a complete `toDict`.
+Each match carries a dictionary-neutral `headword` and `records[]`. Every
+record has a consecutive `recordOrdinal` plus an independently parsed `entry`:
+
+```json
+{
+  "matches": [{
+    "dictionaryId": "2f4c6a8e10b3d597",
+    "dictionaryTitle": "My Local Dictionary",
+    "headword": "lead",
+    "records": [
+      {"recordOrdinal": 1, "entry": {"headword": "lead", "source": {"matchedKey": "lead"}}},
+      {"recordOrdinal": 2, "entry": {"headword": "lead", "source": {"matchedKey": "lead"}}}
+    ]
+  }]
+}
+```
+
+Duplicate expansion happens only after one exact spelling has been selected.
+Resolved byte-identical records are removed, parser-empty records are omitted,
+and the remaining records keep MDX source order. `format: "bob"` adds a
+top-level `bob` object that is a complete single card; record ordinals appear
+only when more than one semantic record remains.
 
 Exact headword spelling is always preferred. Case-insensitive matching is used
 only as a fallback when no exact key exists; NFC and NFD spellings share the
@@ -113,7 +133,7 @@ same canonical query identity without collapsing letter case.
 
 ---
 
-## `POST /v1/rescan`
+## `POST /v2/rescan`
 
 Rediscovers and reindexes. **Takes no arguments** — the directory it walks is
 fixed by configuration, so this endpoint cannot be aimed at the filesystem.
@@ -124,7 +144,7 @@ fixed by configuration, so this endpoint cannot be aimed at the filesystem.
 
 ---
 
-## `GET /v1/resource/{token}`
+## `GET /v2/resource/{token}`
 
 Streams one MDD resource. Tokens come from a lookup response and are AES-GCM
 sealed with a per-process key.

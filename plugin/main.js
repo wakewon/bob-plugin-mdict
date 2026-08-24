@@ -11,7 +11,7 @@
  */
 
 // 插件与本地服务是两个独立升级的组件，靠 apiVersion 约定兼容性。
-var REQUIRED_API_VERSION = 'v1';
+var REQUIRED_API_VERSION = 'v2';
 
 // build-plugin.sh replaces these two markers only in the packaged main.js.
 // They are diagnostic identity, not compatibility gates.
@@ -45,7 +45,7 @@ function getOption(key, fallback) {
     return value;
 }
 
-// normalizeBaseURL 去掉末尾斜杠，避免拼出 //v1/lookup 这种地址。
+// normalizeBaseURL 去掉末尾斜杠，避免拼出 //v2/lookup 这种地址。
 function normalizeBaseURL(raw) {
     var url = String(raw || '').trim();
     if (url === '') {
@@ -203,7 +203,7 @@ function dictionaryListParagraphs(body) {
 function listDictionaries(query, serviceURL) {
     $http.request({
         method: 'GET',
-        url: serviceURL + '/v1/dictionaries',
+        url: serviceURL + '/v2/dictionaries',
         timeout: 15,
         cancelSignal: query.cancelSignal,
         handler: function (resp) {
@@ -248,7 +248,7 @@ function translate(query, completion) {
 
     $http.request({
         method: 'POST',
-        url: serviceURL + '/v1/lookup',
+        url: serviceURL + '/v2/lookup',
         header: { 'Content-Type': 'application/json' },
         body: buildRequestBody(lookupText),
         timeout: 15,
@@ -293,7 +293,7 @@ function pluginValidate(completion) {
 
     $http.request({
         method: 'GET',
-        url: serviceURL + '/v1/status',
+        url: serviceURL + '/v2/status',
         timeout: 10,
         handler: function (resp) {
             if (resp.error) {
@@ -384,7 +384,7 @@ function validateConfiguredDictionary(completion, serviceURL) {
     }
     $http.request({
         method: 'GET',
-        url: serviceURL + '/v1/dictionaries',
+        url: serviceURL + '/v2/dictionaries',
         timeout: 10,
         handler: function (resp) {
             if (resp.error) {

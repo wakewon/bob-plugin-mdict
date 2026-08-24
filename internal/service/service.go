@@ -89,7 +89,7 @@ func (s *Service) Rescan() error {
 
 	s.registry.LoadAll()
 	// Resolve profiles up front so the first user lookup is not slowed by
-	// fingerprinting, and so /v1/dictionaries can report them.
+	// fingerprinting, and so /v2/dictionaries can report them.
 	for _, dict := range s.registry.All() {
 		s.profileFor(dict)
 	}
@@ -126,17 +126,22 @@ func (s *Service) detectProfile(dict *mdict.Dictionary) *parser.Profile {
 		return nil
 	}
 	for _, word := range sampleWords {
-		result, err := dict.Lookup(word)
-		if err != nil || len(result.HTML) < 200 {
-			continue
-		}
-		doc, err := html.Parse(bytes.NewReader(result.HTML))
+		set, err := dict.LookupAll(word)
 		if err != nil {
 			continue
 		}
-		title := info.Title + " " + path.Base(dict.SourcePath())
-		if profile := profiles.Match(title, doc); profile != nil {
-			return profile
+		for _, result := range set.Records {
+			if len(result.HTML) < 200 {
+				continue
+			}
+			doc, parseErr := html.Parse(bytes.NewReader(result.HTML))
+			if parseErr != nil {
+				continue
+			}
+			title := info.Title + " " + path.Base(dict.SourcePath())
+			if profile := profiles.Match(title, doc); profile != nil {
+				return profile
+			}
 		}
 	}
 	return nil
@@ -163,11 +168,29 @@ const (
 
 // Match is one dictionary's answer to a lookup.
 type Match struct {
-	DictionaryID    string         `json:"dictionaryId"`
-	DictionaryTitle string         `json:"dictionaryTitle"`
-	Entry           *entryir.Entry `json:"entry"`
+	DictionaryID    string                `json:"dictionaryId"`
+	DictionaryTitle string                `json:"dictionaryTitle"`
+	Headword        string                `json:"headword"`
+	Records         []entryir.EntryRecord `json:"records"`
 	// ParseMillis is how long parsing took, for diagnostics.
 	ParseMillis float64 `json:"parseMillis,omitempty"`
+}
+
+func matchFromSet(dict *mdict.Dictionary, set *entryir.EntrySet, parseMillis float64) Match {
+	return Match{
+		DictionaryID:    dict.ID(),
+		DictionaryTitle: dict.Info().Title,
+		Headword:        set.Headword,
+		Records:         set.Records,
+		ParseMillis:     parseMillis,
+	}
+}
+
+func (m *Match) entrySet() *entryir.EntrySet {
+	if m == nil {
+		return nil
+	}
+	return &entryir.EntrySet{Headword: m.Headword, Records: m.Records}
 }
 
 // Result is the full answer to a lookup request.
@@ -252,7 +275,7 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 		// Bob presents one result card per configured service instance. Even
 		// when an API client asks the server for several matches, the Bob view is
 		// deliberately rendered from the first match only.
-		result.Bob = bobadapter.Render(result.Matches[0].Entry, opts.BobOptions)
+		result.Bob = bobadapter.RenderEntrySet(result.Matches[0].entrySet(), opts.BobOptions)
 	}
 	return result, nil
 }
@@ -268,53 +291,63 @@ func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOpt
 	cached, ok := s.cache.get(cacheKey)
 	s.cacheMu.Unlock()
 	if ok {
-		return Match{
-			DictionaryID:    dict.ID(),
-			DictionaryTitle: dict.Info().Title,
-			Entry:           cached,
-		}, true
+		return matchFromSet(dict, cached, 0), true
 	}
 
-	lookupResult, err := dict.Lookup(query)
+	lookupSet, err := dict.LookupAll(query)
 	if err != nil {
 		return Match{}, false
 	}
 
 	started := time.Now()
-	entry, err := parser.Parse(lookupResult.HTML, parser.Options{
-		Headword:            lookupResult.MatchedKey,
-		Profile:             s.profileFor(dict),
-		Audio:               s.audioResolver(dict),
-		MaxExamplesPerSense: opts.MaxExamples,
-		Debug:               opts.Debug,
-	})
-	if err != nil {
+	info := dict.Info()
+	profile := s.profileFor(dict)
+	profileID := "generic"
+	if profile != nil {
+		profileID = profile.ID
+	}
+	set := &entryir.EntrySet{}
+	for _, lookupResult := range lookupSet.Records {
+		entry, parseErr := parser.Parse(lookupResult.HTML, parser.Options{
+			Headword:            lookupResult.MatchedKey,
+			Profile:             profile,
+			Audio:               s.audioResolver(dict),
+			MaxExamplesPerSense: opts.MaxExamples,
+			Debug:               opts.Debug,
+		})
+		if parseErr != nil {
+			continue
+		}
+		entry.Source = entryir.Source{
+			DictionaryID:      info.ID,
+			DictionaryTitle:   info.Title,
+			MatchedKey:        lookupResult.MatchedKey,
+			RedirectedFrom:    lookupResult.RedirectedFrom,
+			Profile:           profileID,
+			RawRecordOrdinal:  lookupResult.RawRecordOrdinal,
+			RecordStartOffset: lookupResult.RecordStartOffset,
+		}
+		if entry.IsEmpty() {
+			continue
+		}
+		if set.Headword == "" {
+			set.Headword = entry.Headword
+		}
+		set.Records = append(set.Records, entryir.EntryRecord{
+			RecordOrdinal: len(set.Records) + 1,
+			Entry:         entry,
+		})
+	}
+	if len(set.Records) == 0 {
 		return Match{}, false
 	}
 	elapsed := time.Since(started)
 
-	info := dict.Info()
-	entry.Source = entryir.Source{
-		DictionaryID:    info.ID,
-		DictionaryTitle: info.Title,
-		MatchedKey:      lookupResult.MatchedKey,
-		RedirectedFrom:  lookupResult.RedirectedFrom,
-		Profile:         s.ProfileID(dict),
-	}
-	if entry.IsEmpty() {
-		return Match{}, false
-	}
-
 	s.cacheMu.Lock()
-	s.cache.put(cacheKey, entry)
+	s.cache.put(cacheKey, set)
 	s.cacheMu.Unlock()
 
-	return Match{
-		DictionaryID:    info.ID,
-		DictionaryTitle: info.Title,
-		Entry:           entry,
-		ParseMillis:     float64(elapsed.Microseconds()) / 1000,
-	}, true
+	return matchFromSet(dict, set, float64(elapsed.Microseconds())/1000), true
 }
 
 func (s *Service) suggest(dicts []*mdict.Dictionary, query string, limit int) []string {
@@ -362,7 +395,7 @@ func (s *Service) audioResolver(dict *mdict.Dictionary) parser.AudioResolver {
 		return &entryir.Audio{
 			ResourceRef: ref,
 			Token:       token,
-			URL:         s.baseURL + "/v1/resource/" + url.PathEscape(token),
+			URL:         s.baseURL + "/v2/resource/" + url.PathEscape(token),
 			MIMEType:    mdict.MIMEType(ref),
 		}
 	})

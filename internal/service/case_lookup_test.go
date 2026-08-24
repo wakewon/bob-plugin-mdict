@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,6 +26,15 @@ func syntheticCaseHTML(headword, definition string, examples ...string) string {
 	}
 	builder.WriteString("</div></article>")
 	return builder.String()
+}
+
+func syntheticMultiHTML(headword, pos, ipa, definition string) string {
+	return `<article><h1>` + headword + `</h1><span class="pron">/` + ipa +
+		`/</span><div class="sense"><span class="pos">` + pos +
+		`</span><span class="definition">` + definition + `</span>` +
+		`<span class="example">synthetic ` + pos + ` example</span></div>` +
+		`<span class="form">synthetic-` + pos + `</span>` +
+		`<span class="xref">synthetic-` + pos + `-related</span></article>`
 }
 
 func newSyntheticCaseService(t *testing.T, entries []testmdx.Entry) *service.Service {
@@ -57,10 +67,10 @@ func lookupSynthetic(t *testing.T, svc *service.Service, query string, opts serv
 }
 
 func firstDefinition(match *service.Match) string {
-	if len(match.Entry.Parts) == 0 || len(match.Entry.Parts[0].Senses) == 0 {
+	if len(match.Records) == 0 || match.Records[0].Entry == nil || len(match.Records[0].Entry.Parts) == 0 || len(match.Records[0].Entry.Parts[0].Senses) == 0 {
 		return ""
 	}
-	return match.Entry.Parts[0].Senses[0].Definition
+	return match.Records[0].Entry.Parts[0].Senses[0].Definition
 }
 
 func TestServiceCachePreservesCaseSensitiveEntryIdentity(t *testing.T) {
@@ -91,14 +101,15 @@ func TestServiceCachePreservesCaseSensitiveEntryIdentity(t *testing.T) {
 			var firstEntry any
 			for i, query := range order.queries {
 				match := lookupSynthetic(t, svc, query, service.LookupOptions{Mode: service.ModeExact})
-				if match.Entry.Source.MatchedKey != order.keys[i] || firstDefinition(match) != order.defs[i] {
+				entry := match.Records[0].Entry
+				if entry.Source.MatchedKey != order.keys[i] || firstDefinition(match) != order.defs[i] {
 					t.Errorf("lookup %d %q = key %q definition %q, want %q %q", i, query,
-						match.Entry.Source.MatchedKey, firstDefinition(match), order.keys[i], order.defs[i])
+						entry.Source.MatchedKey, firstDefinition(match), order.keys[i], order.defs[i])
 				}
 				if i == 0 {
-					firstEntry = match.Entry
+					firstEntry = entry
 				}
-				if i == 2 && firstEntry != match.Entry {
+				if i == 2 && firstEntry != entry {
 					t.Error("third lookup did not return its own cached Entry")
 				}
 			}
@@ -113,14 +124,14 @@ func TestServiceCaseFallbackAndUnicodeCanonicalIdentity(t *testing.T) {
 		{Key: "café", HTML: syntheticCaseHTML("café", "synthetic lowercase accent definition")},
 	})
 
-	if match := lookupSynthetic(t, svc, "china", service.LookupOptions{}); match.Entry.Source.MatchedKey != "China" {
-		t.Fatalf("case fallback matched %q, want China", match.Entry.Source.MatchedKey)
+	if match := lookupSynthetic(t, svc, "china", service.LookupOptions{}); match.Records[0].Entry.Source.MatchedKey != "China" {
+		t.Fatalf("case fallback matched %q, want China", match.Records[0].Entry.Source.MatchedKey)
 	}
 	for _, tc := range []struct{ query, key string }{
 		{"Café", "Café"}, {"Cafe\u0301", "Café"}, {"café", "café"}, {"cafe\u0301", "café"},
 	} {
-		if match := lookupSynthetic(t, svc, tc.query, service.LookupOptions{}); match.Entry.Source.MatchedKey != tc.key {
-			t.Errorf("Lookup(%q) matched %q, want %q", tc.query, match.Entry.Source.MatchedKey, tc.key)
+		if match := lookupSynthetic(t, svc, tc.query, service.LookupOptions{}); match.Records[0].Entry.Source.MatchedKey != tc.key {
+			t.Errorf("Lookup(%q) matched %q, want %q", tc.query, match.Records[0].Entry.Source.MatchedKey, tc.key)
 		}
 	}
 }
@@ -156,14 +167,14 @@ func TestEntryCacheStillSeparatesParserOptions(t *testing.T) {
 	one := lookupSynthetic(t, svc, "China", service.LookupOptions{MaxExamples: 1})
 	two := lookupSynthetic(t, svc, "China", service.LookupOptions{MaxExamples: 2})
 	debug := lookupSynthetic(t, svc, "China", service.LookupOptions{MaxExamples: 2, Debug: true})
-	if got := len(one.Entry.Parts[0].Senses[0].Examples); got != 1 {
+	if got := len(one.Records[0].Entry.Parts[0].Senses[0].Examples); got != 1 {
 		t.Fatalf("MaxExamples=1 returned %d", got)
 	}
-	if got := len(two.Entry.Parts[0].Senses[0].Examples); got != 2 {
+	if got := len(two.Records[0].Entry.Parts[0].Senses[0].Examples); got != 2 {
 		t.Fatalf("MaxExamples=2 returned %d", got)
 	}
-	if len(two.Entry.Notes) != 0 || len(debug.Entry.Notes) == 0 {
-		t.Fatalf("debug cache isolation failed: normal=%v debug=%v", two.Entry.Notes, debug.Entry.Notes)
+	if len(two.Records[0].Entry.Notes) != 0 || len(debug.Records[0].Entry.Notes) == 0 {
+		t.Fatalf("debug cache isolation failed: normal=%v debug=%v", two.Records[0].Entry.Notes, debug.Records[0].Entry.Notes)
 	}
 }
 
@@ -186,7 +197,140 @@ func TestBobPresentationOptionsDoNotBelongInEntryCacheIdentity(t *testing.T) {
 	if first.Bob == nil || second.Bob == nil || len(first.Bob.Additions) != 0 || len(second.Bob.Additions) != 1 {
 		t.Fatalf("Bob-only options polluted cached Entry rendering: hidden=%+v visible=%+v", first.Bob, second.Bob)
 	}
-	if first.Matches[0].Entry != second.Matches[0].Entry {
+	if first.Matches[0].Records[0].Entry != second.Matches[0].Records[0].Entry {
 		t.Fatal("Bob-only presentation options unnecessarily split the Entry cache")
+	}
+}
+
+func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
+	svc := newSyntheticCaseService(t, []testmdx.Entry{
+		{Key: "flimber", HTML: syntheticMultiHTML("flimber", "noun", "ˈælfə", "synthetic noun definition")},
+		{Key: "flimber", HTML: `<div class="technical"></div>`},
+		{Key: "flimber", HTML: syntheticMultiHTML("flimber", "verb", "ˈbeɪtə", "synthetic verb definition")},
+		{Key: "flimber", HTML: syntheticMultiHTML("flimber", "adjective", "ˈɡæmə", "synthetic adjective definition")},
+	})
+	result, err := svc.Lookup("flimber", service.LookupOptions{
+		Limit: 1, RenderBob: true, BobOptions: bobadapter.DefaultOptions(), Debug: true,
+	})
+	if err != nil || len(result.Matches) != 1 {
+		t.Fatalf("Lookup: matches=%d err=%v", len(result.Matches), err)
+	}
+	match := &result.Matches[0]
+	if match.Headword != "flimber" || len(match.Records) != 3 {
+		t.Fatalf("entry set = %+v", match)
+	}
+	for index, wantPOS := range []string{"noun", "verb", "adjective"} {
+		record := match.Records[index]
+		if record.RecordOrdinal != index+1 || record.Entry.Parts[0].POS != wantPOS {
+			t.Errorf("record %d = %+v, want visible ordinal %d %s", index, record, index+1, wantPOS)
+		}
+	}
+	if match.Records[0].Entry.Source.RawRecordOrdinal != 1 ||
+		match.Records[1].Entry.Source.RawRecordOrdinal != 3 ||
+		match.Records[2].Entry.Source.RawRecordOrdinal != 4 {
+		t.Fatalf("raw provenance was renumbered: %+v", match.Records)
+	}
+	if result.Bob == nil || len(result.Bob.Parts) != 3 ||
+		result.Bob.Parts[0].Part != "¹ noun" || result.Bob.Parts[1].Part != "² verb" || result.Bob.Parts[2].Part != "³ adjective" {
+		t.Fatalf("multi-record Bob parts = %+v", result.Bob)
+	}
+	if len(result.Bob.Phonetics) != 3 || result.Bob.Phonetics[0].Value != "ˈælfə · 未标口音 · ¹" ||
+		result.Bob.Phonetics[1].Value != "ˈbeɪtə · 未标口音 · ²" {
+		t.Fatalf("multi-record Bob phonetics = %+v", result.Bob.Phonetics)
+	}
+	names := make(map[string]bool)
+	for _, addition := range result.Bob.Additions {
+		names[addition.Name] = true
+	}
+	for _, name := range []string{"Examples · ¹ noun 1", "Examples · ² verb 1", "Examples · ³ adjective 1"} {
+		if !names[name] {
+			t.Errorf("missing %q in %+v", name, result.Bob.Additions)
+		}
+	}
+
+	second, err := svc.Lookup("flimber", service.LookupOptions{Limit: 1, Debug: true})
+	if err != nil || second.Matches[0].Records[0].Entry != match.Records[0].Entry ||
+		second.Matches[0].Records[2].Entry != match.Records[2].Entry {
+		t.Fatal("cache hit reparsed or lost the complete EntrySet")
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Matches []map[string]json.RawMessage `json:"matches"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil || len(envelope.Matches) != 1 {
+		t.Fatalf("decode v2 payload: %v, %s", err, payload)
+	}
+	if _, legacy := envelope.Matches[0]["entry"]; legacy {
+		t.Fatalf("v2 payload retained legacy matches[].entry: %s", payload)
+	}
+	if _, ok := envelope.Matches[0]["records"]; !ok {
+		t.Fatalf("v2 payload omitted matches[].records: %s", payload)
+	}
+}
+
+func TestServiceFiltersExactAndRedirectDuplicatesWithoutVisibleOrdinal(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []testmdx.Entry
+	}{
+		{
+			name: "byte-identical exact records",
+			entries: []testmdx.Entry{
+				{Key: "flimber", HTML: syntheticCaseHTML("flimber", "synthetic shared definition")},
+				{Key: "flimber", HTML: syntheticCaseHTML("flimber", "synthetic shared definition")},
+			},
+		},
+		{
+			name: "two redirects to the same target",
+			entries: []testmdx.Entry{
+				{Key: "flimber", HTML: "@@@LINK=target\x00"},
+				{Key: "flimber", HTML: "@@@LINK=target\x00"},
+				{Key: "target", HTML: syntheticCaseHTML("target", "synthetic redirected definition")},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newSyntheticCaseService(t, tc.entries)
+			result, err := svc.Lookup("flimber", service.LookupOptions{
+				Limit: 1, RenderBob: true, BobOptions: bobadapter.DefaultOptions(),
+			})
+			if err != nil || len(result.Matches) != 1 || len(result.Matches[0].Records) != 1 {
+				t.Fatalf("filtered result = %+v err=%v", result, err)
+			}
+			payload, _ := json.Marshal(result.Bob)
+			if strings.Contains(string(payload), "¹") {
+				t.Fatalf("single visible record exposed ordinal: %s", payload)
+			}
+		})
+	}
+}
+
+func TestServiceMultiRecordCaseResolutionDoesNotMixSpellings(t *testing.T) {
+	svc := newSyntheticCaseService(t, []testmdx.Entry{
+		{Key: "China", HTML: syntheticCaseHTML("China", "title definition A")},
+		{Key: "China", HTML: syntheticCaseHTML("China", "title definition B")},
+		{Key: "china", HTML: syntheticCaseHTML("china", "lower definition C")},
+		{Key: "china", HTML: syntheticCaseHTML("china", "lower definition D")},
+	})
+	for _, tc := range []struct {
+		query, matched, prefix string
+	}{
+		{"China", "China", "title"},
+		{"china", "china", "lower"},
+		{"CHINA", "china", "lower"},
+	} {
+		match := lookupSynthetic(t, svc, tc.query, service.LookupOptions{})
+		if len(match.Records) != 2 {
+			t.Fatalf("Lookup(%q) records = %d", tc.query, len(match.Records))
+		}
+		for _, record := range match.Records {
+			if record.Entry.Source.MatchedKey != tc.matched || !strings.HasPrefix(record.Entry.Parts[0].Senses[0].Definition, tc.prefix) {
+				t.Errorf("Lookup(%q) mixed spelling groups: %+v", tc.query, match.Records)
+			}
+		}
 	}
 }

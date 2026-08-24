@@ -25,7 +25,7 @@ fully offline and with the real human recordings supplied by your dictionaries.
 
 ```text
 Bob plugin → http://127.0.0.1:15321 → MDX/MDD → semantic parser
-                                              → Entry IR → Bob toDict
+                                              → EntrySet IR → Bob toDict
 ```
 
 `bob-mdict` is a native Go service that owns the indexes, parsing and MDD
@@ -157,7 +157,7 @@ The local HTTP API is documented in [docs/API.md](docs/API.md).
 
 ```bash
 brew services start bob-mdict
-curl http://127.0.0.1:15321/v1/status
+curl http://127.0.0.1:15321/v2/status
 ```
 
 Confirm that the plugin's Service URL uses the daemon's actual port. The status

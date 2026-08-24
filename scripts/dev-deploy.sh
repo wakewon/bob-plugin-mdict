@@ -55,7 +55,7 @@ echo "==> build: bob-mdict $VERSION ($COMMIT)"
 
 BUILT_IDENTITY=$(./release/bob-mdict-darwin-"$(uname -m | sed 's/x86_64/amd64/')" --version)
 case "$BUILT_IDENTITY" in
-    *"$VERSION ($COMMIT)"*"api=v1"*) ;;
+    *"$VERSION ($COMMIT)"*"api=v2"*) ;;
     *)
         echo "错误: 构建产物 identity 不符合预期: $BUILT_IDENTITY"
         exit 1
@@ -67,7 +67,7 @@ PREFIX="$DEV_PREFIX" ./packaging/install.sh
 
 STATUS_JSON=""
 for _ in $(seq 1 60); do
-    STATUS_JSON=$(curl -fsS --max-time 1 "http://127.0.0.1:$PORT/v1/status" 2>/dev/null || true)
+    STATUS_JSON=$(curl -fsS --max-time 1 "http://127.0.0.1:$PORT/v2/status" 2>/dev/null || true)
     if [ -n "$STATUS_JSON" ]; then
         break
     fi
@@ -81,9 +81,9 @@ fi
 ACTUAL_VERSION=$(printf '%s' "$STATUS_JSON" | jq -r '.serviceVersion // ""')
 ACTUAL_COMMIT=$(printf '%s' "$STATUS_JSON" | jq -r '.buildCommit // ""')
 ACTUAL_API=$(printf '%s' "$STATUS_JSON" | jq -r '.apiVersion // ""')
-if [ "$ACTUAL_VERSION" != "$VERSION" ] || [ "$ACTUAL_COMMIT" != "$COMMIT" ] || [ "$ACTUAL_API" != "v1" ]; then
+if [ "$ACTUAL_VERSION" != "$VERSION" ] || [ "$ACTUAL_COMMIT" != "$COMMIT" ] || [ "$ACTUAL_API" != "v2" ]; then
     echo "错误: runtime identity 与 repository/build 不一致。"
-    printf '      expected: version=%s commit=%s api=v1\n' "$VERSION" "$COMMIT"
+    printf '      expected: version=%s commit=%s api=v2\n' "$VERSION" "$COMMIT"
     printf '      actual:   version=%s commit=%s api=%s\n' "$ACTUAL_VERSION" "$ACTUAL_COMMIT" "$ACTUAL_API"
     exit 1
 fi
@@ -97,7 +97,7 @@ fi
 
 # Lightweight real HTTP smoke test; this reads registry metadata only and does
 # not write dictionary data or touch the user's dictionary directory.
-curl -fsS --max-time 5 "http://127.0.0.1:$PORT/v1/dictionaries" | jq -e '.dictionaries | type == "array"' >/dev/null
+curl -fsS --max-time 5 "http://127.0.0.1:$PORT/v2/dictionaries" | jq -e '.dictionaries | type == "array"' >/dev/null
 
 echo "==> runtime verified"
 printf 'Repository HEAD: %s\n' "$(git rev-parse HEAD)"

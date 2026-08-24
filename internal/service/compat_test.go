@@ -56,7 +56,7 @@ func TestCompatibilityMatrix(t *testing.T) {
 			if err != nil || len(result.Matches) == 0 {
 				continue
 			}
-			entry := result.Matches[0].Entry
+			entry := primaryEntry(&result.Matches[0])
 			mark("Exact lookup", true)
 			mark("HTML decode", entry.SenseCount() > 0 || len(entry.Sections) > 0)
 			mark("Redirects", entry.Source.RedirectedFrom != "")
@@ -105,7 +105,7 @@ func TestCompatibilityMatrix(t *testing.T) {
 			if err != nil || len(result.Matches) == 0 {
 				continue
 			}
-			entry := result.Matches[0].Entry
+			entry := primaryEntry(&result.Matches[0])
 			if len(entry.Synonyms) > 0 || len(entry.WordFamily) > 0 {
 				crossRefs = true
 				break
@@ -186,8 +186,10 @@ func probeRawContains(svc *service.Service, dictionaryID string, probes []string
 		if err != nil || len(result.Matches) == 0 {
 			continue
 		}
-		if strings.Contains(strings.ToLower(entrySignature(result.Matches[0].Entry)), strings.ToLower(marker)) {
-			return true
+		for _, record := range result.Matches[0].Records {
+			if strings.Contains(strings.ToLower(entrySignature(record.Entry)), strings.ToLower(marker)) {
+				return true
+			}
 		}
 	}
 	return false

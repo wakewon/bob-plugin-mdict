@@ -75,6 +75,9 @@ BOB_MDICT_MATRIX_OUT=/tmp/out \
 - **Case-sensitive headwords are preserved.** An exactly cased key wins;
   case-insensitive matching is used only after an exact miss. Canonically
   equivalent NFC/NFD input shares identity without folding case.
+- **Duplicate exact keys preserve record boundaries.** Resolved byte-identical
+  records are safely deduplicated; every remaining non-empty record is parsed
+  independently and shown in one Bob card with superscript record ordinals.
 
 ## Performance
 

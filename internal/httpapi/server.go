@@ -36,12 +36,12 @@ func New(svc *service.Service, log *slog.Logger) *Server {
 // Handler builds the routed handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/status", s.handleStatus)
-	mux.HandleFunc("GET /v1/dictionaries", s.handleDictionaries)
-	mux.HandleFunc("POST /v1/lookup", s.handleLookup)
-	mux.HandleFunc("POST /v1/rescan", s.handleRescan)
-	mux.HandleFunc("GET /v1/resource/{token}", s.handleResource)
-	mux.HandleFunc("HEAD /v1/resource/{token}", s.handleResource)
+	mux.HandleFunc("GET /v2/status", s.handleStatus)
+	mux.HandleFunc("GET /v2/dictionaries", s.handleDictionaries)
+	mux.HandleFunc("POST /v2/lookup", s.handleLookup)
+	mux.HandleFunc("POST /v2/rescan", s.handleRescan)
+	mux.HandleFunc("GET /v2/resource/{token}", s.handleResource)
+	mux.HandleFunc("HEAD /v2/resource/{token}", s.handleResource)
 	return s.withGuards(mux)
 }
 
@@ -182,7 +182,7 @@ func (s *Server) handleDictionaries(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// LookupRequest is the body of POST /v1/lookup.
+// LookupRequest is the body of POST /v2/lookup.
 type LookupRequest struct {
 	Query string `json:"query"`
 	// Dictionaries restricts the search; empty means every dictionary.
