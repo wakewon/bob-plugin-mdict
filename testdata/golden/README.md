@@ -1,9 +1,13 @@
 # Parser golden fixtures
 
-Every file here is **synthetic**. The HTML reproduces the *structural* patterns
-found in real MDict dictionaries — class names, nesting, the way translations
-and audio links are interleaved — but all headwords, definitions and examples
-are invented for this repository.
+Every file here is **synthetic and constructed from scratch for one test**. The
+HTML retains only the selectors/classes and minimal DOM relationships a parser
+rule needs. It does not copy a real entry skeleton and replace its words.
+
+Headwords, definitions, translations, examples and `sound://synthetic/...`
+resource paths are invented for this repository. Publisher stylesheets,
+internal IDs, original resource directories, UI chrome and unrelated sections
+must not appear.
 
 No dictionary content from any commercial publisher is stored in this
 repository, in the plugin package, in the server binary, or in any release

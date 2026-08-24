@@ -10,7 +10,7 @@ func TestTokenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Ref{DictionaryID: "abc123", ResourceRef: `sound://uk/hello__gb_1.mp3`}
+	want := Ref{DictionaryID: "abc123", ResourceRef: `sound://synthetic/uk/example.mp3`}
 	token, err := tokenizer.Mint(want)
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestTokenRoundTrip(t *testing.T) {
 // TestTokenIsOpaque checks that the token does not disclose what it points at.
 func TestTokenIsOpaque(t *testing.T) {
 	tokenizer, _ := NewTokenizer()
-	token, _ := tokenizer.Mint(Ref{DictionaryID: "abc123", ResourceRef: "sound://uk/secret.mp3"})
+	token, _ := tokenizer.Mint(Ref{DictionaryID: "abc123", ResourceRef: "sound://synthetic/uk/secret.mp3"})
 	for _, fragment := range []string{"abc123", "secret", "sound", "mp3"} {
 		if strings.Contains(token, fragment) {
 			t.Errorf("token %q leaks %q", token, fragment)
@@ -39,7 +39,7 @@ func TestTokenIsOpaque(t *testing.T) {
 // a client cannot craft a token, nor edit one it was given.
 func TestForgedTokensAreRejected(t *testing.T) {
 	tokenizer, _ := NewTokenizer()
-	valid, _ := tokenizer.Mint(Ref{DictionaryID: "abc123", ResourceRef: "sound://uk/a.mp3"})
+	valid, _ := tokenizer.Mint(Ref{DictionaryID: "abc123", ResourceRef: "sound://synthetic/uk/a.mp3"})
 
 	bad := []string{
 		"",

@@ -22,7 +22,7 @@ type Ref struct {
 	// DictionaryID scopes the reference. A token minted for one dictionary can
 	// never address another.
 	DictionaryID string `json:"d"`
-	// ResourceRef is the MDD-internal key, e.g. "sound://uk/hello__gb_1.mp3".
+	// ResourceRef is the MDD-internal key, e.g. "sound://synthetic/uk/example.mp3" in tests.
 	// It is an index key, never a filesystem path.
 	ResourceRef string `json:"r"`
 }

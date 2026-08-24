@@ -5,9 +5,11 @@ package mdict
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -102,12 +104,61 @@ func (d *Dictionary) SourcePath() string { return d.mdxPath }
 // MDDPaths returns the MDD volume chain.
 func (d *Dictionary) MDDPaths() []string { return append([]string(nil), d.mddPaths...) }
 
-// stableID derives a short, path-independent-looking identifier. It hashes the
-// absolute path so IDs stay stable across restarts, but the path itself is not
-// recoverable from the ID that leaves the process.
+const dictionaryFingerprintSampleSize int64 = 64 << 10
+
+// stableID derives a short path-independent content fingerprint. It samples
+// the MDX header and three spread-out file regions plus file size: moving the
+// dictionary or renaming either its folder or MDX file leaves the ID unchanged,
+// while different editions normally differ without hashing a multi-gigabyte
+// dictionary or any MDD volume.
 func stableID(mdxPath string) string {
-	sum := sha256.Sum256([]byte(mdxPath))
-	return hex.EncodeToString(sum[:])[:12]
+	hash := sha256.New()
+	_, _ = io.WriteString(hash, "bob-mdict-id-v2\x00")
+	info, statErr := os.Stat(mdxPath)
+	var size int64
+	if statErr == nil {
+		size = info.Size()
+	}
+	var encoded [8]byte
+	binary.BigEndian.PutUint64(encoded[:], uint64(size))
+	_, _ = hash.Write(encoded[:])
+
+	file, err := os.Open(mdxPath)
+	if err == nil {
+		defer file.Close()
+		last := size - dictionaryFingerprintSampleSize
+		if last < 0 {
+			last = 0
+		}
+		offsets := []int64{0, size / 3, (size * 2) / 3, last}
+		seen := make(map[int64]struct{}, len(offsets))
+		buffer := make([]byte, dictionaryFingerprintSampleSize)
+		for _, offset := range offsets {
+			if _, duplicate := seen[offset]; duplicate {
+				continue
+			}
+			seen[offset] = struct{}{}
+			binary.BigEndian.PutUint64(encoded[:], uint64(offset))
+			_, _ = hash.Write(encoded[:])
+			read, readErr := file.ReadAt(buffer, offset)
+			if read > 0 {
+				_, _ = hash.Write(buffer[:read])
+			}
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				_, _ = io.WriteString(hash, "read-error")
+			}
+		}
+	} else {
+		// The entry remains listable as unavailable. This fallback intentionally
+		// avoids the path; size and modtime are the only obtainable file facts.
+		_, _ = io.WriteString(hash, "unreadable")
+		if info != nil {
+			binary.BigEndian.PutUint64(encoded[:], uint64(info.ModTime().UnixNano()))
+			_, _ = hash.Write(encoded[:])
+		}
+	}
+
+	return hex.EncodeToString(hash.Sum(nil))[:16]
 }
 
 // Load opens the MDX and its MDD volumes and builds all indexes. It is safe to
@@ -331,7 +382,7 @@ func (d *Dictionary) findEntry(word string) (*mdx.MDictKeywordEntry, string, boo
 	return nil, "", false
 }
 
-// Resource resolves an MDD resource reference such as "sound://uk/hello.mp3"
+// Resource resolves an MDD resource reference such as "sound://synthetic/uk/example.mp3"
 // to its raw bytes. Lookup is O(1) against the prebuilt volume index.
 func (d *Dictionary) Resource(ref string) ([]byte, error) {
 	if err := d.Load(); err != nil {

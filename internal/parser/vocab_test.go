@@ -12,7 +12,7 @@ func TestCanonicalPOS(t *testing.T) {
 		"noun": "noun", "N-COUNT": "noun", "N-SING": "noun", "V-ERG": "verb",
 		"ADJ-GRADED": "adjective", "adj.": "adjective", "ADV": "adverb",
 		"名词": "noun", "动词": "verb", "形容词": "adjective",
-		"PHRASE": "phrase", "exclamation": "interjection", "modal verb": "modal verb",
+		"PHRASE": "", "exclamation": "interjection", "modal verb": "modal verb",
 		// Prose is not a part of speech and must not be coerced into one.
 		"to leave someone behind": "",
 		"":                        "",
@@ -21,6 +21,20 @@ func TestCanonicalPOS(t *testing.T) {
 	for input, want := range cases {
 		if got := CanonicalPOS(input); got != want {
 			t.Errorf("CanonicalPOS(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestClassifySemanticLabel(t *testing.T) {
+	cases := map[string]SemanticLabel{
+		"See also": LabelCrossReference, "Cross-reference": LabelCrossReference,
+		"Related": LabelRelated, "PHRASE": LabelPhrase, "Idiom": LabelIdiom,
+		"Phrasal verb": LabelPhrasalVerb, "Derivatives": LabelDerivative,
+		"Synonym / Antonym section": LabelSynonyms, "noun": "", "PARTICLE-X": "",
+	}
+	for input, want := range cases {
+		if got := ClassifySemanticLabel(input); got != want {
+			t.Errorf("ClassifySemanticLabel(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
@@ -52,13 +66,13 @@ func TestDetectRegion(t *testing.T) {
 	}{
 		{"british class", []string{"class=speaker brefile"}, entryir.RegionUK},
 		{"american class", []string{"class=speaker amefile"}, entryir.RegionUS},
-		{"uk path", []string{"sound://uk/hello__gb_1.mp3"}, entryir.RegionUK},
-		{"us path", []string{"sound://us/hello__us_1.mp3"}, entryir.RegionUS},
-		{"breprons path", []string{"sound://media/english/breprons/a.mp3"}, entryir.RegionUK},
-		{"ameprons path", []string{"sound://media/english/ameprons/a.mp3"}, entryir.RegionUS},
+		{"uk path", []string{"sound://synthetic/uk/clip.mp3"}, entryir.RegionUK},
+		{"us path", []string{"sound://synthetic/us/clip.mp3"}, entryir.RegionUS},
+		{"breprons path", []string{"sound://synthetic/breprons/clip.mp3"}, entryir.RegionUK},
+		{"ameprons path", []string{"sound://synthetic/ameprons/clip.mp3"}, entryir.RegionUS},
 		{"collins type class", []string{"pron type_uk"}, entryir.RegionUK},
 		// No evidence at all must stay unclassified rather than defaulting.
-		{"no evidence", []string{"sound://COLmp3/00016.mp3"}, entryir.RegionOther},
+		{"no evidence", []string{"sound://synthetic/audio/clip.mp3"}, entryir.RegionOther},
 		{"empty", []string{""}, entryir.RegionOther},
 		// "us" inside an unrelated word must not count as an American marker.
 		{"false positive guard", []string{"thesaurus because campus"}, entryir.RegionOther},

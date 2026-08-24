@@ -28,11 +28,11 @@ func TestUKAndUSAudioAreNotShared(t *testing.T) {
 	markup := []byte(`
 		<span class="Head">
 		  <span class="HWD">flimber</span>
-		  <a class="PronCodes" href="sound://media/english/ameProns/flimber1.mp3">
+		  <a class="PronCodes" href="sound://synthetic/ameProns/wrong-wrapper.mp3">
 		    <span class="PRON">ˈflɪmbə</span>
 		  </a>
-		  <a class="speaker brefile" href="sound://media/english/breProns/flimber_v0205.mp3"> </a>
-		  <a class="speaker amefile" href="sound://media/english/ameProns/flimber1.mp3"> </a>
+		  <a class="speaker brefile" href="sound://synthetic/breProns/flimber-uk.mp3"> </a>
+		  <a class="speaker amefile" href="sound://synthetic/ameProns/flimber-us.mp3"> </a>
 		</span>`)
 
 	entry, err := parser.Parse(markup, parser.Options{
@@ -45,7 +45,7 @@ func TestUKAndUSAudioAreNotShared(t *testing.T) {
 
 	byRegion := map[entryir.Region]*entryir.Pronunciation{}
 	for i := range entry.Pronunciations {
-		byRegion[entry.Pronunciations[i].Region] = &entry.Pronunciations[i]
+		byRegion[entry.Pronunciations[i].AudioRegion] = &entry.Pronunciations[i]
 	}
 	uk, ok := byRegion[entryir.RegionUK]
 	if !ok || uk.Audio == nil {
@@ -58,10 +58,10 @@ func TestUKAndUSAudioAreNotShared(t *testing.T) {
 	if uk.Audio.ResourceRef == us.Audio.ResourceRef {
 		t.Fatalf("UK and US resolved to the same clip %q", uk.Audio.ResourceRef)
 	}
-	if want := "sound://media/english/breProns/flimber_v0205.mp3"; uk.Audio.ResourceRef != want {
+	if want := "sound://synthetic/breProns/flimber-uk.mp3"; uk.Audio.ResourceRef != want {
 		t.Errorf("UK audio = %q, want %q", uk.Audio.ResourceRef, want)
 	}
-	if want := "sound://media/english/ameProns/flimber1.mp3"; us.Audio.ResourceRef != want {
+	if want := "sound://synthetic/ameProns/flimber-us.mp3"; us.Audio.ResourceRef != want {
 		t.Errorf("US audio = %q, want %q", us.Audio.ResourceRef, want)
 	}
 }
@@ -72,7 +72,7 @@ func TestNoMDDMeansNoAudio(t *testing.T) {
 	markup := []byte(`
 		<span class="h-g"><span class="top-g"><span class="h">flimber</span>
 		<span class="ei-g">
-		  <a class="fayin" href="sound://uk/flimber__gb_1.mp3"><span class="phon-gb">ˈflɪmbə</span></a>
+		  <a class="fayin" href="sound://synthetic/oald/uk-flimber.mp3"><span class="phon-gb">ˈflɪmbə</span></a>
 		</span></span></span>`)
 
 	entry, err := parser.Parse(markup, parser.Options{
@@ -87,11 +87,35 @@ func TestNoMDDMeansNoAudio(t *testing.T) {
 	}
 	for _, item := range entry.Pronunciations {
 		if item.Audio != nil {
-			t.Errorf("audio was invented for %q with no MDD resource", item.Region)
+			t.Errorf("audio was invented for %q with no MDD resource", item.IPARegion)
 		}
 		if item.IPA == "" {
 			t.Error("transcription was dropped along with the missing audio")
 		}
+	}
+}
+
+func TestSharedIPAAndRegionalAudioRemainSeparateFacts(t *testing.T) {
+	markup := []byte(`<div>
+		<span class="pron">/ˈflɪmbə/</span>
+		<a class="speaker uk" href="sound://synthetic/uk.mp3"></a>
+		<a class="speaker us" href="sound://synthetic/us.mp3"></a>
+	</div>`)
+	entry, err := parser.Parse(markup, parser.Options{Audio: resolveAll{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shared bool
+	var ukAudio, usAudio bool
+	for _, item := range entry.Pronunciations {
+		if item.IPARegion == entryir.RegionNeutral && item.IPA != "" && item.Audio == nil {
+			shared = true
+		}
+		ukAudio = ukAudio || item.AudioRegion == entryir.RegionUK && item.Audio != nil
+		usAudio = usAudio || item.AudioRegion == entryir.RegionUS && item.Audio != nil
+	}
+	if !shared || !ukAudio || !usAudio {
+		t.Fatalf("shared/regional facts were conflated: %+v", entry.Pronunciations)
 	}
 }
 

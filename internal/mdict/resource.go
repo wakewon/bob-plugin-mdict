@@ -37,8 +37,8 @@ var schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*://`)
 // canonical form used by the resource index: lowercase, forward slashes, no
 // leading separator, no scheme.
 //
-// MDD keys are stored Windows-style ("\\uk\\hello__gb_1.mp3") while entry HTML
-// refers to them as "sound://uk/hello__gb_1.mp3", so both must fold together.
+// MDD keys are stored Windows-style (for example "\\synthetic\\uk\\clip.mp3") while entry HTML
+// refers to them with a `sound://` URL, so both forms must fold together.
 func NormalizeResourceKey(ref string) string {
 	value := strings.TrimSpace(ref)
 	if value == "" {

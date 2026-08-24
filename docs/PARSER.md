@@ -48,7 +48,7 @@ them.
 | `ignore` | Chrome to delete before anything else runs: fold buttons, speaker icons, frequency bars. |
 | `headword` | The entry's own headword. |
 | `translation` | Nodes holding a translation of neighbouring text, lifted out instead of concatenated into it. |
-| `pronunciation[]` | `selector`, `region` (`uk`/`us`/`other`/`auto`), `ipa`, `audio` (attribute names), `noAudio`. |
+| `pronunciation[]` | `selector`, `region` (`uk`/`us`/`neutral`/`other`/`auto`), `ipa`, `audio` (attribute names), `noAudio`. IPA and audio provenance become separate IR fields. |
 | `partBlock`, `pos`, `grammar` | Part-of-speech grouping. Omit `partBlock` when each sense carries its own label. |
 | `sense`, `subsense`, `senseNumber`, `definition`, `definitionStrip`, `labels`, `topic`, `patterns` | Sense structure. |
 | `example`, `exampleText` | Examples, and the source-language text inside them. |
@@ -73,6 +73,12 @@ Knowing this explains most surprises:
 5. Parts and senses are parsed from what remains. Within a sense: subsenses are
    detached, then examples, then synonyms, then labels — each removal keeping
    the next step's text clean.
+
+When a profile puts a semantic heading in the POS selector, the parser first
+classifies `See also`, cross-reference, related, phrase, idiom, phrasal verb,
+derivative and synonym/antonym labels. These become typed Entry fields instead
+of Parts. A genuinely unknown short POS remains a generic Part rather than being
+dropped.
 
 ## Traps worth knowing
 
@@ -105,4 +111,7 @@ Read the generated JSON before committing it. A golden file records what the
 parser *did*, which is only useful once you have confirmed it is what it
 *should* do.
 
-Never paste real dictionary text into a fixture.
+Never paste real dictionary text or copy a publisher entry skeleton into a
+fixture and replace the words. Construct the smallest DOM from scratch, retain
+only selectors/classes and relationships the test needs, use invented resource
+paths, and omit publisher CSS, internal IDs and chrome.

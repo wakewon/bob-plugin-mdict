@@ -23,25 +23,13 @@
       }
     },
     {
-      "identifier": "dictionaryMode",
-      "type": "menu",
-      "title": "词典选择",
-      "defaultValue": "first",
-      "desc": "「首个命中」优先保证单本词典的高质量结果；「全部词典」会把所有命中的词典分节展示。",
-      "menuValues": [
-        { "title": "首个命中的词典", "value": "first" },
-        { "title": "全部命中的词典", "value": "all" },
-        { "title": "仅指定词典", "value": "single" }
-      ]
-    },
-    {
       "identifier": "dictionaryID",
       "type": "text",
-      "title": "指定词典 ID",
-      "desc": "仅在「仅指定词典」模式下使用。\n\n运行 `bob-mdict --list-dictionaries` 查看每本词典的 ID。多个 ID 用英文逗号分隔。",
+      "title": "词典 ID（可选）",
+      "desc": "留空：自动使用第一本包含查询词的词典。\n\n填写：固定只查询该 ID。请在 Bob 中使用 MDict 查询 /list 查看所有词典 ID。",
       "textConfig": {
         "type": "visible",
-        "placeholderText": "留空表示不限制"
+        "placeholderText": "留空表示自动使用首个命中"
       }
     },
     {
@@ -68,7 +56,7 @@
     {
       "identifier": "maxExamples",
       "type": "text",
-      "title": "每个义项最多例句数",
+      "title": "每个词性最多例句数",
       "defaultValue": "3",
       "desc": "部分词典每个义项收录了几十条语料例句，全部展示会难以阅读。",
       "textConfig": {

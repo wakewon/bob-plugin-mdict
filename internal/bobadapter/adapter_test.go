@@ -15,8 +15,8 @@ func sampleEntry() *entryir.Entry {
 	return &entryir.Entry{
 		Headword: "flimber",
 		Pronunciations: []entryir.Pronunciation{
-			{Region: entryir.RegionUK, IPA: "ˈflɪmbə", Audio: audio("http://127.0.0.1:15321/v1/resource/UK")},
-			{Region: entryir.RegionUS, IPA: "ˈflɪmbər", Audio: audio("http://127.0.0.1:15321/v1/resource/US")},
+			{IPARegion: entryir.RegionUK, IPA: "ˈflɪmbə", AudioRegion: entryir.RegionUK, Audio: audio("http://127.0.0.1:15321/v1/resource/UK")},
+			{IPARegion: entryir.RegionUS, IPA: "ˈflɪmbər", AudioRegion: entryir.RegionUS, Audio: audio("http://127.0.0.1:15321/v1/resource/US")},
 		},
 		Parts: []entryir.Part{{
 			POS:     "verb",
@@ -42,7 +42,7 @@ func sampleEntry() *entryir.Entry {
 }
 
 func TestRenderProducesBobShape(t *testing.T) {
-	dict := Render([]Source{{DictionaryTitle: "Test Dictionary", Entry: sampleEntry()}}, DefaultOptions())
+	dict := Render(sampleEntry(), DefaultOptions())
 	if dict == nil {
 		t.Fatal("Render returned nil")
 	}
@@ -82,8 +82,8 @@ func TestRenderProducesBobShape(t *testing.T) {
 	}
 	// The hierarchy has to survive being flattened into strings: a subsense
 	// follows its own parent, indented, not the whole sense list.
-	if !strings.HasPrefix(means[1], "    1.1.") {
-		t.Errorf("subsense is not indented and numbered: %q", means[1])
+	if !strings.HasPrefix(means[1], "1.1.") {
+		t.Errorf("subsense has no generated hierarchical number: %q", means[1])
 	}
 	if !strings.HasPrefix(means[2], "2.") {
 		t.Errorf("sense 2 should follow the subsense: %q", means[2])
@@ -113,12 +113,18 @@ func TestRenderProducesBobShape(t *testing.T) {
 func TestSingleUnlabelledPronunciationSurfaces(t *testing.T) {
 	entry := &entryir.Entry{
 		Headword:       "flimber",
-		Pronunciations: []entryir.Pronunciation{{Region: entryir.RegionOther, IPA: "ˈflɪmbə", Audio: audio("http://127.0.0.1:1/x")}},
+		Pronunciations: []entryir.Pronunciation{{IPARegion: entryir.RegionOther, IPA: "ˈflɪmbə", AudioRegion: entryir.RegionOther, Audio: audio("http://127.0.0.1:1/x")}},
 		Parts:          []entryir.Part{{POS: "noun", Senses: []entryir.Sense{{Definition: "a tool"}}}},
 	}
-	dict := Render([]Source{{DictionaryTitle: "T", Entry: entry}}, DefaultOptions())
+	dict := Render(entry, DefaultOptions())
 	if len(dict.Phonetics) != 1 || dict.Phonetics[0].Type != "uk" {
 		t.Fatalf("phonetics = %+v", dict.Phonetics)
+	}
+	if dict.Phonetics[0].Value != "ˈflɪmbə · 未标口音" {
+		t.Fatalf("unknown annotation should follow IPA: %+v", dict.Phonetics[0])
+	}
+	if entry.Pronunciations[0].IPARegion != entryir.RegionOther || entry.Pronunciations[0].AudioRegion != entryir.RegionOther {
+		t.Fatal("Bob carrier mapping mutated unknown provenance in the IR")
 	}
 }
 
@@ -128,37 +134,85 @@ func TestRegionalPronunciationIsNeverOverwritten(t *testing.T) {
 	entry := &entryir.Entry{
 		Headword: "flimber",
 		Pronunciations: []entryir.Pronunciation{
-			{Region: entryir.RegionOther, IPA: "WRONG", Audio: audio("http://127.0.0.1:1/other")},
-			{Region: entryir.RegionUK, IPA: "RIGHT", Audio: audio("http://127.0.0.1:1/uk")},
+			{IPARegion: entryir.RegionOther, IPA: "WRONG", AudioRegion: entryir.RegionOther, Audio: audio("http://127.0.0.1:1/other")},
+			{IPARegion: entryir.RegionUK, IPA: "RIGHT", AudioRegion: entryir.RegionUK, Audio: audio("http://127.0.0.1:1/uk")},
 		},
 		Parts: []entryir.Part{{POS: "noun", Senses: []entryir.Sense{{Definition: "a tool"}}}},
 	}
-	dict := Render([]Source{{DictionaryTitle: "T", Entry: entry}}, DefaultOptions())
-	if len(dict.Phonetics) != 1 || dict.Phonetics[0].Value != "RIGHT" {
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Phonetics) != 2 || dict.Phonetics[0].Value != "RIGHT" {
 		t.Fatalf("phonetics = %+v", dict.Phonetics)
 	}
 }
 
-// TestMultipleDictionariesStayLabelled checks that senses from two sources are
-// never merged into one undifferentiated list.
-func TestMultipleDictionariesStayLabelled(t *testing.T) {
-	first := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{{Definition: "first"}}}}}
-	second := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{{Definition: "second"}}}}}
-
-	opts := DefaultOptions()
-	opts.MultipleDictionaries = true
-	dict := Render([]Source{
-		{DictionaryTitle: "Dictionary One", Entry: first},
-		{DictionaryTitle: "Dictionary Two", Entry: second},
-	}, opts)
-
-	if len(dict.Parts) != 2 {
-		t.Fatalf("parts = %d, want 2 (one per dictionary): %+v", len(dict.Parts), dict.Parts)
+func TestDisplayNumbersResetPerPOSWithoutMutatingSource(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{
+		{POS: "verb", Senses: []entryir.Sense{{Number: "3", Definition: "first"}, {Number: "4", Definition: "second"}}},
+		{POS: "noun", Senses: []entryir.Sense{{Number: "5", Definition: "tool"}}},
+	}}
+	dict := Render(entry, DefaultOptions())
+	if got := dict.Parts[0].Means; len(got) != 2 || !strings.HasPrefix(got[0], "1.") || !strings.HasPrefix(got[1], "2.") {
+		t.Fatalf("verb display numbering = %v", got)
 	}
-	for i, want := range []string{"Dictionary One · verb", "Dictionary Two · verb"} {
-		if dict.Parts[i].Part != want {
-			t.Errorf("part %d = %q, want %q", i, dict.Parts[i].Part, want)
+	if got := dict.Parts[1].Means; len(got) != 1 || !strings.HasPrefix(got[0], "1.") {
+		t.Fatalf("noun display numbering did not reset: %v", got)
+	}
+	if entry.Parts[0].Senses[0].Number != "3" || entry.Parts[1].Senses[0].Number != "5" {
+		t.Fatal("source numbering was mutated by presentation rendering")
+	}
+}
+
+func TestExamplesAreGroupedOncePerDisplaySense(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{
+		{Number: "7", Definition: "first", Examples: []entryir.Example{{Text: "Example A", Translation: "译文甲"}, {Text: "Example B"}}},
+		{Number: "9", Definition: "second", Examples: []entryir.Example{{Text: "Example C"}}},
+	}}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Additions) != 1 {
+		t.Fatalf("additions = %+v", dict.Additions)
+	}
+	value := dict.Additions[0].Value
+	if strings.Count(value, "\n1\n") > 0 || strings.Count(value, "1\n") != 1 || strings.Count(value, "2\n") != 1 {
+		t.Fatalf("sense headers are not grouped once: %q", value)
+	}
+	for _, want := range []string{"• Example A — 译文甲", "• Example B", "• Example C"} {
+		if !strings.Contains(value, want) {
+			t.Errorf("grouped examples missing %q: %q", want, value)
 		}
+	}
+	if strings.Contains(value, "1. Example") || strings.Contains(value, "2. Example") {
+		t.Fatalf("examples still look individually misnumbered: %q", value)
+	}
+}
+
+func TestSharedIPAUsesRegionalAudioWithoutChangingProvenance(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Pronunciations: []entryir.Pronunciation{
+		{IPARegion: entryir.RegionNeutral, IPA: "ˈflɪmbə"},
+		{AudioRegion: entryir.RegionUK, Audio: audio("http://127.0.0.1/uk")},
+		{AudioRegion: entryir.RegionUS, Audio: audio("http://127.0.0.1/us")},
+	}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Phonetics) != 2 {
+		t.Fatalf("phonetics = %+v", dict.Phonetics)
+	}
+	for _, phonetic := range dict.Phonetics {
+		if phonetic.Value != "ˈflɪmbə · 共用音标" || phonetic.TTS == nil {
+			t.Errorf("shared IPA carrier lost information: %+v", phonetic)
+		}
+	}
+	if entry.Pronunciations[0].IPARegion != entryir.RegionNeutral {
+		t.Fatal("neutral IPA was promoted inside IR")
+	}
+}
+
+func TestAudioOnlyUnknownUsesResultLevelNote(t *testing.T) {
+	entry := &entryir.Entry{Headword: "flimber", Pronunciations: []entryir.Pronunciation{{AudioRegion: entryir.RegionOther, Audio: audio("http://127.0.0.1/audio")}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Phonetics) != 1 || dict.Phonetics[0].TTS == nil || dict.Phonetics[0].Value != "" {
+		t.Fatalf("audio-only pronunciation = %+v", dict.Phonetics)
+	}
+	if len(dict.Additions) != 1 || dict.Additions[0].Name != "发音说明" || !strings.Contains(dict.Additions[0].Value, "未标注") {
+		t.Fatalf("pronunciation note = %+v", dict.Additions)
 	}
 }
 
@@ -166,7 +220,7 @@ func TestExtrasCanBeDisabled(t *testing.T) {
 	opts := DefaultOptions()
 	opts.IncludeExtras = false
 	opts.IncludeExamples = false
-	dict := Render([]Source{{DictionaryTitle: "T", Entry: sampleEntry()}}, opts)
+	dict := Render(sampleEntry(), opts)
 	if len(dict.Additions) != 0 {
 		t.Errorf("additions = %+v, want none", dict.Additions)
 	}

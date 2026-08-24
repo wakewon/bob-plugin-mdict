@@ -22,8 +22,8 @@ func TestSelectorMatching(t *testing.T) {
 		  <span class="pos-g"><span class="pos">verb</span></span>
 		  <span class="n-g"><span class="d">first</span></span>
 		  <span class="n-g"><span class="d">second</span></span>
-		  <a class="speaker brefile" href="sound://uk/a.mp3">uk</a>
-		  <a class="speaker amefile" href="sound://us/a.mp3">us</a>
+		  <a class="speaker brefile" href="sound://synthetic/uk/a.mp3">uk</a>
+		  <a class="speaker amefile" href="sound://synthetic/us/a.mp3">us</a>
 		</div>`)
 
 	cases := []struct {
@@ -35,7 +35,7 @@ func TestSelectorMatching(t *testing.T) {
 		{"a.speaker.brefile", 1},
 		{"a.speaker", 2},
 		{"#block", 1},
-		{"[href^=sound://uk]", 1},
+		{"[href^=sound://synthetic/uk]", 1},
 		{"[href*=us]", 1},
 		{"[href$=.mp3]", 2},
 		{"span[class]", 6},

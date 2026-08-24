@@ -79,18 +79,27 @@ func (s *parseState) pronunciationFromNode(node *html.Node, rule compiledPronunc
 		item.Audio = s.resolveAudioFrom(node, attrs)
 	}
 
+	region := entryir.RegionOther
 	switch rule.region {
 	case "uk":
-		item.Region = entryir.RegionUK
+		region = entryir.RegionUK
 	case "us":
-		item.Region = entryir.RegionUS
+		region = entryir.RegionUS
+	case "neutral":
+		region = entryir.RegionNeutral
 	case "other":
-		item.Region = entryir.RegionOther
+		region = entryir.RegionOther
 	default:
-		item.Region = s.detectRegionFor(node, item.Audio)
-		if item.Region == entryir.RegionOther {
+		region = s.detectRegionFor(node, item.Audio)
+		if region == entryir.RegionOther {
 			item.Confidence = 0.6
 		}
+	}
+	if item.IPA != "" {
+		item.IPARegion = region
+	}
+	if item.Audio != nil {
+		item.AudioRegion = region
 	}
 	return item
 }
@@ -198,17 +207,25 @@ func (s *parseState) pronunciationsGeneric() []entryir.Pronunciation {
 
 	var out []entryir.Pronunciation
 	for _, item := range candidates {
-		region := DetectRegion(DescriptorText(item.node), audioRefOf(item.audio))
+		ipaRegion := entryir.Region("")
+		if item.ipa != "" {
+			ipaRegion = DetectRegion(DescriptorText(item.node))
+		}
+		audioRegion := entryir.Region("")
+		if item.audio != nil {
+			audioRegion = DetectRegion(DescriptorText(item.node), audioRefOf(item.audio))
+		}
 		confidence := 0.8
-		if region == entryir.RegionOther {
+		if ipaRegion == entryir.RegionOther || audioRegion == entryir.RegionOther {
 			confidence = 0.55
 		}
 		out = append(out, entryir.Pronunciation{
-			Region:     region,
-			IPA:        item.ipa,
-			Audio:      item.audio,
-			Confidence: confidence,
-			Rule:       "generic:evidence",
+			IPARegion:   ipaRegion,
+			IPA:         item.ipa,
+			AudioRegion: audioRegion,
+			Audio:       item.audio,
+			Confidence:  confidence,
+			Rule:        "generic:evidence",
 		})
 	}
 	return out
@@ -238,47 +255,76 @@ func isTextLeaf(node *html.Node) bool {
 	return true
 }
 
-// mergePronunciations folds the raw candidates into at most one entry per
-// region, joining a transcription with the audio that shares its region.
+// mergePronunciations folds transcription and audio facts independently by
+// their own provenance. This avoids borrowing an IPA region for an unlabelled
+// recording (or the reverse).
 func mergePronunciations(items []entryir.Pronunciation) []entryir.Pronunciation {
-	byRegion := map[entryir.Region]*entryir.Pronunciation{}
-	var order []entryir.Region
-
-	for i := range items {
-		item := items[i]
-		existing, ok := byRegion[item.Region]
-		if !ok {
-			copied := item
-			byRegion[item.Region] = &copied
-			order = append(order, item.Region)
-			continue
+	buckets := make(map[entryir.Region]*entryir.Pronunciation)
+	bucket := func(region entryir.Region) *entryir.Pronunciation {
+		if region == "" {
+			region = entryir.RegionOther
 		}
-		if existing.IPA == "" && item.IPA != "" {
-			existing.IPA = item.IPA
+		if buckets[region] == nil {
+			buckets[region] = &entryir.Pronunciation{}
 		}
-		if existing.Audio == nil && item.Audio != nil {
-			existing.Audio = item.Audio
-		}
-		if item.Confidence > existing.Confidence {
-			existing.Confidence = item.Confidence
-		}
+		return buckets[region]
 	}
-
-	// A transcription with no regional evidence can borrow the audio of a
-	// region only when no other transcription claims it. Anything left over
-	// stays under RegionOther rather than being promoted to uk or us.
-	if other, ok := byRegion[entryir.RegionOther]; ok && other.IPA != "" {
-		for _, region := range []entryir.Region{entryir.RegionUK, entryir.RegionUS} {
-			if target, exists := byRegion[region]; exists && target.IPA == "" {
-				target.IPA = other.IPA
-				target.Confidence = minFloat(target.Confidence, 0.7)
+	for _, item := range items {
+		if item.IPA != "" {
+			region := item.IPARegion
+			if region == "" {
+				region = entryir.RegionOther
+			}
+			target := bucket(region)
+			if target.IPA == "" {
+				target.IPA = item.IPA
+				target.IPARegion = region
+				target.Label = item.Label
+				target.Rule = item.Rule
+			}
+			if item.Confidence > target.Confidence {
+				target.Confidence = item.Confidence
+			}
+		}
+		if item.Audio != nil {
+			region := item.AudioRegion
+			if region == "" {
+				region = entryir.RegionOther
+			}
+			target := bucket(region)
+			if target.Audio == nil {
+				target.Audio = item.Audio
+				target.AudioRegion = region
+				if target.Rule == "" {
+					target.Rule = item.Rule
+				}
+			}
+			if item.Confidence > target.Confidence {
+				target.Confidence = item.Confidence
 			}
 		}
 	}
 
-	out := make([]entryir.Pronunciation, 0, len(order))
-	for _, region := range []entryir.Region{entryir.RegionUK, entryir.RegionUS, entryir.RegionOther} {
-		if item, ok := byRegion[region]; ok {
+	// One unlabelled IPA beside separate UK and US recordings is structural
+	// evidence that the dictionary presents a shared transcription. The fact is
+	// moved to a neutral bucket; it is never copied into UK or US inside the IR.
+	other := buckets[entryir.RegionOther]
+	uk, us := buckets[entryir.RegionUK], buckets[entryir.RegionUS]
+	if other != nil && other.IPA != "" && other.Audio == nil &&
+		uk != nil && uk.Audio != nil && uk.IPA == "" &&
+		us != nil && us.Audio != nil && us.IPA == "" {
+		neutral := bucket(entryir.RegionNeutral)
+		neutral.IPA = other.IPA
+		neutral.IPARegion = entryir.RegionNeutral
+		neutral.Label = "shared"
+		neutral.Confidence = minFloat(other.Confidence, 0.7)
+		neutral.Rule = other.Rule
+		delete(buckets, entryir.RegionOther)
+	}
+
+	var out []entryir.Pronunciation
+	for _, region := range []entryir.Region{entryir.RegionUK, entryir.RegionUS, entryir.RegionNeutral, entryir.RegionOther} {
+		if item := buckets[region]; item != nil && (item.IPA != "" || item.Audio != nil) {
 			out = append(out, *item)
 		}
 	}

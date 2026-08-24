@@ -217,6 +217,9 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bobOpts := bobadapter.DefaultOptions()
+	if req.MaxExamples > 0 {
+		bobOpts.MaxExamplesPerPart = req.MaxExamples
+	}
 	if req.IncludeExamples != nil {
 		bobOpts.IncludeExamples = *req.IncludeExamples
 	}
@@ -239,6 +242,16 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 				"no dictionaries are installed",
 				fmt.Sprintf("Copy a folder containing .mdx/.mdd files into %s, then rescan.",
 					s.svc.Config().DictionaryDir))
+			return
+		}
+		if errors.Is(err, service.ErrDictionaryNotFound) {
+			writeError(w, http.StatusNotFound, "dictionaryNotFound", err.Error(),
+				"Query /list in Bob to see the current dictionaries and IDs.")
+			return
+		}
+		if errors.Is(err, service.ErrDictionaryUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "dictionaryUnavailable", err.Error(),
+				"Query /list in Bob to see diagnostics, or choose another dictionary ID.")
 			return
 		}
 		writeError(w, http.StatusBadRequest, "badRequest", err.Error(), "")

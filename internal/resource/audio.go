@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -26,15 +27,27 @@ type Transcoder struct {
 	decoderCmd string
 
 	mu       sync.Mutex
-	inFlight map[string]*sync.Mutex
+	inFlight map[string]*flightLock
 }
+
+type flightLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+const (
+	maxAudioCacheBytes = int64(256 << 20)
+	maxAudioCacheAge   = 30 * 24 * time.Hour
+)
 
 // NewTranscoder creates a transcoder writing into cacheDir/audio.
 func NewTranscoder(cacheDir string) *Transcoder {
-	return &Transcoder{
+	transcoder := &Transcoder{
 		cacheDir: filepath.Join(cacheDir, "audio"),
-		inFlight: make(map[string]*sync.Mutex),
+		inFlight: make(map[string]*flightLock),
 	}
+	transcoder.cleanupDiskCache(time.Now())
+	return transcoder
 }
 
 // speexDecoders are the binaries able to decode .spx, in preference order.
@@ -66,15 +79,26 @@ func (t *Transcoder) DecoderName() string {
 
 // keyLock serializes concurrent decodes of the same asset so two simultaneous
 // plays do not race on the same cache file.
-func (t *Transcoder) keyLock(key string) *sync.Mutex {
+func (t *Transcoder) acquireKeyLock(key string) func() {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	lock, ok := t.inFlight[key]
 	if !ok {
-		lock = &sync.Mutex{}
+		lock = &flightLock{}
 		t.inFlight[key] = lock
 	}
-	return lock
+	lock.refs++
+	t.mu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		t.mu.Lock()
+		lock.refs--
+		if lock.refs == 0 && t.inFlight[key] == lock {
+			delete(t.inFlight, key)
+		}
+		t.mu.Unlock()
+	}
 }
 
 // SpeexToWAV decodes Ogg-Speex bytes to WAV, using the disk cache when warm.
@@ -88,9 +112,8 @@ func (t *Transcoder) SpeexToWAV(data []byte) ([]byte, error) {
 	key := hex.EncodeToString(sum[:])
 	cachePath := filepath.Join(t.cacheDir, key+".wav")
 
-	lock := t.keyLock(key)
-	lock.Lock()
-	defer lock.Unlock()
+	release := t.acquireKeyLock(key)
+	defer release()
 
 	if cached, err := os.ReadFile(cachePath); err == nil && len(cached) > 0 {
 		return cached, nil
@@ -147,6 +170,47 @@ func (t *Transcoder) SpeexToWAV(data []byte) ([]byte, error) {
 		_ = os.Rename(stagePath, cachePath)
 	}
 	return wav, nil
+}
+
+// cleanupDiskCache applies a deliberately small startup policy: remove stale
+// WAVs, then evict the oldest remaining files until the cache is under 256 MiB.
+func (t *Transcoder) cleanupDiskCache(now time.Time) {
+	entries, err := os.ReadDir(t.cacheDir)
+	if err != nil {
+		return
+	}
+	type cachedFile struct {
+		path    string
+		size    int64
+		modTime time.Time
+	}
+	var files []cachedFile
+	var total int64
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".wav" {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		path := filepath.Join(t.cacheDir, entry.Name())
+		if now.Sub(info.ModTime()) > maxAudioCacheAge {
+			_ = os.Remove(path)
+			continue
+		}
+		files = append(files, cachedFile{path: path, size: info.Size(), modTime: info.ModTime()})
+		total += info.Size()
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
+	for _, file := range files {
+		if total <= maxAudioCacheBytes {
+			break
+		}
+		if err := os.Remove(file.path); err == nil {
+			total -= file.size
+		}
+	}
 }
 
 func truncate(value string, limit int) string {

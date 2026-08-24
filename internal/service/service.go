@@ -183,6 +183,13 @@ type Result struct {
 // ErrNoDictionaries means the user has not installed any dictionaries yet.
 var ErrNoDictionaries = errors.New("no dictionaries available")
 
+// ErrDictionaryNotFound and ErrDictionaryUnavailable make a saved explicit ID
+// failure distinguishable from a normal headword miss.
+var (
+	ErrDictionaryNotFound    = errors.New("dictionary ID not found")
+	ErrDictionaryUnavailable = errors.New("dictionary unavailable")
+)
+
 // LookupOptions configures a lookup.
 type LookupOptions struct {
 	DictionaryIDs []string
@@ -204,11 +211,21 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 	if query == "" {
 		return nil, errors.New("empty query")
 	}
+	if total, _ := s.registry.Counts(); total == 0 {
+		return nil, ErrNoDictionaries
+	}
+	for _, id := range opts.DictionaryIDs {
+		id = strings.TrimSpace(id)
+		dict, ok := s.registry.ByID(id)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrDictionaryNotFound, id)
+		}
+		if dict.Info().Health != mdict.HealthOK {
+			return nil, fmt.Errorf("%w: %s", ErrDictionaryUnavailable, id)
+		}
+	}
 	dicts := s.registry.Select(opts.DictionaryIDs)
 	if len(dicts) == 0 {
-		if total, _ := s.registry.Counts(); total == 0 {
-			return nil, ErrNoDictionaries
-		}
 		return nil, errors.New("no matching dictionaries")
 	}
 
@@ -231,16 +248,10 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 		result.Suggestions = s.suggest(dicts, query, 8)
 	}
 	if opts.RenderBob && len(result.Matches) > 0 {
-		sources := make([]bobadapter.Source, 0, len(result.Matches))
-		for _, match := range result.Matches {
-			sources = append(sources, bobadapter.Source{
-				DictionaryTitle: match.DictionaryTitle,
-				Entry:           match.Entry,
-			})
-		}
-		bobOpts := opts.BobOptions
-		bobOpts.MultipleDictionaries = len(sources) > 1
-		result.Bob = bobadapter.Render(sources, bobOpts)
+		// Bob presents one result card per configured service instance. Even
+		// when an API client asks the server for several matches, the Bob view is
+		// deliberately rendered from the first match only.
+		result.Bob = bobadapter.Render(result.Matches[0].Entry, opts.BobOptions)
 	}
 	return result, nil
 }

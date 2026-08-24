@@ -41,15 +41,15 @@ Used by `pluginValidate` to tell apart "service missing", "no dictionaries" and
   "directory": "...",
   "dictionaries": [
     {
-      "id": "1472050dd3ed",
-      "title": "Collins COBUILD overhaul V2.30",
-      "entryCount": 141091,
+      "id": "2f4c6a8e10b3d597",
+      "title": "My Local Dictionary",
+      "entryCount": 120000,
       "encoding": "UTF-8",
       "version": "2.000000",
-      "createdAt": "2018-8-19",
+      "createdAt": "2026-1-1",
       "hasMDD": true,
       "mddVolumes": 1,
-      "profile": "collins-cobuild-overhaul",
+      "profile": "generic",
       "health": "ok",
       "diagnostics": []
     }
@@ -57,9 +57,15 @@ Used by `pluginValidate` to tell apart "service missing", "no dictionaries" and
 }
 ```
 
-`id` is derived from the dictionary path but does not disclose it. A dictionary
-that fails to open reports `health: "unavailable"` with a reason in
-`diagnostics`; the others stay usable.
+`id` is a 16-character, path-independent fingerprint built from MDX file size,
+the header and three spread-out content samples. Moving or renaming the folder
+or MDX file keeps the ID; changing dictionary editions normally changes it. No
+MDD volume is hashed. Development builds before this scheme used path-based
+IDs, so those users should obtain the replacement once through `/list` or this
+endpoint.
+
+A dictionary that fails to open still appears with `health: "unavailable"` and
+a reason in `diagnostics`; the others stay usable.
 
 ---
 
@@ -70,7 +76,7 @@ that fails to open reports `health: "unavailable"` with a reason in
   "query": "abandon",
   "format": "bob",
   "mode": "exact",
-  "dictionaries": ["1472050dd3ed"],
+  "dictionaries": ["2f4c6a8e10b3d597"],
   "limit": 1,
   "maxExamples": 3,
   "includeExamples": true,
@@ -82,16 +88,18 @@ that fails to open reports `health: "unavailable"` with a reason in
 | Field | Meaning |
 |---|---|
 | `query` | Required. |
-| `format` | `ir` (default) returns the Entry IR only. `bob` adds a rendered `toDict`. |
+| `format` | `ir` (default) returns the Entry IR only. `bob` adds one `toDict` rendered from the first match. Multiple dictionaries are never aggregated into one Bob card. |
 | `mode` | `exact` (default) tries exact, Unicode-normalized and case-insensitive. `smart` also returns prefix suggestions on a miss. |
 | `dictionaries` | Restrict and order the search. Empty means all, in registry order. |
 | `limit` | Stop after this many dictionaries answer. |
-| `maxExamples` | Cap examples per sense. |
+| `maxExamples` | Cap parsed examples per sense and displayed examples per POS. |
 | `includeExamples` / `includeExtras` | Trim the rendered `toDict`. |
 | `debug` | Attach parser provenance notes to each entry. |
 
-Responses: `200` with matches, `404` with an empty match list, `503` with
-`error: "noDictionaries"` and a `hint` naming the dictionary directory.
+Responses: `200` with matches; a normal headword miss is `404` with an empty
+match list. An invalid explicit ID returns `404 dictionaryNotFound`; an existing
+but unhealthy ID returns `503 dictionaryUnavailable`; both include a `/list`
+hint. An empty registry returns `503 noDictionaries` with the directory.
 
 Each match carries the dictionary-neutral `entry`; `format: "bob"` adds a
 top-level `bob` object that is a complete `toDict`.

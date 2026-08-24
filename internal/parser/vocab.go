@@ -17,7 +17,7 @@ var posCanonical = map[string]string{
 	"vt": "transitive verb", "vt.": "transitive verb", "transitiveverb": "transitive verb",
 	"vi": "intransitive verb", "vi.": "intransitive verb", "intransitiveverb": "intransitive verb",
 	"modalverb": "modal verb", "modal": "modal verb", "auxiliary": "auxiliary verb",
-	"auxiliaryverb": "auxiliary verb", "auxv": "auxiliary verb", "phrasalverb": "phrasal verb",
+	"auxiliaryverb": "auxiliary verb", "auxv": "auxiliary verb",
 	"adj": "adjective", "adj.": "adjective", "adjective": "adjective", "形容词": "adjective",
 	"adv": "adverb", "adv.": "adverb", "adverb": "adverb", "副词": "adverb",
 	"prep": "preposition", "prep.": "preposition", "preposition": "preposition", "介词": "preposition",
@@ -31,7 +31,7 @@ var posCanonical = map[string]string{
 	"num": "number", "number": "number", "numeral": "number", "数词": "number",
 	"abbr": "abbreviation", "abbreviation": "abbreviation", "缩写": "abbreviation",
 	"prefix": "prefix", "suffix": "suffix", "combiningform": "combining form",
-	"idiom": "idiom", "phrase": "phrase", "symbol": "symbol", "短语": "phrase",
+	"symbol": "symbol",
 }
 
 // codePrefixes maps learner's-dictionary grammar codes onto part names.
@@ -39,9 +39,8 @@ var codePrefixes = map[string]string{
 	"N": "noun", "V": "verb", "ADJ": "adjective", "ADV": "adverb",
 	"PREP": "preposition", "CONJ": "conjunction", "PRON": "pronoun",
 	"DET": "determiner", "QUANT": "determiner", "MODAL": "modal verb",
-	"PHRASE": "phrase", "EXCLAM": "interjection", "NUM": "number",
-	"ORD": "number", "COMB": "combining form", "PREFIX": "prefix",
-	"SUFFIX": "suffix", "CONVENTION": "phrase", "NEG": "adverb",
+	"EXCLAM": "interjection", "NUM": "number", "ORD": "number",
+	"COMB": "combining form", "PREFIX": "prefix", "SUFFIX": "suffix", "NEG": "adverb",
 }
 
 var posCleanRe = regexp.MustCompile(`[\s\.,;:/()\[\]]+`)
@@ -77,6 +76,47 @@ func CanonicalPOS(raw string) string {
 		}
 	}
 	return ""
+}
+
+// SemanticLabel identifies headings that dictionaries sometimes place in the
+// same visual slot as a POS even though they introduce a typed section.
+type SemanticLabel string
+
+const (
+	LabelCrossReference SemanticLabel = "crossReference"
+	LabelRelated        SemanticLabel = "related"
+	LabelPhrase         SemanticLabel = "phrase"
+	LabelIdiom          SemanticLabel = "idiom"
+	LabelPhrasalVerb    SemanticLabel = "phrasalVerb"
+	LabelDerivative     SemanticLabel = "derivative"
+	LabelSynonyms       SemanticLabel = "synonyms"
+	LabelAntonyms       SemanticLabel = "antonyms"
+)
+
+var semanticLabels = map[string]SemanticLabel{
+	"seealso": LabelCrossReference, "seealsos": LabelCrossReference,
+	"crossreference": LabelCrossReference, "crossreferences": LabelCrossReference,
+	"crossref": LabelCrossReference, "reference": LabelCrossReference,
+	"related": LabelRelated, "relatedword": LabelRelated, "relatedwords": LabelRelated,
+	"phrase": LabelPhrase, "phrases": LabelPhrase, "convention": LabelPhrase,
+	"conventions": LabelPhrase, "proverb": LabelPhrase, "proverbs": LabelPhrase,
+	"saying": LabelPhrase, "sayings": LabelPhrase, "短语": LabelPhrase,
+	"idiom": LabelIdiom, "idioms": LabelIdiom, "习语": LabelIdiom,
+	"phrasalverb": LabelPhrasalVerb, "phrasalverbs": LabelPhrasalVerb,
+	"derivative": LabelDerivative, "derivatives": LabelDerivative,
+	"derivedword": LabelDerivative, "derivedwords": LabelDerivative,
+	"synonym": LabelSynonyms, "synonyms": LabelSynonyms,
+	"synonymantonym": LabelSynonyms, "synonymsantonyms": LabelSynonyms,
+	"antonym": LabelAntonyms, "antonyms": LabelAntonyms,
+}
+
+var semanticLabelCleanRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
+
+// ClassifySemanticLabel returns a section role for a non-POS heading.
+func ClassifySemanticLabel(raw string) SemanticLabel {
+	key := strings.ToLower(semanticLabelCleanRe.ReplaceAllString(Normalize(raw), ""))
+	key = strings.TrimSuffix(key, "section")
+	return semanticLabels[key]
 }
 
 // knownLabels are register, regional and domain labels worth surfacing.

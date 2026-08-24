@@ -2,8 +2,10 @@ package service_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -97,6 +99,43 @@ func TestRealDictionariesAreDiscoveredAndHealthy(t *testing.T) {
 	}
 }
 
+func TestDictionarySelectionContract(t *testing.T) {
+	svc := newService(t)
+	word := "abandon"
+
+	first, err := svc.Lookup(word, service.LookupOptions{Limit: 1, Mode: service.ModeExact})
+	if err != nil || len(first.Matches) != 1 {
+		t.Fatalf("blank ID first-match lookup failed: matches=%d err=%v", len(first.Matches), err)
+	}
+	wantID := first.Matches[0].DictionaryID
+	explicit, err := svc.Lookup(word, service.LookupOptions{DictionaryIDs: []string{wantID}, Limit: 1, Mode: service.ModeExact})
+	if err != nil || len(explicit.Matches) != 1 || explicit.Matches[0].DictionaryID != wantID {
+		t.Fatalf("explicit ID lookup escaped selection: %+v err=%v", explicit, err)
+	}
+	if _, err := svc.Lookup(word, service.LookupOptions{DictionaryIDs: []string{"does-not-exist"}, Limit: 1}); !errors.Is(err, service.ErrDictionaryNotFound) {
+		t.Fatalf("invalid ID error = %v, want ErrDictionaryNotFound", err)
+	}
+	missing, err := svc.Lookup("flimber-does-not-exist", service.LookupOptions{DictionaryIDs: []string{wantID}, Limit: 1, Mode: service.ModeExact})
+	if err != nil || len(missing.Matches) != 0 {
+		t.Fatalf("normal headword miss should not be a selection error: %+v err=%v", missing, err)
+	}
+}
+
+func TestBobRenderingNeverAggregatesMultipleDictionaries(t *testing.T) {
+	svc := newService(t)
+	opts := bobadapter.DefaultOptions()
+	result, err := svc.Lookup("abandon", service.LookupOptions{
+		Mode: service.ModeExact, RenderBob: true, BobOptions: opts,
+	})
+	if err != nil || len(result.Matches) < 2 {
+		t.Skipf("need two matching dictionaries for aggregation guard: matches=%d err=%v", len(result.Matches), err)
+	}
+	want := bobadapter.Render(result.Matches[0].Entry, opts)
+	if !reflect.DeepEqual(result.Bob, want) {
+		t.Fatal("Bob output was not rendered exclusively from the first dictionary match")
+	}
+}
+
 // TestRealLookupsProduceStructure is the anti-"pseudo-completion" check: every
 // dictionary must yield real parts and senses, not a blob of stripped text.
 func TestRealLookupsProduceStructure(t *testing.T) {
@@ -171,19 +210,19 @@ func TestRealAudioResolvesFromMDD(t *testing.T) {
 			data, contentType, err := svc.ResolveResource(pronunciation.Audio.Token)
 			if err != nil {
 				t.Errorf("%s %s: resolving %q failed: %v",
-					shortName(info.Title), pronunciation.Region, pronunciation.Audio.ResourceRef, err)
+					shortName(info.Title), pronunciation.AudioRegion, pronunciation.Audio.ResourceRef, err)
 				continue
 			}
 			if len(data) < 256 {
 				t.Errorf("%s %s: %d bytes is too small to be a recording",
-					shortName(info.Title), pronunciation.Region, len(data))
+					shortName(info.Title), pronunciation.AudioRegion, len(data))
 			}
 			if !strings.HasPrefix(contentType, "audio/") {
-				t.Errorf("%s %s: content type %q is not audio", shortName(info.Title), pronunciation.Region, contentType)
+				t.Errorf("%s %s: content type %q is not audio", shortName(info.Title), pronunciation.AudioRegion, contentType)
 			}
 			checked++
 			t.Logf("%-26s %-3s %-46s %6d bytes %s",
-				shortName(info.Title), pronunciation.Region, pronunciation.Audio.ResourceRef, len(data), contentType)
+				shortName(info.Title), pronunciation.AudioRegion, pronunciation.Audio.ResourceRef, len(data), contentType)
 		}
 		if withAudio == 0 {
 			t.Errorf("%s has an MDD but produced no audio for 'abandon'", shortName(info.Title))
@@ -210,7 +249,7 @@ func TestUKAndUSAudioDifferOnRealDictionaries(t *testing.T) {
 			}
 			var uk, us *entryir.Audio
 			for _, pronunciation := range result.Matches[0].Entry.Pronunciations {
-				switch pronunciation.Region {
+				switch pronunciation.AudioRegion {
 				case entryir.RegionUK:
 					uk = pronunciation.Audio
 				case entryir.RegionUS:
@@ -248,7 +287,7 @@ func TestRedirectsAreFollowed(t *testing.T) {
 			t.Logf("%s: %q redirected to %q",
 				shortName(match.DictionaryTitle), match.Entry.Source.RedirectedFrom, match.Entry.Source.MatchedKey)
 		}
-		if match.Entry.SenseCount() == 0 && len(match.Entry.Sections) == 0 {
+		if match.Entry.IsEmpty() {
 			t.Errorf("%s produced an empty entry for 'hello'", shortName(match.DictionaryTitle))
 		}
 	}
@@ -356,6 +395,36 @@ func TestNoDictionaryContentLeavesTheRepository(t *testing.T) {
 		switch strings.ToLower(filepath.Ext(name)) {
 		case ".mdx", ".mdd":
 			t.Errorf("dictionary data is tracked in the repository: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	goldenDir := filepath.Join(repoRoot, "testdata", "golden")
+	err = filepath.WalkDir(goldenDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.EqualFold(filepath.Ext(path), ".html") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if len(data) > 8<<10 {
+			t.Errorf("fixture is not minimal (%d bytes): %s", len(data), path)
+		}
+		lower := strings.ToLower(string(data))
+		for _, forbidden := range []string{
+			"<link ", " id=", "id=\"", "sound://media/", "sound://colmp3/",
+			"sound://uk/", "sound://us/", ".css\"", "@@@link=",
+		} {
+			if strings.Contains(lower, forbidden) {
+				t.Errorf("fixture contains publisher-specific skeleton/resource marker %q: %s", forbidden, path)
+			}
+		}
+		if strings.Count(lower, "sound://") != strings.Count(lower, "sound://synthetic/") {
+			t.Errorf("fixture contains a non-synthetic audio path: %s", path)
 		}
 		return nil
 	})

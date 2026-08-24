@@ -10,8 +10,13 @@ package entryir
 type Region string
 
 const (
-	RegionUK    Region = "uk"
-	RegionUS    Region = "us"
+	RegionUK Region = "uk"
+	RegionUS Region = "us"
+	// RegionNeutral means the dictionary presents a transcription as shared
+	// across varieties rather than assigning it to one accent.
+	RegionNeutral Region = "neutral"
+	// RegionOther means the source did not provide enough evidence to classify
+	// the variety. It must never be silently promoted to UK or US inside the IR.
 	RegionOther Region = "other"
 )
 
@@ -20,7 +25,7 @@ const (
 // backs a pronunciation, Audio is simply absent.
 type Audio struct {
 	// ResourceRef is the raw reference as it appeared in the entry HTML,
-	// e.g. "sound://uk/hello__gb_1.mp3".
+	// e.g. "sound://synthetic/uk/example.mp3" in a test fixture.
 	ResourceRef string `json:"resourceRef"`
 	// Token is the opaque handle the resource endpoint accepts. It never
 	// contains a filesystem path.
@@ -32,13 +37,16 @@ type Audio struct {
 	MIMEType string `json:"mimeType"`
 }
 
-// Pronunciation pairs an IPA transcription with its matching audio.
+// Pronunciation preserves transcription and recording provenance separately.
+// A shared IPA can therefore coexist with distinct UK and US recordings, and
+// an unlabelled recording never inherits the IPA's region by accident.
 type Pronunciation struct {
-	Region     Region  `json:"region"`
-	IPA        string  `json:"ipa,omitempty"`
-	Audio      *Audio  `json:"audio,omitempty"`
-	Label      string  `json:"label,omitempty"`
-	Confidence float64 `json:"confidence"`
+	IPARegion   Region  `json:"ipaRegion,omitempty"`
+	IPA         string  `json:"ipa,omitempty"`
+	AudioRegion Region  `json:"audioRegion,omitempty"`
+	Audio       *Audio  `json:"audio,omitempty"`
+	Label       string  `json:"label,omitempty"`
+	Confidence  float64 `json:"confidence"`
 	// Rule records which parser rule produced this node. Debug only.
 	Rule string `json:"rule,omitempty"`
 }
@@ -112,22 +120,25 @@ type Source struct {
 
 // Entry is the complete parsed dictionary entry.
 type Entry struct {
-	Headword       string          `json:"headword"`
-	Source         Source          `json:"source"`
-	Pronunciations []Pronunciation `json:"pronunciations,omitempty"`
-	Parts          []Part          `json:"parts,omitempty"`
-	Forms          []Form          `json:"forms,omitempty"`
-	Phrases        []PhraseEntry   `json:"phrases,omitempty"`
-	Idioms         []PhraseEntry   `json:"idioms,omitempty"`
-	PhrasalVerbs   []PhraseEntry   `json:"phrasalVerbs,omitempty"`
-	Collocations   []string        `json:"collocations,omitempty"`
-	UsageNotes     []Section       `json:"usageNotes,omitempty"`
-	GrammarNotes   []Section       `json:"grammarNotes,omitempty"`
-	Synonyms       []string        `json:"synonyms,omitempty"`
-	Antonyms       []string        `json:"antonyms,omitempty"`
-	WordFamily     []string        `json:"wordFamily,omitempty"`
-	Etymology      string          `json:"etymology,omitempty"`
-	Sections       []Section       `json:"sections,omitempty"`
+	Headword        string          `json:"headword"`
+	Source          Source          `json:"source"`
+	Pronunciations  []Pronunciation `json:"pronunciations,omitempty"`
+	Parts           []Part          `json:"parts,omitempty"`
+	Forms           []Form          `json:"forms,omitempty"`
+	Phrases         []PhraseEntry   `json:"phrases,omitempty"`
+	Idioms          []PhraseEntry   `json:"idioms,omitempty"`
+	PhrasalVerbs    []PhraseEntry   `json:"phrasalVerbs,omitempty"`
+	Derivatives     []PhraseEntry   `json:"derivatives,omitempty"`
+	Collocations    []string        `json:"collocations,omitempty"`
+	UsageNotes      []Section       `json:"usageNotes,omitempty"`
+	GrammarNotes    []Section       `json:"grammarNotes,omitempty"`
+	Synonyms        []string        `json:"synonyms,omitempty"`
+	Antonyms        []string        `json:"antonyms,omitempty"`
+	CrossReferences []string        `json:"crossReferences,omitempty"`
+	Related         []string        `json:"related,omitempty"`
+	WordFamily      []string        `json:"wordFamily,omitempty"`
+	Etymology       string          `json:"etymology,omitempty"`
+	Sections        []Section       `json:"sections,omitempty"`
 	// Notes carries parser diagnostics. Populated only in debug mode.
 	Notes []string `json:"notes,omitempty"`
 }
@@ -160,5 +171,15 @@ func (e *Entry) IsEmpty() bool {
 		len(e.Sections) == 0 &&
 		len(e.Phrases) == 0 &&
 		len(e.Idioms) == 0 &&
+		len(e.PhrasalVerbs) == 0 &&
+		len(e.Derivatives) == 0 &&
+		len(e.CrossReferences) == 0 &&
+		len(e.Related) == 0 &&
+		len(e.Collocations) == 0 &&
+		len(e.UsageNotes) == 0 &&
+		len(e.GrammarNotes) == 0 &&
+		len(e.Synonyms) == 0 &&
+		len(e.Antonyms) == 0 &&
+		len(e.WordFamily) == 0 &&
 		e.Etymology == ""
 }

@@ -4,10 +4,10 @@
     {
       "version": "0.1.0",
       "desc": "MDict for Bob 0.1.0",
-      "sha256": "c4d047927ffbf48815087dc2359f39e828fb68c06e99b79aff3cc96cd66500ea",
+      "sha256": "0bdafa0fd3eeb99e26c086864d901fe7e69604bca60f13e23202543702fe84a7",
       "url": "https://github.com/wakewon/bob-plugin-mdict/releases/download/v0.1.0/MDict-v0.1.0.bobplugin",
       "minBobVersion": "1.8.0",
-      "timestamp": 1787577660000
+      "timestamp": 1787582474000
     }
   ]
 }

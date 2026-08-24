@@ -55,16 +55,8 @@ function normalizeBaseURL(raw) {
     return url;
 }
 
-function parseDictionaryIDs(raw) {
-    var ids = [];
-    var parts = String(raw || '').split(',');
-    for (var i = 0; i < parts.length; i++) {
-        var id = parts[i].trim();
-        if (id !== '') {
-            ids.push(id);
-        }
-    }
-    return ids;
+function configuredDictionaryID() {
+    return String(getOption('dictionaryID', '') || '').trim();
 }
 
 function parsePositiveInt(raw, fallback) {
@@ -134,6 +126,15 @@ function serviceErrorFor(statusCode, body, serviceURL) {
             troubleshootingLink: TROUBLESHOOTING_LINK
         };
     }
+    if (code === 'dictionaryNotFound' || code === 'dictionaryUnavailable') {
+        return {
+            type: 'notFound',
+            message: code === 'dictionaryUnavailable' ? '指定的 MDict 词典当前不可用' : '未找到指定的 MDict 词典',
+            addition: '请在 MDict 中查询 /list 查看当前词典及 ID。' +
+                (hint ? '\n\n服务提示：' + hint : ''),
+            troubleshootingLink: TROUBLESHOOTING_LINK
+        };
+    }
     if (statusCode === 404) {
         return { type: 'notFound', message: '词典中没有收录这个词' };
     }
@@ -155,25 +156,71 @@ function serviceErrorFor(statusCode, body, serviceURL) {
  * 这样插件不需要理解词典的内部结构。
  */
 function buildRequestBody(text) {
-    var mode = getOption('dictionaryMode', 'first');
     var body = {
         query: text,
         format: 'bob',
         mode: 'exact',
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
         includeExamples: getOption('showExamples', 'enable') === 'enable',
-        includeExtras: getOption('showExtras', 'enable') === 'enable'
+        includeExtras: getOption('showExtras', 'enable') === 'enable',
+        limit: 1
     };
-    if (mode === 'first') {
-        body.limit = 1;
-    } else if (mode === 'single') {
-        var ids = parseDictionaryIDs(getOption('dictionaryID', ''));
-        if (ids.length > 0) {
-            body.dictionaries = ids;
-        }
-        body.limit = ids.length > 0 ? ids.length : 1;
+    var dictionaryID = configuredDictionaryID();
+    if (dictionaryID !== '') {
+        body.dictionaries = [dictionaryID];
     }
     return body;
+}
+
+function dictionaryListParagraphs(body) {
+    var dictionaries = body && body.dictionaries ? body.dictionaries : [];
+    if (dictionaries.length === 0) {
+        return [
+            '未发现 MDict 词典',
+            '词典目录：' + ((body && body.directory) || '~/Library/Application Support/bob-mdict/dictionaries/')
+        ];
+    }
+    var paragraphs = ['MDict dictionaries'];
+    for (var i = 0; i < dictionaries.length; i++) {
+        var dictionary = dictionaries[i] || {};
+        var lines = [(i + 1) + '. ' + (dictionary.title || '未命名词典'), 'ID: ' + (dictionary.id || '—')];
+        if (dictionary.health && dictionary.health !== 'ok') {
+            lines.push('状态：不可用');
+            if (dictionary.diagnostics && dictionary.diagnostics.length > 0) {
+                lines.push('诊断：' + dictionary.diagnostics.join('；'));
+            }
+        }
+        paragraphs.push(lines.join('\n'));
+    }
+    return paragraphs;
+}
+
+function listDictionaries(query, serviceURL) {
+    $http.request({
+        method: 'GET',
+        url: serviceURL + '/v1/dictionaries',
+        timeout: 15,
+        cancelSignal: query.cancelSignal,
+        handler: function (resp) {
+            if (resp.error) {
+                query.onCompletion({ error: describeTransportError(serviceURL, resp.error.message) });
+                return;
+            }
+            var statusCode = statusCodeOf(resp);
+            var body = readBody(resp);
+            if (statusCode !== 200 || !body) {
+                query.onCompletion({ error: serviceErrorFor(statusCode, body, serviceURL) });
+                return;
+            }
+            query.onCompletion({
+                result: {
+                    from: query.detectFrom,
+                    to: query.detectTo,
+                    toParagraphs: dictionaryListParagraphs(body)
+                }
+            });
+        }
+    });
 }
 
 function translate(query, completion) {
@@ -182,6 +229,13 @@ function translate(query, completion) {
 
     if (text === '') {
         query.onCompletion({ error: { type: 'param', message: '没有可查询的内容' } });
+        return;
+    }
+
+    // /list is the one reserved control query. "list" remains an ordinary
+    // dictionary headword, and whitespace is ignored around the command.
+    if (text === '/list') {
+        listDictionaries(query, serviceURL);
         return;
     }
 
@@ -214,10 +268,8 @@ function translate(query, completion) {
                 result: {
                     from: query.detectFrom,
                     to: query.detectTo,
-                    // toDict 是这个插件的主体输出。toParagraphs 只放词头，
-                    // 让 Bob 在纯文本场景（复制、朗读）也有内容可用。
-                    toParagraphs: [body.bob.word],
-                    fromParagraphs: [text],
+                    // 普通查词只返回 toDict。Bob 1.6+ 明确允许这样做；
+                    // 额外的段落会让词头在结果底部重复出现。
                     toDict: body.bob
                 }
             });
@@ -306,7 +358,47 @@ function pluginValidate(completion) {
                 return;
             }
 
-            completion({ result: true });
+            validateConfiguredDictionary(completion, serviceURL);
+        }
+    });
+}
+
+function validateConfiguredDictionary(completion, serviceURL) {
+    var dictionaryID = configuredDictionaryID();
+    if (dictionaryID === '') {
+        completion({ result: true });
+        return;
+    }
+    $http.request({
+        method: 'GET',
+        url: serviceURL + '/v1/dictionaries',
+        timeout: 10,
+        handler: function (resp) {
+            if (resp.error) {
+                completion({ result: false, error: describeTransportError(serviceURL, resp.error.message) });
+                return;
+            }
+            var body = readBody(resp);
+            var dictionaries = body && body.dictionaries ? body.dictionaries : [];
+            for (var i = 0; i < dictionaries.length; i++) {
+                if (dictionaries[i].id === dictionaryID) {
+                    if (dictionaries[i].health && dictionaries[i].health !== 'ok') {
+                        completion({ result: false, error: serviceErrorFor(503, { error: 'dictionaryUnavailable' }, serviceURL) });
+                        return;
+                    }
+                    completion({ result: true });
+                    return;
+                }
+            }
+            completion({
+                result: false,
+                error: {
+                    type: 'notFound',
+                    message: '未找到 ID 为 ' + dictionaryID + ' 的词典',
+                    addition: '请在 MDict 中查询 /list 获取当前词典 ID。',
+                    troubleshootingLink: TROUBLESHOOTING_LINK
+                }
+            });
         }
     });
 }

@@ -8,8 +8,9 @@
   },
   "pronunciations": [
     {
-      "region": "uk",
+      "ipaRegion": "uk",
       "ipa": "ˈflɪmbə",
+      "audioRegion": "uk",
       "audio": {
         "resourceRef": "sound://synthetic/oald/uk-flimber.mp3",
         "token": "TOKEN",
@@ -20,8 +21,9 @@
       "rule": "profile:.ei-g a.fayin"
     },
     {
-      "region": "us",
+      "ipaRegion": "us",
       "ipa": "ˈflɪmbər",
+      "audioRegion": "us",
       "audio": {
         "resourceRef": "sound://synthetic/oald/us-flimber.mp3",
         "token": "TOKEN",

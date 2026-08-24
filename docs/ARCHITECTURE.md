@@ -31,14 +31,14 @@ dependencies, and lets the heavy part be a single native binary.
 
 The parser does not produce Bob objects. It produces an `Entry` — headword,
 pronunciations, parts, senses, subsenses, examples, forms, phrases, idioms,
-usage notes, etymology — that models **what dictionaries contain**, not what Bob
-can currently display.
+cross-references, usage notes and etymology — that models **what dictionaries
+contain**, not what Bob can currently display.
 
 `internal/bobadapter` is the only package that knows Bob exists. That boundary
 is the reason a future Bob with richer display needs one new adapter rather than
 changes reaching back into the MDX layer. It is also why the sense hierarchy
-survives: the IR keeps subsenses nested, and the adapter flattens them into
-numbered, indented strings only at the very last step.
+survives: the IR keeps source numbers and nested subsenses, while the adapter
+generates display numbers afresh inside each POS at the very last step.
 
 ## Parsing: generic first, profiles as reinforcement
 
@@ -83,14 +83,31 @@ rename themselves constantly.
 The single worst failure mode in a dictionary plugin is attaching one recording
 to both the UK and US buttons. Region is therefore decided per candidate, from
 all the evidence around it — class names, ids, titles, hrefs, the audio
-filename, and the neighbouring text — and a pronunciation with no evidence stays
-unclassified rather than being promoted. Profiles can state the region outright,
-and a rule may declare that it contributes a transcription but no audio, which
-is what stops a transcription wrapped in an audio link from claiming that link.
+filename, and the neighbouring text. `IPARegion` and `AudioRegion` are separate
+IR facts, so a shared transcription can coexist with two regional recordings
+and an unlabelled clip never inherits the IPA's region. Profiles can state the
+region outright, and a rule may declare that it contributes a transcription but
+no audio.
+
+Bob documents only UK and US phonetic carrier slots. The adapter may use a free
+slot for a neutral or unknown fact, but annotates that decision after the IPA
+(`共用音标` / `未标口音`) and never changes the IR. Audio-only unknown provenance
+uses a single result-level pronunciation note. If both Bob slots are already
+occupied, an additional unknown recording cannot be displayed; that is a Bob
+schema limitation, not a dictionary or parser fact.
 
 Audio is offered only when the reference actually resolves in the user's MDD,
 and only when a Speex asset can actually be decoded on this machine. There is
 no synthesis path anywhere in the codebase.
+
+## Bob result boundary
+
+The server remains multi-dictionary: callers can search all dictionaries,
+restrict by ID, or stop at the first match. The Bob adapter renders exactly one
+entry. A blank plugin Dictionary ID requests the first match; a populated ID
+requests only that dictionary. Users who want several pinned dictionaries add
+several Bob MDict service instances, keeping cards, ordering and enablement
+under Bob's control.
 
 ## Memory
 

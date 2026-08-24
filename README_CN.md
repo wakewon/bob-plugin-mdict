@@ -1,0 +1,227 @@
+# MDict for Bob
+
+[English](README.md) | 简体中文
+
+在 [Bob](https://bobtranslate.com/) 中查询你自己的本地 MDict 词典。查询、
+解析和发音播放全部在本机完成；真人录音直接来自词典配套的 MDD。
+
+> 本项目是词典阅读器，不提供任何词典数据。请自行合法取得并使用
+> `.mdx` 与可选的 `.mdd` 文件。
+
+## 功能特点
+
+- 支持 MDict v1.x/v2.x、递归发现、多本词典和多卷 MDD（`.mdd`、
+  `.1.mdd`、`.2.mdd` 等）。
+- 完全本地：没有在线词典 API、云端解析、遥测或外部网络请求；服务只监听
+  loopback 地址。
+- 结构化词条：词性、义项与子义项、双语释义、例句、词形、短语、习语、
+  短语动词、交叉引用和说明。
+- 真人发音优先且仅限真人发音。英式、美式、共用音标和未标口音信息分别
+  保留；项目中不存在 TTS 后备路径。
+- 默认无需配置词典 ID：自动使用第一本收录当前词的词典。
+
+## 工作方式
+
+```text
+Bob 插件 → http://127.0.0.1:15321 → MDX/MDD → 语义解析器
+                                               → Entry IR → Bob toDict
+```
+
+`bob-mdict` 是负责索引、解析和 MDD 资源的本地 Go 服务。Bob 插件只是轻量
+JavaScript 客户端，不解析 MDX、HTML 或音频。插件与服务通过带版本号的本地
+API 协作。
+
+## 安装
+
+### 1. 安装本地服务
+
+使用 Homebrew：
+
+```bash
+brew install wakewon/tap/bob-mdict
+brew services start bob-mdict
+```
+
+不使用 Homebrew 时，从
+[最新 Release](https://github.com/wakewon/bob-plugin-mdict/releases) 下载对应
+Mac 架构的压缩包，解压后运行：
+
+```bash
+./packaging/install.sh
+```
+
+独立安装脚本会把程序放入 `~/.local/bin`，注册登录时启动的 LaunchAgent，
+并创建默认词典目录。卸载可运行 `./packaging/uninstall.sh`；脚本不会删除
+你的词典。
+
+### 2. 添加 MDX/MDD
+
+建议每本词典使用一个子目录，统一放在：
+
+```text
+~/Library/Application Support/bob-mdict/dictionaries/
+```
+
+例如：
+
+```text
+dictionaries/
+├── 我的词典/
+│   ├── 我的词典.mdx
+│   ├── 我的词典.mdd
+│   └── 我的词典.1.mdd
+└── 另一部词典/
+    └── 另一部词典.mdx
+```
+
+服务会递归发现 MDX，并按文件名匹配同目录中的 MDD 卷。添加完成后执行：
+
+```bash
+bob-mdict --rescan
+bob-mdict --check
+```
+
+### 3. 安装并添加 Bob 插件
+
+从 Release 下载 `MDict-vX.Y.Z.bobplugin` 并双击安装。根据 Bob 当前官方
+用语，打开 **Bob 偏好设置 → 翻译 → 服务**，选择 **文本翻译**，点击下方
+`+` 号并选择 **MDict**；启用后点击右下角 **保存**。
+
+已安装插件也可以在 **Bob 偏好设置 → 插件** 中查看。
+
+## 选择词典
+
+每个 Bob MDict 服务实例只显示一本词典的结果：
+
+```text
+词典 ID 留空  → 按本地服务顺序，使用第一本收录查询词的词典
+填写词典 ID  → 只查询该 ID 对应的词典
+```
+
+普通用户保持留空即可。需要固定词典时，在 Bob 中用 MDict 精确查询
+`/list`。结果会显示所有已发现词典的名称、ID，以及不可用词典的诊断。
+`/list` 前后的空白会被忽略；普通单词 `list` 仍然按词条查询。
+
+如果希望固定同时使用多本词典，请在 Bob 中多次添加 MDict 文本翻译服务，
+并为每个实例填写不同 ID。Bob 自己负责服务排序、启停和独立结果卡片，
+不会把不同词典的义项混在一张卡片里。
+
+词典 ID 是根据 MDX 内容分段采样得到的 16 位指纹。移动目录、修改目录名或
+MDX 文件名不会改变 ID；更换词典版本通常会改变 ID。早期开发版本使用过
+基于路径的 ID；升级后如旧 ID 失效，查询一次 `/list` 并替换即可。
+
+## 插件设置
+
+| 设置 | 默认值 | 作用 |
+|---|---|---|
+| 本地服务地址 | `http://127.0.0.1:15321` | 只有服务改过端口时才需修改。 |
+| 词典 ID（可选） | 留空 | 留空使用首个命中；填写后固定一本。用 `/list` 查看 ID。 |
+| 显示例句 | 显示 | 显示例句及双语翻译。 |
+| 显示扩展内容 | 显示 | 显示短语、习语、短语动词、交叉引用、词形和说明。 |
+| 每个词性最多例句数 | `3` | 控制大型语料例句区的长度。 |
+
+Bob 的“验证”会检查服务身份、API 版本、是否有可用词典，以及已填写的词典
+ID 是否仍然有效。
+
+## 命令行
+
+```bash
+bob-mdict --version              # 程序版本与 API 版本
+bob-mdict --check                # 安装、词典和音频解码检查
+bob-mdict --list-dictionaries    # 名称、ID、词条数和解析 Profile
+bob-mdict --rescan               # 重新发现并建立索引
+bob-mdict --debug-lookup WORD    # 输出结构化 Entry IR，供开发调试
+```
+
+本地 HTTP API 见 [docs/API.md](docs/API.md)。
+
+## 故障排除
+
+### 无法连接本地 MDict 服务
+
+```bash
+brew services start bob-mdict
+curl http://127.0.0.1:15321/v1/status
+```
+
+确认插件中的“本地服务地址”与服务实际端口一致。
+
+### 未发现词典
+
+```bash
+open ~/Library/Application\ Support/bob-mdict/dictionaries/
+bob-mdict --rescan
+bob-mdict --list-dictionaries
+```
+
+每本词典至少需要一个 MDX。MDD 可选，主要提供真人录音和其它资源。
+
+### 指定的词典 ID 无效或不可用
+
+在 Bob 中查询 `/list`，复制当前 ID 并更新对应服务实例。不可用词典会显示
+诊断，且不会影响其它词典。
+
+### 查到词条但没有发音按钮
+
+只有词条引用的真人录音确实存在于匹配的 MDD 中时，才会显示发音。缺少
+MDD、资源键不存在或原词典没有录音时都不会显示；本项目不会用 TTS 补齐。
+
+### MDD 存在但部分发音缺失
+
+少数旧词典使用 Ogg-Speex（`.spx`）。安装解码器：
+
+```bash
+brew install speex
+```
+
+转码后的 WAV 只保存在本机。服务启动时会删除超过 30 天的缓存，并把总量
+限制在 256 MiB。
+
+### 插件与服务版本不兼容
+
+```bash
+brew upgrade bob-mdict
+```
+
+然后从 Release 更新 Bob 插件。
+
+## 隐私与安全
+
+- 查询词和词典资源不会离开 Mac；没有分析、遥测或使用上报。
+- 服务只绑定 `127.0.0.1`/`::1`，并拒绝非 loopback Origin。
+- MDD 资源使用每次进程启动后生成的不可伪造 token，不暴露文件路径。
+- API 不接受任意文件路径，本地服务也不会发起外部网络请求。
+
+## 版权
+
+本仓库、二进制和 `.bobplugin` 均不包含词典内容。MDX/MDD 的权利属于相应
+出版方，用户应自行确保来源和使用方式合法。
+
+仓库中的 parser fixture 是专为测试从零构造的最小 synthetic HTML：词头、
+释义、翻译、例句和资源路径均为虚构内容，只保留兼容性测试必需的少量
+selector/class 和 DOM 关系。
+
+项目采用 GPL-3.0-or-later，详见 [LICENSE](LICENSE) 与
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 开发
+
+```bash
+gofmt -w .
+go vet ./...
+go test ./...
+go test -race ./...
+node --test plugin/main.test.js
+./scripts/build-plugin.sh
+./scripts/build-server.sh
+```
+
+真实词典集成测试不会把词条内容写入 tracked snapshot。可以指向自己合法
+持有的本地词典目录：
+
+```bash
+BOB_MDICT_TEST_DICTIONARIES=/path/to/dictionaries go test ./internal/service -v
+```
+
+更多说明：[架构](docs/ARCHITECTURE.md) · [Parser](docs/PARSER.md) ·
+[HTTP API](docs/API.md)

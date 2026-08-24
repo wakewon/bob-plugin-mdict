@@ -86,11 +86,12 @@ func Parse(raw []byte, opts Options) (*entryir.Entry, error) {
 }
 
 type parseState struct {
-	doc     *html.Node
-	opts    Options
-	profile *compiledProfile
-	entry   *entryir.Entry
-	notes   []string
+	doc          *html.Node
+	opts         Options
+	profile      *compiledProfile
+	entry        *entryir.Entry
+	notes        []string
+	partsHandled bool
 }
 
 func (s *parseState) note(format string, args ...any) {
@@ -109,6 +110,8 @@ func (s *parseState) finalize() {
 	}
 	dedupeStrings(&s.entry.Synonyms)
 	dedupeStrings(&s.entry.Antonyms)
+	dedupeStrings(&s.entry.CrossReferences)
+	dedupeStrings(&s.entry.Related)
 	dedupeStrings(&s.entry.Collocations)
 	dedupeStrings(&s.entry.WordFamily)
 }

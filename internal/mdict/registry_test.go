@@ -98,17 +98,44 @@ func TestScanMissingRootIsNotAnError(t *testing.T) {
 	}
 }
 
-func TestStableIDIsDeterministicAndOpaque(t *testing.T) {
-	path := "/Users/someone/Library/Application Support/bob-mdict/dictionaries/A/A.mdx"
-	first, second := stableID(path), stableID(path)
+func TestStableIDIsPathIndependentAndContentSensitive(t *testing.T) {
+	root := t.TempDir()
+	firstPath := filepath.Join(root, "Original", "Alpha.mdx")
+	movedPath := filepath.Join(root, "Renamed folder", "Renamed file.mdx")
+	differentPath := filepath.Join(root, "Different", "Alpha.mdx")
+	for _, path := range []string{firstPath, movedPath, differentPath} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	content := make([]byte, 300_000)
+	for i := range content {
+		content[i] = byte((i*31 + 17) % 251)
+	}
+	if err := os.WriteFile(firstPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(movedPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	different := append([]byte(nil), content...)
+	different[len(different)/3] ^= 0xff
+	if err := os.WriteFile(differentPath, different, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	first, second := stableID(firstPath), stableID(firstPath)
 	if first != second {
 		t.Error("stableID is not deterministic")
 	}
-	if stableID(path) == stableID(path+"x") {
-		t.Error("different paths produced the same id")
+	if first != stableID(movedPath) {
+		t.Error("moving and renaming the same MDX changed its ID")
+	}
+	if first == stableID(differentPath) {
+		t.Error("different MDX content produced the same ID")
 	}
 	// The ID leaves the process in API responses; it must not carry the path.
-	for _, fragment := range []string{"Users", "someone", "mdx", "/"} {
+	for _, fragment := range []string{"Original", "Alpha", "mdx", "/"} {
 		if contains(first, fragment) {
 			t.Errorf("id %q leaks path fragment %q", first, fragment)
 		}

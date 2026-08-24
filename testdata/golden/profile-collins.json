@@ -8,8 +8,9 @@
   },
   "pronunciations": [
     {
-      "region": "uk",
+      "ipaRegion": "uk",
       "ipa": "ˈflɪmbə",
+      "audioRegion": "uk",
       "audio": {
         "resourceRef": "sound://synthetic/collins/uk-flimber.mp3",
         "token": "TOKEN",
@@ -20,8 +21,9 @@
       "rule": "profile:.word_entry .pron a[href]"
     },
     {
-      "region": "us",
+      "ipaRegion": "us",
       "ipa": "ˈflɪmbər",
+      "audioRegion": "us",
       "audio": {
         "resourceRef": "sound://synthetic/collins/us-flimber.mp3",
         "token": "TOKEN",

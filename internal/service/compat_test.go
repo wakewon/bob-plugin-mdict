@@ -66,7 +66,7 @@ func TestCompatibilityMatrix(t *testing.T) {
 				mark("IPA", pronunciation.IPA != "")
 				if pronunciation.Audio != nil {
 					mark("Audio found", true)
-					switch pronunciation.Region {
+					switch pronunciation.AudioRegion {
 					case entryir.RegionUK:
 						uk = pronunciation.Audio
 					case entryir.RegionUS:

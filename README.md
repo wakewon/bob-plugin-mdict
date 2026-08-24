@@ -1,175 +1,154 @@
 # MDict for Bob
 
-Look up **your own** local MDict dictionaries from [Bob](https://bobtranslate.com/) —
-fully offline, with UK/US phonetics and the real human pronunciations that came
-with your dictionaries.
+English | [简体中文](README_CN.md)
 
-> This project ships **no dictionary data**. You supply your own `.mdx`/`.mdd`
-> files. It is a reader, not a dictionary.
+Look up your own local MDict dictionaries in [Bob](https://bobtranslate.com/),
+fully offline and with the real human recordings supplied by your dictionaries.
 
----
+> This project is a reader. It ships no dictionary data. You provide and use
+> your own `.mdx` and optional `.mdd` files lawfully.
 
-## What you get
+## Highlights
 
-- **Your `.mdx`/`.mdd` dictionaries** — MDict v1.x and v2.x, multi-volume MDD
-  (`.mdd`, `.1.mdd`, `.2.mdd`, …), several dictionaries at once.
-- **Completely offline.** No dictionary API, no cloud, no telemetry. The service
-  listens on loopback only and never makes an outbound request.
-- **Real dictionary pronunciation.** UK and US audio streamed straight out of
-  your MDD files.
-- **No text-to-speech, ever.** If your dictionary has no recording, no audio
-  button appears. Nothing is synthesized to fill the gap.
-- **Structured entries, not stripped text.** Parts of speech, numbered senses
-  and subsenses, definitions, translations, examples, labels, inflections,
-  phrases, idioms, phrasal verbs, synonyms and etymology — mapped onto Bob's
-  native dictionary display.
-
-<!-- Add a screenshot of a Bob lookup here once you have one. -->
-
----
+- MDict v1.x/v2.x, recursive discovery, multiple dictionaries and multi-volume
+  MDD (`.mdd`, `.1.mdd`, `.2.mdd`, …).
+- Completely local: no dictionary API, cloud service, telemetry or outbound
+  request. The companion service listens on loopback only.
+- Structured entries: POS groups, senses and subsenses, bilingual definitions,
+  examples, forms, phrases, idioms, phrasal verbs, cross-references and notes.
+- Real MDD pronunciation only. UK, US, shared and unlabelled provenance is
+  preserved. There is no text-to-speech fallback anywhere in the project.
+- Simple Bob setup: leave Dictionary ID empty for the first dictionary that
+  contains the word, or set one ID to pin that service instance.
 
 ## How it works
 
-```
-Bob  ──►  MDict plugin  ──►  http://127.0.0.1:15321  ──►  bob-mdict
-                                                            │
-                                          ┌─────────────────┼─────────────────┐
-                                          ▼                 ▼                 ▼
-                                     .mdx lookup       .mdd audio      semantic parser
-                                          │                 │                 │
-                                          └────────► Entry IR ──► Bob toDict ─┘
+```text
+Bob plugin → http://127.0.0.1:15321 → MDX/MDD → semantic parser
+                                              → Entry IR → Bob toDict
 ```
 
-Two pieces:
-
-- **`bob-mdict`** — a small native service that reads your dictionaries. One
-  binary, no Python, no Node, no Docker, no database.
-- **The Bob plugin** — a thin JavaScript shim that asks the service for a word
-  and hands Bob the result. It never parses MDX or dictionary HTML itself.
-
-They version independently and agree on an API version, so upgrading one does
-not silently break the other.
-
----
+`bob-mdict` is a native Go service that owns the indexes, parsing and MDD
+resources. The Bob plugin is a small JavaScript client; it does not parse MDX,
+HTML or audio. The two components advertise a versioned local API.
 
 ## Install
 
 ### 1. Install the service
+
+With Homebrew:
 
 ```bash
 brew install wakewon/tap/bob-mdict
 brew services start bob-mdict
 ```
 
-<details>
-<summary>Without Homebrew</summary>
-
-Download the archive for your Mac from the
-[latest release](https://github.com/wakewon/bob-plugin-mdict/releases), then:
+Without Homebrew, download the matching archive from the
+[latest release](https://github.com/wakewon/bob-plugin-mdict/releases), extract
+it, and run:
 
 ```bash
-tar -xzf bob-mdict-*-darwin-arm64.tar.gz
 ./packaging/install.sh
 ```
 
-The installer puts the binary in `~/.local/bin`, registers a LaunchAgent so the
-service starts at login, and creates the dictionary folder. You never need to
-write a `plist` or keep a terminal window open.
+The standalone installer places the binary in `~/.local/bin`, installs a
+LaunchAgent and creates the default dictionary directory. To remove the service
+later, run `./packaging/uninstall.sh`; it keeps your dictionaries.
 
-To remove it again: `./packaging/uninstall.sh` (your dictionaries are kept).
-</details>
+### 2. Add dictionaries
 
-### 2. Add your dictionaries
+Put each dictionary in its own folder under:
 
-Put each dictionary in its own folder inside:
-
-```
+```text
 ~/Library/Application Support/bob-mdict/dictionaries/
 ```
 
 For example:
 
-```
+```text
 dictionaries/
-├── My English Dictionary/
-│   ├── My English Dictionary.mdx      ← definitions
-│   ├── My English Dictionary.mdd      ← audio, images
-│   └── My English Dictionary.1.mdd    ← extra volumes are found automatically
+├── My Dictionary/
+│   ├── My Dictionary.mdx
+│   ├── My Dictionary.mdd
+│   └── My Dictionary.1.mdd
 └── Another Dictionary/
     └── Another Dictionary.mdx
 ```
 
-Subfolders are discovered recursively, and `.mdd` volumes are matched to their
-`.mdx` by filename. You never configure individual files.
-
-Then pick them up:
+Subfolders are discovered recursively. MDD volumes are matched to the MDX by
+filename. Rescan and verify:
 
 ```bash
 bob-mdict --rescan
-```
-
-Check everything is working:
-
-```bash
 bob-mdict --check
 ```
 
-### 3. Install the Bob plugin
+### 3. Install and add the Bob plugin
 
-Download `MDict-vX.Y.Z.bobplugin` from the
-[latest release](https://github.com/wakewon/bob-plugin-mdict/releases) and
-double-click it. Then in Bob: **Preferences → Services → Translate → +** and
-choose **MDict**.
+Download `MDict-vX.Y.Z.bobplugin` from the latest release and double-click it.
+In Bob, open **Preferences → Translation → Services**, select **Text
+Translation**, click `+`, choose **MDict**, enable it and save.
 
----
+## Dictionary selection
 
-## Settings
+The plugin deliberately produces one dictionary result per Bob service card.
 
-| Setting | Default | What it does |
+```text
+Dictionary ID empty  → first dictionary containing the queried word
+Dictionary ID set    → only that dictionary
+```
+
+Most users should leave the field empty. To find IDs, query exactly `/list`
+with the MDict service in Bob. It returns every discovered dictionary, its ID,
+and unavailable diagnostics. Whitespace around `/list` is accepted; ordinary
+`list` remains a normal dictionary lookup.
+
+To pin several dictionaries at once, add the MDict service to Bob several
+times and give each instance a different Dictionary ID. Bob controls their
+order and enabled state, so results remain separate and readable.
+
+Dictionary IDs are 16-character fingerprints sampled from MDX content. Moving
+or renaming a folder or MDX file does not change an ID. They normally change
+when the dictionary edition changes. Earlier development builds used path-based
+IDs; if such an ID stops working, query `/list` once and replace it.
+
+## Plugin settings
+
+| Setting | Default | Meaning |
 |---|---|---|
-| Service address | `http://127.0.0.1:15321` | Only change this if you started the service on another port. |
-| Dictionary selection | First match | `First match` keeps results focused on one dictionary. `All matches` shows every dictionary that has the word, clearly separated. `Specific only` restricts to IDs from `bob-mdict --list-dictionaries`. |
-| Show examples | On | Example sentences, with translations when the dictionary is bilingual. |
-| Show extras | On | Phrases, idioms, phrasal verbs, collocations, usage notes, synonyms, etymology. |
-| Max examples per sense | 3 | Some dictionaries carry dozens of corpus sentences per sense. |
+| Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
+| Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
+| Show examples | on | Show examples and bilingual translations. |
+| Show extras | on | Show phrases, idioms, phrasal verbs, cross-references, forms and notes. |
+| Max examples per POS | `3` | Limit long corpus-example sections. |
 
-Sensible defaults mean most people change nothing.
-
----
+`pluginValidate` checks service identity and API version, the presence of a
+healthy dictionary, and a configured Dictionary ID before the first lookup.
 
 ## Command line
 
 ```bash
-bob-mdict --version              # version and API version
-bob-mdict --check                # full self-check with per-dictionary diagnostics
-bob-mdict --list-dictionaries    # dictionary IDs, entry counts, detected parser
-bob-mdict --rescan               # pick up newly added dictionaries
-bob-mdict --debug-lookup WORD    # print the parsed entry as JSON
+bob-mdict --version
+bob-mdict --check
+bob-mdict --list-dictionaries
+bob-mdict --rescan
+bob-mdict --debug-lookup WORD
 ```
 
----
+The local HTTP API is documented in [docs/API.md](docs/API.md).
 
 ## Troubleshooting
 
-<details>
-<summary><b>“Cannot connect to the local MDict service”</b></summary>
-
-The service is not running, or is on a different port.
+### Cannot connect to the local service
 
 ```bash
-brew services start bob-mdict   # or: ~/.local/bin/bob-mdict --check
+brew services start bob-mdict
 curl http://127.0.0.1:15321/v1/status
 ```
 
-If `--check` works but Bob does not, make sure the plugin's service address
-matches the port the service is actually on.
-</details>
+Confirm that the plugin's Service URL uses the daemon's actual port.
 
-<details>
-<summary><b>“No dictionaries installed”</b></summary>
-
-The service is running but the dictionary folder is empty, or the files are
-nested somewhere it did not look.
+### No dictionaries were found
 
 ```bash
 open ~/Library/Application\ Support/bob-mdict/dictionaries/
@@ -177,115 +156,80 @@ bob-mdict --rescan
 bob-mdict --list-dictionaries
 ```
 
-Each dictionary needs at least one `.mdx`. A `.mdd` is optional and only
-supplies audio and images.
-</details>
+Every dictionary needs an MDX. MDD is optional and supplies resources such as
+recordings.
 
-<details>
-<summary><b>A word is found but there is no audio button</b></summary>
+### The configured ID is invalid or unavailable
 
-Audio comes only from your `.mdd` files, and only when a real recording exists.
-Check what your dictionary actually contains:
+Query `/list` in Bob, copy the current ID, and update that MDict service
+instance. An unavailable entry includes its diagnostic; other dictionaries
+continue to work.
 
-```bash
-bob-mdict --check
-```
+### A word has no audio button
 
-If the dictionary shows `mdd=0`, it has no resource file — the `.mdd` was not
-copied alongside the `.mdx`, or that dictionary simply has no audio.
+Audio appears only when the entry references a real recording that resolves in
+the matching MDD. No MDD, missing resource, or absent recording means no audio
+button. The project never substitutes TTS.
 
-This project never substitutes text-to-speech for a missing recording.
-</details>
+### Some MDD audio is missing
 
-<details>
-<summary><b>Some pronunciations are missing even though the MDD is present</b></summary>
-
-A few older dictionaries store audio as Ogg-Speex (`.spx`), which macOS cannot
-play. Install the decoder and those pronunciations appear:
+Older dictionaries may store Ogg-Speex (`.spx`) recordings. Install a decoder:
 
 ```bash
 brew install speex
 ```
 
-Each file is decoded once and cached. `bob-mdict --check` reports whether a
-decoder was found.
-</details>
+Decoded WAV files are cached locally. On startup, entries older than 30 days are
+removed and the cache is capped at 256 MiB.
 
-<details>
-<summary><b>One dictionary is broken</b></summary>
-
-A corrupt dictionary is isolated: it is marked unavailable and every other
-dictionary keeps working. `bob-mdict --check` prints the reason for each one.
-</details>
-
-<details>
-<summary><b>Port 15321 is already taken</b></summary>
-
-Start the service on another port and set the same address in the plugin:
-
-```bash
-bob-mdict --port 15400
-```
-
-For the Homebrew service, set `BOB_MDICT_PORT` in the launchd plist, or run the
-binary directly.
-</details>
-
-<details>
-<summary><b>“Plugin and local service versions are incompatible”</b></summary>
-
-The plugin and the service agree on an API version. Bring both up to date:
+### Plugin and service versions are incompatible
 
 ```bash
 brew upgrade bob-mdict
 ```
 
-and update the plugin from the releases page.
-</details>
+Then update the Bob plugin from the release page.
 
----
+## Privacy and security
 
-## Privacy
-
-- Everything happens on your Mac. The service makes **no outbound network
-  requests at all**.
-- It binds to `127.0.0.1` (and `::1`) only — never to a LAN address — and
-  rejects cross-origin requests, so a web page you have open cannot read your
-  dictionary library.
-- Your words are never sent anywhere. There is no analytics, no telemetry, no
-  usage reporting.
-- MDD resources are addressed by opaque, per-session tokens. No filesystem path
-  ever leaves the service.
-
----
+- Lookups and resources stay on your Mac; there is no analytics or telemetry.
+- The service binds only to `127.0.0.1`/`::1` and rejects non-loopback origins.
+- MDD resources use opaque, per-process tokens; no filesystem path is exposed.
+- No endpoint accepts an arbitrary path and the service makes no outbound
+  network request.
 
 ## Copyright
 
-This project is a dictionary **reader**. It contains and distributes no
-dictionary content. `.mdx`/`.mdd` files belong to their publishers, and it is
-your responsibility to obtain and use them lawfully.
+This repository, its binaries and its plugin packages contain no dictionary
+content. MDX/MDD files remain the property of their publishers; users are
+responsible for obtaining and using them lawfully.
 
-Licensed under **GPL-3.0-or-later** — see [LICENSE](LICENSE). The reasoning, and
-the full audit of every dependency, is in
+Tracked parser fixtures are minimal synthetic documents built specifically for
+tests. They contain invented words, definitions, translations, examples and
+resource paths; only the few selectors/classes and DOM relationships required
+for compatibility tests are retained.
+
+The project is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
----
 
 ## Development
 
 ```bash
-go test ./...              # unit, golden and API tests
-./scripts/build-plugin.sh  # build release/MDict-vX.Y.Z.bobplugin and update appcast.json
-./scripts/build-server.sh  # build server binaries and checksums
-./scripts/release.sh       # everything, plus the Homebrew formula
+gofmt -w .
+go vet ./...
+go test ./...
+go test -race ./...
+node --test plugin/main.test.js
+./scripts/build-plugin.sh
+./scripts/build-server.sh
 ```
 
-Tests that need real dictionaries skip cleanly when none are present. To run
-them, point at a folder of your own:
+Real-dictionary integration tests never write entry content into tracked
+snapshots. Point them at a lawful local library:
 
 ```bash
 BOB_MDICT_TEST_DICTIONARIES=/path/to/dictionaries go test ./internal/service -v
 ```
 
-More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-[docs/API.md](docs/API.md) · [docs/PARSER.md](docs/PARSER.md)
+More detail: [Architecture](docs/ARCHITECTURE.md) · [Parser](docs/PARSER.md) ·
+[HTTP API](docs/API.md)

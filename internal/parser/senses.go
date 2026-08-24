@@ -13,7 +13,7 @@ func (s *parseState) parseParts() {
 	if s.profile != nil && !s.profile.sense.IsEmpty() {
 		s.parsePartsFromProfile()
 	}
-	if len(s.entry.Parts) == 0 {
+	if len(s.entry.Parts) == 0 && !s.partsHandled {
 		s.parsePartsGeneric()
 	}
 	// Prune parts that ended up with nothing readable in them.
@@ -46,6 +46,11 @@ func (s *parseState) parsePartsFromProfile() {
 	}
 
 	for _, block := range blocks {
+		if role := ClassifySemanticLabel(s.rawPOSLabel(block)); role != "" {
+			s.partsHandled = true
+			s.storeSemanticBlock(block, role)
+			continue
+		}
 		pos := s.posOf(block)
 		grammar := s.firstText(block, s.profile.grammar)
 
@@ -103,8 +108,16 @@ func (s *parseState) parseSensesGroupedByOwnPOS() bool {
 	var buckets []bucket
 	seen := make(map[string]struct{})
 	previous := ""
+	handled := false
 
 	for _, node := range senseNodes {
+		rawLabel := s.rawPOSLabel(node)
+		if role := ClassifySemanticLabel(rawLabel); role != "" {
+			handled = true
+			s.partsHandled = true
+			s.storeSemanticSense(node, role)
+			continue
+		}
 		pos := s.posOf(node)
 		if pos == "" {
 			// A sense with no label of its own continues the previous one.
@@ -147,28 +160,97 @@ func (s *parseState) parseSensesGroupedByOwnPOS() bool {
 			Rule:       "profile:senseOwnPOS",
 		})
 	}
-	return len(s.entry.Parts) > 0
+	return handled || len(s.entry.Parts) > 0
 }
 
 // posOf resolves the part of speech for a block, preferring the profile
 // selector and falling back to scanning for a recognisable POS word.
 func (s *parseState) posOf(block *html.Node) string {
-	if s.profile != nil && !s.profile.pos.IsEmpty() {
-		for _, node := range QueryAllNested(block, s.profile.pos) {
-			if pos := CanonicalPOS(Text(node, TextOptions{SkipHidden: true})); pos != "" {
-				return pos
-			}
+	raw := s.rawPOSLabel(block)
+	if raw != "" {
+		if pos := CanonicalPOS(raw); pos != "" {
+			return pos
 		}
 		// Keep the raw label when it is unrecognised but short; a dictionary
 		// may use a category this project has never seen.
-		if node := Query(block, s.profile.pos); node != nil {
-			raw := strings.Trim(Normalize(Text(node, TextOptions{SkipHidden: true})), " :：")
-			if raw != "" && len([]rune(raw)) <= 30 {
-				return raw
-			}
+		if len([]rune(raw)) <= 30 {
+			return raw
 		}
 	}
 	return ""
+}
+
+func (s *parseState) rawPOSLabel(block *html.Node) string {
+	if s.profile == nil || s.profile.pos.IsEmpty() {
+		return ""
+	}
+	var fallback string
+	for _, node := range QueryAllNested(block, s.profile.pos) {
+		raw := strings.Trim(Normalize(Text(node, TextOptions{SkipHidden: true})), " :：")
+		if raw == "" {
+			continue
+		}
+		if fallback == "" {
+			fallback = raw
+		}
+		if ClassifySemanticLabel(raw) != "" || CanonicalPOS(raw) != "" {
+			return raw
+		}
+	}
+	return fallback
+}
+
+func (s *parseState) storeSemanticBlock(block *html.Node, role SemanticLabel) {
+	senseNodes := QueryAll(block, s.profile.sense)
+	if len(senseNodes) == 0 {
+		senseNodes = []*html.Node{block}
+	}
+	for _, node := range senseNodes {
+		s.storeSemanticSense(node, role)
+	}
+}
+
+func (s *parseState) storeSemanticSense(node *html.Node, role SemanticLabel) {
+	sense := s.senseFromNode(node)
+	body := strings.TrimSpace(firstNonEmpty(sense.Definition, sense.Translation))
+	if body == "" {
+		body = Normalize(s.textOf(node))
+	}
+	// Remove the visual section label and source number from fallback text.
+	body = strings.TrimSpace(strings.TrimPrefix(body, s.rawPOSLabel(node)))
+	body = strings.TrimSpace(strings.TrimPrefix(body, sense.Number))
+	lemma := ""
+	for _, selector := range []string{".phrase", ".REFHWD", ".PHRVBHWD", "strong", "b", "a"} {
+		if candidate := Query(node, ParseSelector(selector)); candidate != nil {
+			lemma = cleanLemma(s.textOf(candidate))
+			if lemma != "" {
+				break
+			}
+		}
+	}
+	if lemma != "" && strings.HasPrefix(body, lemma) {
+		body = strings.TrimSpace(strings.TrimPrefix(body, lemma))
+	}
+	body = strings.Trim(body, " :：-—·")
+
+	switch role {
+	case LabelCrossReference:
+		s.entry.CrossReferences = append(s.entry.CrossReferences, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
+	case LabelRelated:
+		s.entry.Related = append(s.entry.Related, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
+	case LabelPhrase:
+		s.entry.Phrases = appendPhrase(s.entry.Phrases, lemma, body)
+	case LabelIdiom:
+		s.entry.Idioms = appendPhrase(s.entry.Idioms, lemma, body)
+	case LabelPhrasalVerb:
+		s.entry.PhrasalVerbs = appendPhrase(s.entry.PhrasalVerbs, lemma, body)
+	case LabelDerivative:
+		s.entry.Derivatives = appendPhrase(s.entry.Derivatives, lemma, body)
+	case LabelSynonyms:
+		s.entry.Synonyms = append(s.entry.Synonyms, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
+	case LabelAntonyms:
+		s.entry.Antonyms = append(s.entry.Antonyms, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
+	}
 }
 
 func confidenceForPOS(pos string) float64 {

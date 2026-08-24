@@ -8,7 +8,7 @@
   },
   "pronunciations": [
     {
-      "region": "other",
+      "ipaRegion": "other",
       "ipa": "ˈflɪmbə",
       "confidence": 0.55,
       "rule": "generic:evidence"

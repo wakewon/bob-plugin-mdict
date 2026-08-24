@@ -5,12 +5,51 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // oggSpeexSample is a minimal Ogg page header. It is not decodable audio; it
 // exists only to prove the transcoder reports failure rather than returning
 // something Bob would try to play.
 var oggSpeexSample = append([]byte("OggS\x00\x02"), make([]byte, 64)...)
+
+func TestInFlightLocksAreReleased(t *testing.T) {
+	transcoder := NewTranscoder(t.TempDir())
+	release := transcoder.acquireKeyLock("one")
+	if len(transcoder.inFlight) != 1 {
+		t.Fatalf("inFlight = %d, want 1", len(transcoder.inFlight))
+	}
+	release()
+	if len(transcoder.inFlight) != 0 {
+		t.Fatalf("completed key leaked inFlight lock: %+v", transcoder.inFlight)
+	}
+}
+
+func TestStartupCleanupRemovesStaleWAV(t *testing.T) {
+	root := t.TempDir()
+	audioDir := filepath.Join(root, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(audioDir, "stale.wav")
+	fresh := filepath.Join(audioDir, "fresh.wav")
+	for _, path := range []string{stale, fresh} {
+		if err := os.WriteFile(path, []byte("RIFF"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-maxAudioCacheAge - time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	_ = NewTranscoder(root)
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale WAV was not removed: %v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("fresh WAV was removed: %v", err)
+	}
+}
 
 func TestSpeexAvailabilityReporting(t *testing.T) {
 	transcoder := NewTranscoder(t.TempDir())

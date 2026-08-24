@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,7 +20,12 @@ import (
 
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
-	cfg := config.Config{DictionaryDir: t.TempDir(), CacheDir: t.TempDir(), Port: 15321}
+	return newTestServerForDir(t, t.TempDir())
+}
+
+func newTestServerForDir(t *testing.T, dictionaryDir string) http.Handler {
+	t.Helper()
+	cfg := config.Config{DictionaryDir: dictionaryDir, CacheDir: t.TempDir(), Port: 15321}
 	svc, err := service.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -28,6 +34,50 @@ func newTestServer(t *testing.T) http.Handler {
 		t.Fatal(err)
 	}
 	return httpapi.New(svc, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))).Handler()
+}
+
+func TestDictionaryListIncludesUnavailableAndExplicitIDErrorsAreActionable(t *testing.T) {
+	root := t.TempDir()
+	broken := filepath.Join(root, "Broken", "Broken.mdx")
+	if err := os.MkdirAll(filepath.Dir(broken), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(broken, []byte("synthetic invalid mdx"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v1/dictionaries", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d", recorder.Code)
+	}
+	var list httpapi.DictionariesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Dictionaries) != 1 || list.Dictionaries[0].Health != "unavailable" {
+		t.Fatalf("unavailable dictionary missing from list: %+v", list.Dictionaries)
+	}
+
+	for _, tc := range []struct {
+		id   string
+		code string
+	}{
+		{"expired-id", "dictionaryNotFound"},
+		{list.Dictionaries[0].ID, "dictionaryUnavailable"},
+	} {
+		body := `{"query":"flimber","dictionaries":["` + tc.id + `"]}`
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v1/lookup", strings.NewReader(body)))
+		var failure httpapi.ErrorResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &failure); err != nil {
+			t.Fatal(err)
+		}
+		if failure.Error != tc.code || !strings.Contains(failure.Hint, "/list") {
+			t.Errorf("ID %q error = %+v, want %s with /list hint", tc.id, failure, tc.code)
+		}
+	}
 }
 
 // newRequest builds a request that looks like it came from the loopback
