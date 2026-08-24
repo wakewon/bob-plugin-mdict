@@ -15,7 +15,8 @@ an older plugin.
 ```json
 {
   "service": "bob-mdict",
-  "serviceVersion": "0.1.0",
+  "serviceVersion": "0.1.1",
+  "buildCommit": "abcdef1",
   "apiVersion": "v1",
   "platform": "darwin",
   "architecture": "arm64",
@@ -31,6 +32,8 @@ an older plugin.
 
 Used by `pluginValidate` to tell apart "service missing", "no dictionaries" and
 "incompatible version" — three problems with three different fixes.
+`buildCommit` is diagnostic identity for the process actually listening on the
+port; it is not required to equal the independently packaged plugin commit.
 
 ---
 

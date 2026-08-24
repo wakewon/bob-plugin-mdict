@@ -75,7 +75,15 @@ jobs:
         run: |
           file release/bob-mdict-darwin-arm64 | grep -q arm64
           file release/bob-mdict-darwin-amd64 | grep -q x86_64
-          ./release/bob-mdict-darwin-arm64 --version
+          identity=$(./release/bob-mdict-darwin-arm64 --version)
+          version=$(tr -d ' \n' < VERSION)
+          commit=$(git rev-parse --short HEAD)
+          echo "$identity" | grep -F "bob-mdict $version ($commit) api=v1"
+
+      - name: Generate and style-check Homebrew formula
+        run: |
+          ./scripts/build-homebrew-formula.sh
+          brew style release/bob-mdict.rb
 
       - name: Package the Bob plugin
         run: ./scripts/build-plugin.sh
@@ -98,7 +106,10 @@ jobs:
             curl -sf http://127.0.0.1:15399/v1/status > /dev/null && break
             sleep 1
           done
-          curl -sf http://127.0.0.1:15399/v1/status | tee /dev/stderr | grep -q '"apiVersion":"v1"'
+          status=$(curl -sf http://127.0.0.1:15399/v1/status)
+          echo "$status" | tee /dev/stderr | grep -q '"apiVersion":"v1"'
+          echo "$status" | grep -q "\"serviceVersion\":\"$(tr -d ' \n' < VERSION)\""
+          echo "$status" | grep -q "\"buildCommit\":\"$(git rev-parse --short HEAD)\""
           curl -sf http://127.0.0.1:15399/v1/dictionaries > /dev/null
           # With no dictionaries installed the service must say so clearly
           # rather than failing opaquely.
@@ -116,5 +127,7 @@ jobs:
           path: |
             release/*.bobplugin
             release/bob-mdict-darwin-*
+            release/bob-mdict-*.tar.gz
+            release/bob-mdict.rb
             release/SHA256SUMS
           retention-days: 14

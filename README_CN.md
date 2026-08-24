@@ -33,6 +33,9 @@ API 协作。
 
 ## 安装
 
+插件要求 **Bob 1.20.0 或更高版本**。`/list` 控制查询依赖 Bob 的
+`query.originalText`；普通查词仍使用预处理后的 `query.text`。
+
 ### 1. 安装本地服务
 
 使用 Homebrew：
@@ -144,7 +147,9 @@ brew services start bob-mdict
 curl http://127.0.0.1:15321/v1/status
 ```
 
-确认插件中的“本地服务地址”与服务实际端口一致。
+确认插件中的“本地服务地址”与服务实际端口一致。状态响应中的
+`serviceVersion`、`buildCommit`、`apiVersion` 标识端口上真正运行的进程；
+仅仅生成一个新 binary 并不会更新该进程。
 
 ### 未发现词典
 
@@ -214,7 +219,12 @@ go test -race ./...
 node --test plugin/main.test.js
 ./scripts/build-plugin.sh
 ./scripts/build-server.sh
+./scripts/dev-deploy.sh
 ```
+
+`build-server.sh` 只生成构建产物。`dev-deploy.sh` 会安全更新独立安装方式的
+开发 LaunchAgent，等待实际监听进程，并拒绝替换 Homebrew 或其它方式管理的
+daemon；最后核对 runtime 版本/commit 是否与 `VERSION` 和仓库 HEAD 一致。
 
 真实词典集成测试不会把词条内容写入 tracked snapshot。可以指向自己合法
 持有的本地词典目录：

@@ -1,6 +1,6 @@
 {
   "identifier": "com.github.wakewon.mdict",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "translate",
   "name": "MDict",
   "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典自带的真人发音。",
@@ -9,7 +9,7 @@
   "homepage": "https://github.com/wakewon/bob-plugin-mdict",
   "tutorial": "https://github.com/wakewon/bob-plugin-mdict#readme",
   "appcast": "https://raw.githubusercontent.com/wakewon/bob-plugin-mdict/main/appcast.json",
-  "minBobVersion": "1.8.0",
+  "minBobVersion": "1.20.0",
   "options": [
     {
       "identifier": "serviceURL",

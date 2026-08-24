@@ -105,6 +105,12 @@ func TestStatusReportsContract(t *testing.T) {
 	if payload.APIVersion != version.APIVersion {
 		t.Errorf("apiVersion = %q, want %q", payload.APIVersion, version.APIVersion)
 	}
+	if payload.ServiceVersion != version.Version {
+		t.Errorf("serviceVersion = %q, want %q", payload.ServiceVersion, version.Version)
+	}
+	if payload.BuildCommit != version.Commit || payload.BuildCommit == "" {
+		t.Errorf("buildCommit = %q, want non-empty %q", payload.BuildCommit, version.Commit)
+	}
 	if payload.Service != "bob-mdict" {
 		t.Errorf("service = %q", payload.Service)
 	}

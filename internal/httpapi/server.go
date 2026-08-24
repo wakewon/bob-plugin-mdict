@@ -120,6 +120,7 @@ func writeError(w http.ResponseWriter, status int, code, message, hint string) {
 type StatusResponse struct {
 	Service                string  `json:"service"`
 	ServiceVersion         string  `json:"serviceVersion"`
+	BuildCommit            string  `json:"buildCommit"`
 	APIVersion             string  `json:"apiVersion"`
 	Platform               string  `json:"platform"`
 	Architecture           string  `json:"architecture"`
@@ -144,6 +145,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, StatusResponse{
 		Service:                "bob-mdict",
 		ServiceVersion:         version.Version,
+		BuildCommit:            version.Commit,
 		APIVersion:             version.APIVersion,
 		Platform:               runtime.GOOS,
 		Architecture:           runtime.GOARCH,

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,60 @@ func TestBobRenderingNeverAggregatesMultipleDictionaries(t *testing.T) {
 	if !reflect.DeepEqual(result.Bob, want) {
 		t.Fatal("Bob output was not rendered exclusively from the first dictionary match")
 	}
+}
+
+func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.T) {
+	svc := newService(t)
+	result, err := svc.Lookup("abandon", service.LookupOptions{Mode: service.ModeExact})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, match := range result.Matches {
+		entry := match.Entry
+		if len(entry.Parts) < 2 {
+			continue
+		}
+		hasGlobalSourceNumber := false
+		for partIndex, part := range entry.Parts {
+			if partIndex > 0 && len(part.Senses) > 0 && part.Senses[0].Number != "" && part.Senses[0].Number != "1" {
+				hasGlobalSourceNumber = true
+			}
+		}
+		if !hasGlobalSourceNumber {
+			continue
+		}
+
+		rendered := bobadapter.Render(entry, bobadapter.DefaultOptions())
+		for _, part := range rendered.Parts {
+			for senseIndex, meaning := range part.Means {
+				wantPrefix := strconv.Itoa(senseIndex+1) + "."
+				if !strings.HasPrefix(meaning, wantPrefix) {
+					t.Fatalf("%s part %q display sense %d does not start with %q",
+						shortName(match.DictionaryTitle), part.Part, senseIndex, wantPrefix)
+				}
+			}
+			if strings.EqualFold(strings.TrimSpace(part.Part), "see also") {
+				t.Fatalf("%s still rendered See also as a Bob part", shortName(match.DictionaryTitle))
+			}
+		}
+		if len(entry.CrossReferences) > 0 {
+			found := false
+			for _, addition := range rendered.Additions {
+				if strings.EqualFold(addition.Name, "See also") {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("%s has cross-references but no See also addition", shortName(match.DictionaryTitle))
+			}
+		}
+		t.Logf("%s preserves source-global numbering while Bob numbering resets per POS",
+			shortName(match.DictionaryTitle))
+		return
+	}
+
+	t.Skip("no real matching entry exposed source-global numbering across multiple POS groups")
 }
 
 // TestRealLookupsProduceStructure is the anti-"pseudo-completion" check: every

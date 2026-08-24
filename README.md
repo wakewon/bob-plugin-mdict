@@ -34,6 +34,10 @@ HTML or audio. The two components advertise a versioned local API.
 
 ## Install
 
+The plugin requires **Bob 1.20.0 or later**. Its `/list` control query relies on
+Bob's `query.originalText`; ordinary lookups continue to use the preprocessed
+`query.text`.
+
 ### 1. Install the service
 
 With Homebrew:
@@ -146,7 +150,9 @@ brew services start bob-mdict
 curl http://127.0.0.1:15321/v1/status
 ```
 
-Confirm that the plugin's Service URL uses the daemon's actual port.
+Confirm that the plugin's Service URL uses the daemon's actual port. The status
+response identifies the running process with `serviceVersion`, `buildCommit`
+and `apiVersion`; building another binary does not update that process.
 
 ### No dictionaries were found
 
@@ -222,7 +228,13 @@ go test -race ./...
 node --test plugin/main.test.js
 ./scripts/build-plugin.sh
 ./scripts/build-server.sh
+./scripts/dev-deploy.sh
 ```
+
+`build-server.sh` only creates artifacts. `dev-deploy.sh` safely updates the
+standalone development LaunchAgent, waits for the actual listener, and refuses
+to replace a Homebrew- or otherwise-managed daemon. It then verifies that the
+runtime version and commit equal `VERSION` and repository HEAD.
 
 Real-dictionary integration tests never write entry content into tracked
 snapshots. Point them at a lawful local library:

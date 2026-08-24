@@ -13,6 +13,11 @@
 // 插件与本地服务是两个独立升级的组件，靠 apiVersion 约定兼容性。
 var REQUIRED_API_VERSION = 'v1';
 
+// build-plugin.sh replaces these two markers only in the packaged main.js.
+// They are diagnostic identity, not compatibility gates.
+var PLUGIN_VERSION = '__BOB_MDICT_PLUGIN_VERSION__';
+var PLUGIN_BUILD_COMMIT = '__BOB_MDICT_PLUGIN_COMMIT__';
+
 var DEFAULT_SERVICE_URL = 'http://127.0.0.1:15321';
 
 var TROUBLESHOOTING_LINK = 'https://github.com/wakewon/bob-plugin-mdict#troubleshooting';
@@ -225,17 +230,19 @@ function listDictionaries(query, serviceURL) {
 
 function translate(query, completion) {
     var serviceURL = normalizeBaseURL(getOption('serviceURL', DEFAULT_SERVICE_URL));
-    var text = String(query.text || '').trim();
+    // Bob preprocesses query.text. Since Bob 1.20.0, originalText preserves
+    // exactly what the user entered and is therefore the only safe place to
+    // recognize a control command without hijacking the real word "list".
+    var originalText = String(query.originalText || '').trim();
+    var lookupText = String(query.text || '').trim();
 
-    if (text === '') {
-        query.onCompletion({ error: { type: 'param', message: '没有可查询的内容' } });
+    if (originalText === '/list') {
+        listDictionaries(query, serviceURL);
         return;
     }
 
-    // /list is the one reserved control query. "list" remains an ordinary
-    // dictionary headword, and whitespace is ignored around the command.
-    if (text === '/list') {
-        listDictionaries(query, serviceURL);
+    if (lookupText === '') {
+        query.onCompletion({ error: { type: 'param', message: '没有可查询的内容' } });
         return;
     }
 
@@ -243,7 +250,7 @@ function translate(query, completion) {
         method: 'POST',
         url: serviceURL + '/v1/lookup',
         header: { 'Content-Type': 'application/json' },
-        body: buildRequestBody(text),
+        body: buildRequestBody(lookupText),
         timeout: 15,
         cancelSignal: query.cancelSignal,
         handler: function (resp) {
@@ -321,6 +328,12 @@ function pluginValidate(completion) {
                     }
                 });
                 return;
+            }
+
+            if (typeof $log !== 'undefined' && $log && typeof $log.info === 'function') {
+                $log.info('MDict plugin ' + PLUGIN_VERSION + ' (' + PLUGIN_BUILD_COMMIT + '), ' +
+                    'bob-mdict ' + (body.serviceVersion || 'unknown') + ' (' +
+                    (body.buildCommit || 'unknown') + '), API ' + (body.apiVersion || 'unknown'));
             }
 
             if (body.apiVersion !== REQUIRED_API_VERSION) {

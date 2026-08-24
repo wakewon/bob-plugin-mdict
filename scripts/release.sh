@@ -18,15 +18,7 @@ echo "==> 打包 Bob 插件"
 echo "==> 构建服务二进制"
 ./scripts/build-server.sh
 
-# formula 里的 sha256 必须与刚构建出的 tar.gz 完全一致，
-# 手工抄写极易出错，所以直接生成。
-ARM_SHA=$(shasum -a 256 "release/bob-mdict-$VERSION-darwin-arm64.tar.gz" | awk '{print $1}')
-AMD_SHA=$(shasum -a 256 "release/bob-mdict-$VERSION-darwin-amd64.tar.gz" | awk '{print $1}')
-mkdir -p release
-sed -e "s|REPLACE_WITH_ARM64_SHA256|$ARM_SHA|" \
-    -e "s|REPLACE_WITH_AMD64_SHA256|$AMD_SHA|" \
-    -e "s|version \"[0-9][^\"]*\"|version \"$VERSION\"|" \
-    packaging/homebrew/bob-mdict.rb > release/bob-mdict.rb
+./scripts/build-homebrew-formula.sh
 echo "==> 已生成 release/bob-mdict.rb（复制到 homebrew tap 仓库）"
 
 echo

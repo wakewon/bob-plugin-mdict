@@ -53,11 +53,21 @@ done
 
 (
     cd "$OUT_DIR"
-    shasum -a 256 "$BINARY"-* > SHA256SUMS
-    # 插件包的校验和也一并记录，方便发布页一次性核对。
-    if ls ./*.bobplugin >/dev/null 2>&1; then
-        shasum -a 256 ./*.bobplugin >> SHA256SUMS
+    artifacts=(
+        "$BINARY-$VERSION-darwin-amd64.tar.gz"
+        "$BINARY-$VERSION-darwin-arm64.tar.gz"
+        "$BINARY-darwin-amd64"
+        "$BINARY-darwin-arm64"
+    )
+    if [ -f "$BINARY-darwin-universal" ]; then
+        artifacts+=("$BINARY-darwin-universal")
     fi
+    # Only the current plugin belongs in this release manifest. Keeping older
+    # local artifacts in release/ must not mix versions in SHA256SUMS.
+    if [ -f "MDict-v$VERSION.bobplugin" ]; then
+        artifacts+=("MDict-v$VERSION.bobplugin")
+    fi
+    shasum -a 256 "${artifacts[@]}" > SHA256SUMS
 )
 
 echo "========================================="

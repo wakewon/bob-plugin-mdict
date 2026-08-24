@@ -42,18 +42,28 @@ fi
 
 IDENTIFIER=$(jq -r '.identifier' "$PLUGIN_DIR/info.json")
 MIN_BOB_VERSION=$(jq -r '.minBobVersion // "1.8.0"' "$PLUGIN_DIR/info.json")
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-echo "正在打包 $IDENTIFIER 版本: $VERSION..."
+echo "正在打包 $IDENTIFIER 版本: $VERSION ($COMMIT)..."
 
 mkdir -p "$OUT_DIR"
 PACKAGE_NAME="$OUT_DIR/$PLUGIN_NAME-v$VERSION.bobplugin"
 rm -f "$PACKAGE_NAME"
 
+# Package from a temporary staging directory so build identity is injected
+# into the shipped JavaScript without dirtying the tracked plugin source.
+STAGE_DIR=$(mktemp -d)
+trap 'rm -rf "$STAGE_DIR"' EXIT
+cp "$PLUGIN_DIR/info.json" "$PLUGIN_DIR/icon.png" "$STAGE_DIR/"
+sed -e "s/__BOB_MDICT_PLUGIN_VERSION__/$VERSION/g" \
+    -e "s/__BOB_MDICT_PLUGIN_COMMIT__/$COMMIT/g" \
+    "$PLUGIN_DIR/main.js" > "$STAGE_DIR/main.js"
+
 # .bobplugin 本质是 ZIP。必须压缩插件根目录“内部”的文件，
 # 而不是把插件目录本身作为额外的顶层目录。
 (
-    cd "$PLUGIN_DIR"
-    zip -q -r "../$PACKAGE_NAME" info.json main.js icon.png -x ".*" -x "__MACOSX"
+    cd "$STAGE_DIR"
+    zip -q -r "$REPO_ROOT/$PACKAGE_NAME" info.json main.js icon.png -x ".*" -x "__MACOSX"
 )
 
 echo "========================================="

@@ -13,7 +13,7 @@
 class BobMdict < Formula
   desc "Local MDict dictionary service for the Bob MDict plugin"
   homepage "https://github.com/wakewon/bob-plugin-mdict"
-  version "0.1.0"
+  version "0.1.1"
   license "GPL-3.0-or-later"
 
   # A handful of older dictionaries store pronunciations as Ogg-Speex, which

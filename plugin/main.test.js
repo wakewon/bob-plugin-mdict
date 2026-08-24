@@ -4,12 +4,16 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
+    .replace('__BOB_MDICT_PLUGIN_VERSION__', '0.1.1-test')
+    .replace('__BOB_MDICT_PLUGIN_COMMIT__', 'test123');
 
 function load(options, respond) {
     const requests = [];
+    const logs = [];
     const context = {
         $option: options || {},
+        $log: { info(message) { logs.push(message); } },
         $http: {
             request(request) {
                 requests.push(request);
@@ -19,17 +23,21 @@ function load(options, respond) {
     };
     vm.createContext(context);
     vm.runInContext(source, context, { filename: 'main.js' });
-    return { context, requests };
+    return { context, requests, logs };
 }
 
-function bobQuery(text, complete) {
-    return {
-        text,
+function bobQuery(input, complete) {
+    const query = {
+        text: input.text,
         detectFrom: 'en',
         detectTo: 'zh-Hans',
         cancelSignal: { test: true },
         onCompletion: complete
     };
+    if (Object.hasOwn(input, 'originalText')) {
+        query.originalText = input.originalText;
+    }
+    return query;
 }
 
 function response(statusCode, data) {
@@ -45,43 +53,60 @@ test('blank ID uses first match and explicit ID restricts lookup', () => {
             assert.equal(JSON.stringify(request.body.dictionaries), JSON.stringify(expected));
             request.handler(response(200, { bob: { word: 'flimber', parts: [] } }));
         });
-        loaded.context.translate(bobQuery('flimber', value => { completion = value; }));
+        loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
         assert.equal(completion.result.toDict.word, 'flimber');
         assert.equal('toParagraphs' in completion.result, false);
         assert.equal('fromParagraphs' in completion.result, false);
     }
 });
 
-test('exact trimmed /list uses dictionaries endpoint and paragraphs', () => {
-    let completion;
-    const loaded = load({}, request => {
-        assert.equal(request.method, 'GET');
-        assert.equal(request.url, 'http://127.0.0.1:15321/v1/dictionaries');
-        assert.equal(request.cancelSignal.test, true);
-        request.handler(response(200, {
-            directory: '/synthetic/dictionaries',
-            dictionaries: [
-                { id: 'abc123', title: 'Synthetic Learner Dictionary', health: 'ok' },
-                { id: 'broken1', title: 'Broken Synthetic Dictionary', health: 'unavailable', diagnostics: ['test diagnostic'] }
-            ]
-        }));
-    });
-    loaded.context.translate(bobQuery('  /list  ', value => { completion = value; }));
-    assert.equal(completion.result.toParagraphs[0], 'MDict dictionaries');
-    assert.match(completion.result.toParagraphs[1], /Synthetic Learner Dictionary/);
-    assert.match(completion.result.toParagraphs[1], /ID: abc123/);
-    assert.match(completion.result.toParagraphs[2], /状态：不可用/);
-    assert.match(completion.result.toParagraphs[2], /test diagnostic/);
-    assert.equal('toDict' in completion.result, false);
+test('Bob-preprocessed /list uses originalText and never performs a lookup', () => {
+    for (const originalText of ['/list', '  /list  ']) {
+        let completion;
+        const loaded = load({}, request => {
+            assert.equal(request.method, 'GET');
+            assert.equal(request.url, 'http://127.0.0.1:15321/v1/dictionaries');
+            assert.equal(request.url.endsWith('/v1/lookup'), false);
+            assert.equal(request.cancelSignal.test, true);
+            request.handler(response(200, {
+                directory: '/synthetic/dictionaries',
+                dictionaries: [
+                    { id: 'abc123', title: 'Synthetic Learner Dictionary', health: 'ok' },
+                    { id: 'broken1', title: 'Broken Synthetic Dictionary', health: 'unavailable', diagnostics: ['test diagnostic'] }
+                ]
+            }));
+        });
+        loaded.context.translate(bobQuery({ text: 'list', originalText }, value => { completion = value; }));
+        assert.equal(loaded.requests.length, 1);
+        assert.equal(completion.result.toParagraphs[0], 'MDict dictionaries');
+        assert.match(completion.result.toParagraphs[1], /Synthetic Learner Dictionary/);
+        assert.match(completion.result.toParagraphs[1], /ID: abc123/);
+        assert.match(completion.result.toParagraphs[2], /状态：不可用/);
+        assert.match(completion.result.toParagraphs[2], /test diagnostic/);
+        assert.equal('toDict' in completion.result, false);
+    }
 });
 
-test('ordinary list remains a dictionary lookup', () => {
+test('ordinary list and missing originalText remain normal lookups', () => {
+    let calls = 0;
     const loaded = load({}, request => {
+        calls++;
         assert.equal(request.method, 'POST');
         assert.equal(request.body.query, 'list');
         request.handler(response(404, {}));
     });
-    loaded.context.translate(bobQuery('list', () => {}));
+    loaded.context.translate(bobQuery({ text: 'list', originalText: 'list' }, () => {}));
+    loaded.context.translate(bobQuery({ text: 'list' }, () => {}));
+    assert.equal(calls, 2);
+});
+
+test('normal words use preprocessed text and are unaffected', () => {
+    const loaded = load({}, request => {
+        assert.equal(request.method, 'POST');
+        assert.equal(request.body.query, 'good');
+        request.handler(response(200, { bob: { word: 'good', parts: [] } }));
+    });
+    loaded.context.translate(bobQuery({ text: 'good', originalText: 'good' }, () => {}));
 });
 
 test('/list reports an empty registry and transport failure clearly', () => {
@@ -94,12 +119,12 @@ test('/list reports an empty registry and transport failure clearly', () => {
             request.handler(response(200, { directory: '/synthetic/empty', dictionaries: [] }));
         }
     });
-    loaded.context.translate(bobQuery('/list', value => { completion = value; }));
+    loaded.context.translate(bobQuery({ text: 'list', originalText: '/list' }, value => { completion = value; }));
     assert.equal(completion.result.toParagraphs[0], '未发现 MDict 词典');
     assert.match(completion.result.toParagraphs[1], /\/synthetic\/empty/);
 
     fail = true;
-    loaded.context.translate(bobQuery('/list', value => { completion = value; }));
+    loaded.context.translate(bobQuery({ text: 'list', originalText: '/list' }, value => { completion = value; }));
     assert.equal(completion.error.type, 'network');
     assert.match(completion.error.message, /无法连接/);
 });
@@ -109,7 +134,7 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     const loaded = load({ dictionaryID: 'expired-id' }, request => {
         if (request.url.endsWith('/v1/status')) {
             request.handler(response(200, {
-                service: 'bob-mdict', apiVersion: 'v1', serviceVersion: '0.1.0', healthyDictionaryCount: 1
+                service: 'bob-mdict', apiVersion: 'v1', serviceVersion: '0.1.1', buildCommit: 'service1', healthyDictionaryCount: 1
             }));
             return;
         }
@@ -119,6 +144,8 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     assert.equal(completion.result, false);
     assert.match(completion.error.message, /expired-id/);
     assert.match(completion.error.addition, /\/list/);
+    assert.match(loaded.logs[0], /MDict plugin 0\.1\.1-test \(test123\)/);
+    assert.match(loaded.logs[0], /bob-mdict 0\.1\.1 \(service1\), API v1/);
 });
 
 test('lookup maps invalid ID service errors to actionable guidance', () => {
@@ -126,6 +153,6 @@ test('lookup maps invalid ID service errors to actionable guidance', () => {
     const loaded = load({ dictionaryID: 'expired-id' }, request => {
         request.handler(response(404, { error: 'dictionaryNotFound', hint: 'Query /list in Bob.' }));
     });
-    loaded.context.translate(bobQuery('flimber', value => { completion = value; }));
+    loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
     assert.match(completion.error.addition, /\/list/);
 });
