@@ -1,3 +1,6 @@
+# typed: strict
+# frozen_string_literal: true
+
 # Homebrew formula for bob-mdict.
 #
 # Ship this in a tap (wakewon/homebrew-tap) so users can install with:
@@ -13,6 +16,12 @@ class BobMdict < Formula
   version "0.1.0"
   license "GPL-3.0-or-later"
 
+  # A handful of older dictionaries store pronunciations as Ogg-Speex, which
+  # macOS cannot play. speexdec transcodes them once and the result is cached.
+  # This project never synthesizes speech, so without the decoder those
+  # particular pronunciations are simply not offered.
+  depends_on "speex"
+
   on_macos do
     on_arm do
       url "https://github.com/wakewon/bob-plugin-mdict/releases/download/v#{version}/bob-mdict-#{version}-darwin-arm64.tar.gz"
@@ -23,12 +32,6 @@ class BobMdict < Formula
       sha256 "REPLACE_WITH_AMD64_SHA256"
     end
   end
-
-  # A handful of older dictionaries store pronunciations as Ogg-Speex, which
-  # macOS cannot play. speexdec transcodes them once and the result is cached.
-  # This project never synthesizes speech, so without the decoder those
-  # particular pronunciations are simply not offered.
-  depends_on "speex"
 
   def install
     bin.install "bob-mdict"
