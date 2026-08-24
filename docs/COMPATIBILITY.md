@@ -72,6 +72,9 @@ BOB_MDICT_MATRIX_OUT=/tmp/out \
 - **No full-text search.** Lookup is exact, normalized, case-insensitive, with
   optional prefix suggestions. Morphological fallback (`ran` → `run`) is not
   implemented; most dictionaries already carry inflected headwords as redirects.
+- **Case-sensitive headwords are preserved.** An exactly cased key wins;
+  case-insensitive matching is used only after an exact miss. Canonically
+  equivalent NFC/NFD input shares identity without folding case.
 
 ## Performance
 

@@ -92,7 +92,7 @@ a reason in `diagnostics`; the others stay usable.
 |---|---|
 | `query` | Required. |
 | `format` | `ir` (default) returns the Entry IR only. `bob` adds one `toDict` rendered from the first match. Multiple dictionaries are never aggregated into one Bob card. |
-| `mode` | `exact` (default) tries exact, Unicode-normalized and case-insensitive. `smart` also returns prefix suggestions on a miss. |
+| `mode` | `exact` (default) prefers an exactly cased headword, then tries Unicode-normalized and case-insensitive fallback matches. `smart` also returns prefix suggestions on a miss. |
 | `dictionaries` | Restrict and order the search. Empty means all, in registry order. |
 | `limit` | Stop after this many dictionaries answer. |
 | `maxExamples` | Cap parsed and displayed examples independently per sense or subsense. |
@@ -106,6 +106,10 @@ hint. An empty registry returns `503 noDictionaries` with the directory.
 
 Each match carries the dictionary-neutral `entry`; `format: "bob"` adds a
 top-level `bob` object that is a complete `toDict`.
+
+Exact headword spelling is always preferred. Case-insensitive matching is used
+only as a fallback when no exact key exists; NFC and NFD spellings share the
+same canonical query identity without collapsing letter case.
 
 ---
 

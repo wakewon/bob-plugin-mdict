@@ -9,9 +9,11 @@ import (
 // entryCacheKey identifies one parsed entry.
 type entryCacheKey struct {
 	dictionaryID string
-	query        string
-	maxExamples  int
-	debug        bool
+	// query is TrimSpace + NFC, preserving case because differently cased
+	// headwords may be distinct dictionary entries.
+	query       string
+	maxExamples int
+	debug       bool
 }
 
 // entryCache is a small LRU over parsed entries. Interactive lookup repeats the

@@ -109,6 +109,16 @@ test('normal words use preprocessed text and are unaffected', () => {
     loaded.context.translate(bobQuery({ text: 'good', originalText: 'good' }, () => {}));
 });
 
+test('lookup preserves headword case from Bob through the HTTP request', () => {
+    const loaded = load({}, request => {
+        assert.equal(request.method, 'POST');
+        assert.equal(request.body.query, 'Polish');
+        request.handler(response(404, {}));
+    });
+    loaded.context.translate(bobQuery({ text: 'Polish', originalText: 'Polish' }, () => {}));
+    assert.equal(loaded.requests.length, 1);
+});
+
 test('Chinese queries are passed through instead of being rejected by language', () => {
     let completion;
     const loaded = load({}, request => {

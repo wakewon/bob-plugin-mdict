@@ -78,13 +78,21 @@ type mddLocation struct {
 	entry  *mdx.MDictKeywordEntry
 }
 
-// foldKey produces the normalized form used for the case-insensitive fallback.
-func foldKey(word string) string {
+// NormalizeExactKey produces the canonical identity used by exact lookup,
+// redirect cycle detection, cache keys and suggestion deduplication. Unicode
+// canonically equivalent spellings share identity; letter case does not.
+func NormalizeExactKey(word string) string {
 	trimmed := strings.TrimSpace(word)
 	if trimmed == "" {
 		return ""
 	}
-	return strings.ToLower(norm.NFC.String(trimmed))
+	return norm.NFC.String(trimmed)
+}
+
+// foldKey is deliberately separate from exact identity. It exists only for
+// the case-insensitive fallback after an exact spelling did not match.
+func foldKey(word string) string {
+	return strings.ToLower(NormalizeExactKey(word))
 }
 
 // Info returns a snapshot of the dictionary metadata.
@@ -330,6 +338,15 @@ func (d *Dictionary) Lookup(word string) (*LookupResult, error) {
 			// reason to fail: report the redirect chain as not found.
 			return nil, ErrNotFound
 		}
+		// Cycle identity follows the dictionary key that actually matched, not
+		// the redirect text. A target such as "A" may case-fold back to an
+		// already visited key even when its own spelling looks new.
+		identity := NormalizeExactKey(key)
+		if _, looped := seen[identity]; looped {
+			return nil, ErrNotFound
+		}
+		seen[identity] = struct{}{}
+
 		content, err := dict.ResolveEntry(entry)
 		if err != nil {
 			return nil, err
@@ -344,12 +361,6 @@ func (d *Dictionary) Lookup(word string) (*LookupResult, error) {
 			return result, nil
 		}
 
-		normalized := strings.ToLower(target)
-		if _, looped := seen[normalized]; looped {
-			// Cyclic redirect: return the stub rather than spinning.
-			return nil, ErrNotFound
-		}
-		seen[normalized] = struct{}{}
 		current = target
 	}
 	return nil, ErrNotFound
@@ -367,7 +378,7 @@ func (d *Dictionary) findEntry(word string) (*mdx.MDictKeywordEntry, string, boo
 	}
 	// NFC is the form MDict files overwhelmingly use, while text selected from
 	// browsers and PDFs is frequently NFD.
-	if nfc := norm.NFC.String(word); nfc != word {
+	if nfc := NormalizeExactKey(word); nfc != word {
 		if entry, ok := d.exact[nfc]; ok {
 			return entry, entry.KeyWord, true
 		}
@@ -454,7 +465,8 @@ func (d *Dictionary) ResourceKinds() map[string]int {
 	return counts
 }
 
-// Prefix returns up to limit headwords starting with the given prefix.
+// Prefix returns up to limit original headword spellings starting with the
+// prefix. Matching is case-insensitive; returned spelling is never folded.
 func (d *Dictionary) Prefix(prefix string, limit int) []string {
 	if err := d.Load(); err != nil {
 		return nil

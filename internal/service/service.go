@@ -154,7 +154,8 @@ func (s *Service) ProfileID(dict *mdict.Dictionary) string {
 type LookupMode string
 
 const (
-	// ModeExact accepts exact, Unicode-normalized and case-insensitive matches.
+	// ModeExact prefers exact headword spelling, then accepts Unicode-normalized
+	// and case-insensitive fallback matches. It never adds prefix suggestions.
 	ModeExact LookupMode = "exact"
 	// ModeSmart additionally offers prefix suggestions when nothing matched.
 	ModeSmart LookupMode = "smart"
@@ -207,7 +208,7 @@ type LookupOptions struct {
 
 // Lookup resolves a query across the selected dictionaries.
 func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
-	query = strings.TrimSpace(query)
+	query = mdict.NormalizeExactKey(query)
 	if query == "" {
 		return nil, errors.New("empty query")
 	}
@@ -259,7 +260,7 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOptions) (Match, bool) {
 	cacheKey := entryCacheKey{
 		dictionaryID: dict.ID(),
-		query:        strings.ToLower(query),
+		query:        mdict.NormalizeExactKey(query),
 		maxExamples:  opts.MaxExamples,
 		debug:        opts.Debug,
 	}
@@ -321,7 +322,7 @@ func (s *Service) suggest(dicts []*mdict.Dictionary, query string, limit int) []
 	seen := make(map[string]struct{})
 	for _, dict := range dicts {
 		for _, word := range dict.Prefix(query, limit) {
-			key := strings.ToLower(word)
+			key := mdict.NormalizeExactKey(word)
 			if _, ok := seen[key]; ok {
 				continue
 			}
