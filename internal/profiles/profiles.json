@@ -1,0 +1,485 @@
+[
+  {
+    "id": "oald8",
+    "name": "Oxford Advanced Learner's Dictionary (8th ed., bilingual)",
+    "match": {
+      "titleContains": [
+        "牛津高阶",
+        "oalecd",
+        "Oxford Advanced Learner"
+      ],
+      "selectors": [
+        ".h-g .top-g",
+        ".n-g .def-g .d"
+      ]
+    },
+    "ignore": [
+      ".oalecd8e_show_all",
+      ".symbols-coresym",
+      ".symbols-small_coresym",
+      ".symbols-awlsym",
+      ".symbols-xrsym",
+      ".symbols-synsym",
+      ".z_ei-g",
+      ".fayin img",
+      "img.fayin",
+      ".sep",
+      ".dhb",
+      ".swung-dash"
+    ],
+    "headword": [
+      ".h-g .h"
+    ],
+    "translation": [
+      ".oalecd8e_chn"
+    ],
+    "pronunciation": [
+      {
+        "selector": [
+          ".ei-g a.fayin"
+        ],
+        "region": "auto",
+        "ipa": [
+          ".phon-gb",
+          ".phon-usgb"
+        ],
+        "audio": [
+          "href"
+        ]
+      }
+    ],
+    "partBlock": [
+      ".p-g"
+    ],
+    "pos": [
+      ".pos-g .pos"
+    ],
+    "grammar": [
+      ".gr"
+    ],
+    "sense": [
+      ".n-g"
+    ],
+    "senseNumber": [
+      ".z_n"
+    ],
+    "definition": [
+      ".def-g .d"
+    ],
+    "definitionStrip": [
+      ".label-g"
+    ],
+    "labels": [
+      ".label-g"
+    ],
+    "patterns": [
+      ".cf"
+    ],
+    "example": [
+      ".x-g"
+    ],
+    "exampleText": [
+      ".x"
+    ],
+    "synonyms": [
+      ".xr-g"
+    ],
+    "forms": [
+      {
+        "container": [
+          ".infl"
+        ],
+        "word": [
+          ".inflection"
+        ],
+        "name": "Forms"
+      }
+    ],
+    "sections": [
+      {
+        "selector": [
+          ".id-g"
+        ],
+        "kind": "idiom",
+        "lemma": [
+          ".id"
+        ],
+        "body": [
+          ".d"
+        ]
+      },
+      {
+        "selector": [
+          ".pv-g"
+        ],
+        "kind": "phrasalVerb",
+        "lemma": [
+          ".pv"
+        ],
+        "body": [
+          ".d"
+        ]
+      },
+      {
+        "selector": [
+          ".un"
+        ],
+        "kind": "usage",
+        "title": "Usage"
+      }
+    ]
+  },
+  {
+    "id": "ldoce5pp",
+    "name": "Longman Dictionary of Contemporary English 5++ (bilingual)",
+    "match": {
+      "titleContains": [
+        "LDOCE",
+        "Longman"
+      ],
+      "selectors": [
+        ".ldoceEntry",
+        ".Sense .DEF"
+      ]
+    },
+    "ignore": [
+      ".foldsign",
+      ".foldblank",
+      ".asset_intro",
+      ".lm5ppMenu",
+      ".tooltip",
+      ".FREQ",
+      ".AC",
+      ".LEVEL",
+      ".corpus",
+      ".assetlink",
+      ".HYP",
+      ".dictionary_intro",
+      ".exaGroup",
+      ".Thesaurus",
+      ".F2NBox",
+      ".portrait",
+      ".LDOCEVERSIONLOGO_5",
+      ".LDOCEVERSIONLOGO_new"
+    ],
+    "headword": [
+      ".Head .HWD"
+    ],
+    "translation": [
+      ".cn_txt"
+    ],
+    "pronunciation": [
+      {
+        "selector": [
+          "a.PronCodes"
+        ],
+        "region": "uk",
+        "ipa": [
+          ".PRON"
+        ],
+        "noAudio": true
+      },
+      {
+        "selector": [
+          "a.speaker.brefile"
+        ],
+        "region": "uk",
+        "audio": [
+          "href"
+        ]
+      },
+      {
+        "selector": [
+          "a.speaker.amefile"
+        ],
+        "region": "us",
+        "audio": [
+          "href"
+        ]
+      }
+    ],
+    "partBlock": [
+      ".ldoceEntry"
+    ],
+    "pos": [
+      ".lm5pp_POS"
+    ],
+    "grammar": [
+      ".GRAM"
+    ],
+    "sense": [
+      ".Sense"
+    ],
+    "senseNumber": [
+      ".sensenum"
+    ],
+    "subsense": [
+      ".Subsense"
+    ],
+    "definition": [
+      ".DEF"
+    ],
+    "labels": [
+      ".REGISTERLAB",
+      ".GEO",
+      ".LEXUNIT"
+    ],
+    "topic": [
+      ".ACTIV"
+    ],
+    "example": [
+      ".EXAMPLE"
+    ],
+    "exampleText": [
+      ".english"
+    ],
+    "synonyms": [
+      ".SYN"
+    ],
+    "antonyms": [
+      ".OPP"
+    ],
+    "wordFamily": [
+      ".LDOCE_word_family"
+    ],
+    "sections": [
+      {
+        "selector": [
+          ".PhrVbEntry"
+        ],
+        "kind": "phrasalVerb",
+        "lemma": [
+          ".REFHWD",
+          ".PHRVBHWD",
+          ".Head .HWD"
+        ]
+      },
+      {
+        "selector": [
+          ".Collocations",
+          ".COLLO"
+        ],
+        "kind": "collocation"
+      },
+      {
+        "selector": [
+          ".GramExa"
+        ],
+        "kind": "grammar",
+        "title": "Grammar"
+      }
+    ]
+  },
+  {
+    "id": "collins-cobuild-overhaul",
+    "name": "Collins COBUILD Advanced Learner's Dictionary (bilingual overhaul)",
+    "match": {
+      "titleContains": [
+        "Collins",
+        "COBUILD",
+        "柯林斯"
+      ],
+      "selectors": [
+        ".collinsbody",
+        ".word_entry .word_key"
+      ]
+    },
+    "ignore": [
+      ".tts_button",
+      ".word-frequency-img",
+      ".icon-speak-form",
+      ".icon-speak-uk",
+      ".icon-speak-us",
+      ".cc_addon_foldButton",
+      ".eudicbugworkround",
+      "#debugiPhone",
+      ".tips_box",
+      ".addon",
+      ".gInfoCell",
+      ".screenWider"
+    ],
+    "headword": [
+      ".word_entry .word_key"
+    ],
+    "translation": [
+      ".chinese-text",
+      ".def_cn"
+    ],
+    "pronunciation": [
+      {
+        "selector": [
+          ".word_entry .pron a[href]"
+        ],
+        "region": "auto",
+        "ipa": [
+          ".pron"
+        ],
+        "audio": [
+          "href"
+        ]
+      }
+    ],
+    "pos": [
+      ".caption .st"
+    ],
+    "sense": [
+      ".collins_en_cn"
+    ],
+    "senseNumber": [
+      ".caption .num"
+    ],
+    "definition": [
+      ".caption"
+    ],
+    "definitionStrip": [
+      ".num",
+      ".st",
+      ".anchor",
+      ".text_gray"
+    ],
+    "labels": [
+      ".caption .lbl.type-register"
+    ],
+    "patterns": [
+      ".tips_sentence"
+    ],
+    "example": [
+      "ul li"
+    ],
+    "exampleText": [
+      "p"
+    ],
+    "synonyms": [
+      ".synonym"
+    ],
+    "forms": [
+      {
+        "container": [
+          ".form_inflected"
+        ],
+        "label": [
+          ".lbl.type-gram"
+        ],
+        "word": [
+          "a.orth"
+        ],
+        "name": "Forms"
+      }
+    ]
+  },
+  {
+    "id": "ode-living-online",
+    "name": "Oxford Living Dictionaries / Oxford Dictionary of English (online)",
+    "match": {
+      "titleContains": [
+        "Oxford Living",
+        "ODE Living",
+        "OELD"
+      ],
+      "selectors": [
+        ".OELDBody",
+        ".gramb .semb"
+      ]
+    },
+    "ignore": [
+      ".moreInfo",
+      ".switchbutton",
+      ".sectionswitch",
+      ".pronLogo",
+      ".entryLogo",
+      ".examples",
+      ".frequency",
+      ".variant",
+      ".entryWord h1",
+      ".origin_appendix"
+    ],
+    "headword": [
+      ".hwg .hw"
+    ],
+    "pronunciation": [
+      {
+        "selector": [
+          ".pron a.phoneticSymbol"
+        ],
+        "region": "auto",
+        "audio": [
+          "addr"
+        ]
+      }
+    ],
+    "partBlock": [
+      "section.gramb"
+    ],
+    "pos": [
+      ".grambhead .pos"
+    ],
+    "grammar": [
+      ".transitivity"
+    ],
+    "sense": [
+      ".semb li"
+    ],
+    "subsense": [
+      ".subSense"
+    ],
+    "senseNumber": [
+      ".iteration",
+      ".subsenseIteration"
+    ],
+    "definition": [
+      ".ind"
+    ],
+    "labels": [
+      ".sense-registers"
+    ],
+    "example": [
+      ".exg .ex"
+    ],
+    "synonyms": [
+      ".synonyms"
+    ],
+    "sections": [
+      {
+        "selector": [
+          "section.etym.phrase"
+        ],
+        "kind": "phrase",
+        "items": [
+          "li"
+        ],
+        "lemma": [
+          ".phrase"
+        ],
+        "body": [
+          ".ind"
+        ],
+        "stripTitle": [
+          ".phrases-title",
+          "h3"
+        ]
+      },
+      {
+        "selector": [
+          "section.etym.origin"
+        ],
+        "kind": "etymology",
+        "stripTitle": [
+          "h3"
+        ]
+      },
+      {
+        "selector": [
+          "section.etym.derivatives"
+        ],
+        "kind": "generic",
+        "title": "Derivatives",
+        "stripTitle": [
+          "h3"
+        ]
+      }
+    ],
+    "root": [
+      ".entryWrapper"
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+// Package version carries build-time identity for the bob-mdict service.
+package version
+
+// Version is the service version. Overridden at build time via -ldflags.
+var Version = "0.1.0"
+
+// Commit is the git commit the binary was built from. Overridden via -ldflags.
+var Commit = "dev"
+
+// APIVersion is the HTTP API contract version. The Bob plugin refuses to talk
+// to a service advertising a different value, so bump it only on breaking
+// changes to the request/response shapes under /v1.
+const APIVersion = "v1"
+
+// DefaultPort is the loopback port the service listens on by default.
+const DefaultPort = 15321

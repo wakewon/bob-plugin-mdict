@@ -1,0 +1,41 @@
+{
+  "headword": "flimber",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "pronunciations": [
+    {
+      "region": "other",
+      "ipa": "ˈflɪmbə",
+      "confidence": 0.55,
+      "rule": "generic:evidence"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "noun",
+      "senses": [
+        {
+          "definition": "A small wooden tool used for smoothing clay.",
+          "examples": [
+            {
+              "text": "She reached for the flimber and kept working."
+            }
+          ],
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        },
+        {
+          "definition": "The act of smoothing something by hand.",
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        }
+      ],
+      "confidence": 0.7999999999999999,
+      "rule": "generic:senseHints"
+    }
+  ]
+}

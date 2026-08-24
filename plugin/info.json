@@ -1,0 +1,80 @@
+{
+  "identifier": "com.github.wakewon.mdict",
+  "version": "0.1.0",
+  "category": "translate",
+  "name": "MDict",
+  "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典自带的真人发音。",
+  "icon": "icon.png",
+  "author": "wakewon",
+  "homepage": "https://github.com/wakewon/bob-plugin-mdict",
+  "tutorial": "https://github.com/wakewon/bob-plugin-mdict#readme",
+  "appcast": "https://raw.githubusercontent.com/wakewon/bob-plugin-mdict/main/appcast.json",
+  "minBobVersion": "1.8.0",
+  "options": [
+    {
+      "identifier": "serviceURL",
+      "type": "text",
+      "title": "本地服务地址",
+      "defaultValue": "http://127.0.0.1:15321",
+      "desc": "bob-mdict 本地服务的地址。默认无需修改。\n\n只有在你用 --port 改过端口时才需要调整。",
+      "textConfig": {
+        "type": "visible",
+        "placeholderText": "http://127.0.0.1:15321"
+      }
+    },
+    {
+      "identifier": "dictionaryMode",
+      "type": "menu",
+      "title": "词典选择",
+      "defaultValue": "first",
+      "desc": "「首个命中」优先保证单本词典的高质量结果；「全部词典」会把所有命中的词典分节展示。",
+      "menuValues": [
+        { "title": "首个命中的词典", "value": "first" },
+        { "title": "全部命中的词典", "value": "all" },
+        { "title": "仅指定词典", "value": "single" }
+      ]
+    },
+    {
+      "identifier": "dictionaryID",
+      "type": "text",
+      "title": "指定词典 ID",
+      "desc": "仅在「仅指定词典」模式下使用。\n\n运行 `bob-mdict --list-dictionaries` 查看每本词典的 ID。多个 ID 用英文逗号分隔。",
+      "textConfig": {
+        "type": "visible",
+        "placeholderText": "留空表示不限制"
+      }
+    },
+    {
+      "identifier": "showExamples",
+      "type": "menu",
+      "title": "显示例句",
+      "defaultValue": "enable",
+      "menuValues": [
+        { "title": "显示", "value": "enable" },
+        { "title": "隐藏", "value": "disable" }
+      ]
+    },
+    {
+      "identifier": "showExtras",
+      "type": "menu",
+      "title": "显示扩展内容",
+      "defaultValue": "enable",
+      "desc": "短语、习语、动词短语、搭配、用法说明、同义词、词源等。",
+      "menuValues": [
+        { "title": "显示", "value": "enable" },
+        { "title": "隐藏", "value": "disable" }
+      ]
+    },
+    {
+      "identifier": "maxExamples",
+      "type": "text",
+      "title": "每个义项最多例句数",
+      "defaultValue": "3",
+      "desc": "部分词典每个义项收录了几十条语料例句，全部展示会难以阅读。",
+      "textConfig": {
+        "type": "visible",
+        "placeholderText": "3"
+      }
+    }
+  ]
+}

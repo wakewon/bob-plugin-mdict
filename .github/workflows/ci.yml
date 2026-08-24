@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^local_assets/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Verify go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      # The developer's own dictionaries are not in the repository, so the
+      # integration tests skip themselves here. Parser golden tests and API
+      # tests run on synthetic fixtures and cover the same code paths.
+      - name: Test
+        run: go test ./... -count=1
+
+      - name: Test with race detector
+        run: go test ./... -race -count=1
+
+      - name: Confirm no dictionary data is tracked
+        run: |
+          if git ls-files | grep -iE '\.(mdx|mdd)$'; then
+            echo "Dictionary data must never be committed."
+            exit 1
+          fi
+
+  build:
+    name: Build and package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build server binaries
+        run: ./scripts/build-server.sh
+
+      - name: Confirm both architectures were produced
+        run: |
+          file release/bob-mdict-darwin-arm64 | grep -q arm64
+          file release/bob-mdict-darwin-amd64 | grep -q x86_64
+          ./release/bob-mdict-darwin-arm64 --version
+
+      - name: Package the Bob plugin
+        run: ./scripts/build-plugin.sh
+
+      - name: Validate plugin metadata against Bob's rules
+        run: ./scripts/verify-plugin.sh release/MDict-v$(tr -d ' \n' < VERSION).bobplugin
+
+      - name: Smoke test the CLI on an empty library
+        run: |
+          mkdir -p "$RUNNER_TEMP/dicts"
+          ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --check
+          ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --list-dictionaries
+          ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --rescan
+
+      - name: Smoke test the HTTP API end to end
+        run: |
+          mkdir -p "$RUNNER_TEMP/dicts"
+          ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --port 15399 &
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:15399/v1/status > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:15399/v1/status | tee /dev/stderr | grep -q '"apiVersion":"v1"'
+          curl -sf http://127.0.0.1:15399/v1/dictionaries > /dev/null
+          # With no dictionaries installed the service must say so clearly
+          # rather than failing opaquely.
+          curl -s -X POST http://127.0.0.1:15399/v1/lookup \
+            -H 'Content-Type: application/json' -d '{"query":"hello"}' | grep -q 'noDictionaries'
+          # A cross-origin request must be refused.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.example' \
+            http://127.0.0.1:15399/v1/status)
+          [ "$code" = "403" ] || { echo "cross-origin request was not refused ($code)"; exit 1; }
+          kill %1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            release/*.bobplugin
+            release/bob-mdict-darwin-*
+            release/SHA256SUMS
+          retention-days: 14

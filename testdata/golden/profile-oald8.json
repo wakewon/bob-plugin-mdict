@@ -1,0 +1,107 @@
+{
+  "headword": "flimber",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "oald8"
+  },
+  "pronunciations": [
+    {
+      "region": "uk",
+      "ipa": "ˈflɪmbə",
+      "audio": {
+        "resourceRef": "sound://synthetic/oald/uk-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:.ei-g a.fayin"
+    },
+    {
+      "region": "us",
+      "ipa": "ˈflɪmbər",
+      "audio": {
+        "resourceRef": "sound://synthetic/oald/us-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:.ei-g a.fayin"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "verb",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "to smooth clay with a wooden tool",
+          "translation": "用木工具抹平黏土",
+          "patterns": [
+            "flimber something"
+          ],
+          "examples": [
+            {
+              "text": "She flimbered the bowl carefully.",
+              "translation": "她小心地抹平了碗。"
+            }
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        },
+        {
+          "number": "2",
+          "definition": "to work slowly",
+          "translation": "慢吞吞地干活",
+          "labels": [
+            "informal"
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:.n-g"
+    },
+    {
+      "pos": "noun",
+      "grammar": "countable",
+      "senses": [
+        {
+          "definition": "a wooden smoothing tool",
+          "translation": "木制抹平工具",
+          "grammar": "countable",
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:.n-g"
+    }
+  ],
+  "forms": [
+    {
+      "name": "Forms",
+      "words": [
+        "flimber",
+        "flimbers",
+        "flimbered"
+      ]
+    }
+  ],
+  "idioms": [
+    {
+      "phrase": "flimber about",
+      "definition": "to waste time"
+    }
+  ],
+  "phrasalVerbs": [
+    {
+      "phrase": "flimber down",
+      "definition": "to become calmer"
+    }
+  ]
+}

@@ -55,6 +55,10 @@ out/
 .parcel-cache/
 .next/
 .nuxt/
+
+# Release artifacts. Built by scripts/release.sh and published to GitHub
+# Releases, never committed — same convention as the AiTranslate plugin.
+release/
 *.bobplugin
 
 # Environment variables & secrets

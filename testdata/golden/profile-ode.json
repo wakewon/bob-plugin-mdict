@@ -1,0 +1,85 @@
+{
+  "headword": "flimber",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "ode-living-online"
+  },
+  "pronunciations": [
+    {
+      "region": "uk",
+      "ipa": "ˈflɪmbə",
+      "audio": {
+        "resourceRef": "sound://synthetic/ode/uk-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:.pron a.phoneticSymbol"
+    },
+    {
+      "region": "us",
+      "ipa": "ˈflɪmbər",
+      "audio": {
+        "resourceRef": "sound://synthetic/ode/us-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:.pron a.phoneticSymbol"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "verb",
+      "grammar": "with object",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "Smooth clay with a wooden tool.",
+          "examples": [
+            {
+              "text": "she flimbered the bowl carefully"
+            }
+          ],
+          "subsenses": [
+            {
+              "number": "1.1",
+              "definition": "Work slowly.",
+              "examples": [
+                {
+                  "text": "he flimbered all afternoon"
+                }
+              ],
+              "confidence": 0.85,
+              "rule": "profile:subsense"
+            }
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        },
+        {
+          "number": "2",
+          "definition": "Delay a decision.",
+          "labels": [
+            "informal"
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:.semb li"
+    }
+  ],
+  "phrases": [
+    {
+      "phrase": "flimber about",
+      "definition": "Waste time"
+    }
+  ],
+  "etymology": "Origin Invented from a made-up root for testing"
+}

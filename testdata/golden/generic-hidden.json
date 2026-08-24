@@ -1,0 +1,28 @@
+{
+  "headword": "quindle",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "definition": "To fold a sheet of paper into three parts.",
+          "examples": [
+            {
+              "text": "Quindle the letter before posting it."
+            }
+          ],
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        }
+      ],
+      "confidence": 0.44999999999999996,
+      "rule": "generic:senseHints"
+    }
+  ]
+}

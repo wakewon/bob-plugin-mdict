@@ -1,0 +1,33 @@
+{
+  "headword": "generic-malformed",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "definition": "To hum quietly while working.",
+          "examples": [
+            {
+              "text": "He brellowed all afternoon."
+            }
+          ],
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        },
+        {
+          "definition": "To make a low rumbling sound.",
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        }
+      ],
+      "confidence": 0.44999999999999996,
+      "rule": "generic:senseHints"
+    }
+  ]
+}

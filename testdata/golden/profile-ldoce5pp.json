@@ -1,0 +1,79 @@
+{
+  "headword": "flimber",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "ldoce5pp"
+  },
+  "pronunciations": [
+    {
+      "region": "uk",
+      "ipa": "ˈflɪmbə",
+      "audio": {
+        "resourceRef": "sound://synthetic/ldoce/uk-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:a.PronCodes"
+    },
+    {
+      "region": "us",
+      "audio": {
+        "resourceRef": "sound://synthetic/ldoce/us-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:a.speaker.amefile"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "verb",
+      "grammar": "transitive",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "to smooth clay using a wooden tool",
+          "translation": "用木工具抹平黏土",
+          "topic": "SHAPING CLAY",
+          "examples": [
+            {
+              "text": "She flimbered the bowl carefully.",
+              "translation": "她小心地抹平了碗。",
+              "audio": {
+                "resourceRef": "sound://synthetic/ldoce/example-flimber.spx",
+                "token": "TOKEN",
+                "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+                "mimeType": "audio/mpeg"
+              }
+            }
+          ],
+          "synonyms": [
+            "smooth"
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        },
+        {
+          "number": "2",
+          "definition": "to work slowly",
+          "translation": "慢吞吞地干活",
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:.Sense"
+    }
+  ],
+  "phrasalVerbs": [
+    {
+      "phrase": "flimber down"
+    }
+  ]
+}

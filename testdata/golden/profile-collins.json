@@ -1,0 +1,89 @@
+{
+  "headword": "flimber",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "collins-cobuild-overhaul"
+  },
+  "pronunciations": [
+    {
+      "region": "uk",
+      "ipa": "ˈflɪmbə",
+      "audio": {
+        "resourceRef": "sound://synthetic/collins/uk-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:.word_entry .pron a[href]"
+    },
+    {
+      "region": "us",
+      "ipa": "ˈflɪmbər",
+      "audio": {
+        "resourceRef": "sound://synthetic/collins/us-flimber.mp3",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v1/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:.word_entry .pron a[href]"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "verb",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "If you flimber clay, you smooth it with a wooden tool.",
+          "translation": "用木工具抹平黏土",
+          "examples": [
+            {
+              "text": "She flimbered the bowl carefully.VERB noun",
+              "translation": "她小心地抹平了碗。"
+            }
+          ],
+          "synonyms": [
+            "smooth",
+            "level"
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:senseOwnPOS"
+    },
+    {
+      "pos": "noun",
+      "senses": [
+        {
+          "number": "2",
+          "definition": "A flimber is a wooden smoothing tool.",
+          "translation": "木制抹平工具",
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:senseOwnPOS"
+    }
+  ],
+  "forms": [
+    {
+      "name": "third-person singular",
+      "words": [
+        "flimbers"
+      ]
+    },
+    {
+      "name": "past tense",
+      "words": [
+        "flimbered"
+      ]
+    }
+  ]
+}

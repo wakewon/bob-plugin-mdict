@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.wakewon.bob-mdict</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BINARY_PATH__</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Restart only on abnormal exit, so a deliberate stop stays stopped. -->
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Homebrew installs speexdec outside launchd's default PATH; without this
+         Ogg-Speex pronunciations would silently disappear under the agent. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/bob-mdict.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/bob-mdict.log</string>
+</dict>
+</plist>
