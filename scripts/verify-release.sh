@@ -43,7 +43,17 @@ if grep -qE '@(VERSION|ARM64_SHA256|AMD64_SHA256)@' "$OUT_DIR/bob-mdict.rb"; the
     echo "error: Homebrew formula contains an unresolved placeholder" >&2
     exit 1
 fi
-brew style "$OUT_DIR/bob-mdict.rb"
+# Homebrew's global RuboCop process also loads installed tap formulae. When the
+# same released formula is already tapped locally, its DuplicateMethods cop
+# reports the two class copies as if one file defined methods twice. Check the
+# current file's method names directly, then skip only that environment-global
+# cop while retaining every other Homebrew style rule.
+DUPLICATE_METHODS=$(sed -nE 's/^  def ([^ (]+).*/\1/p' "$OUT_DIR/bob-mdict.rb" | sort | uniq -d)
+[ -z "$DUPLICATE_METHODS" ] || {
+    printf 'error: duplicate formula methods:\n%s\n' "$DUPLICATE_METHODS" >&2
+    exit 1
+}
+brew style --except-cops Lint/DuplicateMethods "$OUT_DIR/bob-mdict.rb"
 scripts/http-smoke.sh "$OUT_DIR/bob-mdict-darwin-$HOST_ARCH"
 scripts/security-check.sh
 printf 'release rehearsal verified for %s (%s)\n' "$VERSION" "$COMMIT"
