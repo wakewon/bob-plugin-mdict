@@ -138,6 +138,11 @@ version/API/build identity, and runs `--check` with an empty dictionary folder.
   the next appropriate version.
 - If appcast push races with main, the workflow rebases and retries a bounded
   number of times. It never force-pushes main.
+- If a public Release is complete but a later distribution step fails, fix the
+  workflow on `main` and resume it with
+  `gh workflow run Release --ref main -f release_tag=vX.Y.Z`. The recovery run
+  checks out the existing tag and reuses the public Release bytes; it never
+  replaces published assets.
 - If tap authentication is incomplete, rotate only the dedicated deploy key;
   do not create a broad PAT.
 

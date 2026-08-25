@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing public tag whose distribution steps should be resumed
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,12 +24,12 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      BUILD_COMMIT: ${{ github.sha }}
-      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - uses: actions/setup-go@v5
         with:
@@ -33,14 +39,16 @@ jobs:
       - name: Validate immutable tag identity
         run: |
           version=$(tr -d ' \t\n\r' < VERSION)
+          build_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          echo "BUILD_COMMIT=$build_commit" >> "$GITHUB_ENV"
           test "$RELEASE_TAG" = "v$version"
-          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+          test "$build_commit" = "$(git rev-parse HEAD)"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')
             if [ "$draft" = true ]; then
               echo "Removing an unpublished draft left by an earlier failed attempt."
               gh release delete "$RELEASE_TAG" --yes
-            elif [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
+            elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
               echo "RELEASE_ALREADY_PUBLIC=1" >> "$GITHUB_ENV"
             else
               echo "Release $RELEASE_TAG is already public; same-version assets are immutable."
@@ -98,7 +106,7 @@ jobs:
           mkdir -p "$remote"
           gh release download "$RELEASE_TAG" --dir "$remote"
           (cd "$remote" && shasum -a 256 -c SHA256SUMS)
-          jq -e --arg version "$version" --arg commit "$GITHUB_SHA" \
+          jq -e --arg version "$version" --arg commit "$BUILD_COMMIT" \
             '.version==$version and .apiVersion=="v2" and .buildCommit==$commit' \
             "$remote/RELEASE_MANIFEST.json" >/dev/null
 
@@ -112,7 +120,7 @@ jobs:
           appcast_checkout="$RUNNER_TEMP/appcast-main"
           git clone --quiet --branch main https://github.com/wakewon/bob-plugin-mdict.git "$appcast_checkout"
           cd "$appcast_checkout"
-          ./scripts/update-appcast.sh "$version" "$plugin_sha" "$GITHUB_SHA" "$timestamp"
+          ./scripts/update-appcast.sh "$version" "$plugin_sha" "$BUILD_COMMIT" "$timestamp"
           git add appcast.json
           if git diff --cached --quiet; then
             echo "appcast already matches the public release"
@@ -133,7 +141,7 @@ jobs:
           set +x
           test -n "$TAP_DEPLOY_KEY"
           key_file="$RUNNER_TEMP/homebrew-tap-deploy-key"
-          printf '%s' "$TAP_DEPLOY_KEY" > "$key_file"
+          printf '%s\n' "$TAP_DEPLOY_KEY" > "$key_file"
           chmod 600 "$key_file"
           known_hosts="$RUNNER_TEMP/github-known-hosts"
           ssh-keyscan -t rsa,ecdsa,ed25519 github.com > "$known_hosts" 2>/dev/null
@@ -159,18 +167,18 @@ jobs:
           appcast_url="https://raw.githubusercontent.com/wakewon/bob-plugin-mdict/main/appcast.json"
           for _ in $(seq 1 30); do
             remote_appcast=$(curl -fsSL "$appcast_url" 2>/dev/null || true)
-            if printf '%s' "$remote_appcast" | jq -e --arg version "$version" --arg sha "$plugin_sha" --arg commit "$GITHUB_SHA" \
+            if printf '%s' "$remote_appcast" | jq -e --arg version "$version" --arg sha "$plugin_sha" --arg commit "$BUILD_COMMIT" \
               '.versions[0].version==$version and .versions[0].sha256==$sha and .versions[0].buildCommit==$commit' >/dev/null 2>&1; then
               break
             fi
             sleep 2
           done
-          printf '%s' "$remote_appcast" | jq -e --arg version "$version" --arg sha "$plugin_sha" --arg commit "$GITHUB_SHA" \
+          printf '%s' "$remote_appcast" | jq -e --arg version "$version" --arg sha "$plugin_sha" --arg commit "$BUILD_COMMIT" \
             '.versions[0].version==$version and .versions[0].sha256==$sha and .versions[0].buildCommit==$commit and .versions[0].minBobVersion=="1.20.0"' >/dev/null
           brew tap wakewon/tap
           brew install wakewon/tap/bob-mdict
           identity=$(bob-mdict --version)
-          printf '%s' "$identity" | grep -F "bob-mdict $version ($GITHUB_SHA) api=v2"
+          printf '%s' "$identity" | grep -F "bob-mdict $version ($BUILD_COMMIT) api=v2"
           empty_dicts="$RUNNER_TEMP/empty-dictionaries"
           mkdir -p "$empty_dicts"
           bob-mdict --dictionary-dir "$empty_dicts" --check
