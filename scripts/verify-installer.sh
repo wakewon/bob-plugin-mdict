@@ -31,7 +31,15 @@ fi
 
 SMOKE_HOME="$TEMP/home"
 SMOKE_PREFIX="$TEMP/prefix"
-HOME="$SMOKE_HOME" PREFIX="$SMOKE_PREFIX" BOB_MDICT_INSTALL_SMOKE=1 "$ROOT/install.sh" >/dev/null
+SMOKE_BIN="$TEMP/smoke-bin"
+LAUNCHCTL_MARKER="$TEMP/launchctl-called"
+mkdir -p "$SMOKE_BIN"
+printf '%s\n' '#!/bin/bash' ': > "$BOB_MDICT_LAUNCHCTL_MARKER"' 'exit 99' > "$SMOKE_BIN/launchctl"
+chmod 0755 "$SMOKE_BIN/launchctl"
+HOME="$SMOKE_HOME" PREFIX="$SMOKE_PREFIX" PATH="$SMOKE_BIN:$PATH" \
+    BOB_MDICT_LAUNCHCTL_MARKER="$LAUNCHCTL_MARKER" BOB_MDICT_INSTALL_SMOKE=1 \
+    "$ROOT/install.sh" >/dev/null
+[ ! -e "$LAUNCHCTL_MARKER" ]
 [ -x "$SMOKE_PREFIX/bin/bob-mdict" ]
 SMOKE_AGENT="$SMOKE_HOME/Library/LaunchAgents/com.github.wakewon.bob-mdict.plist"
 [ -f "$SMOKE_AGENT" ]
@@ -40,7 +48,10 @@ if grep -q '__[A-Z_]*__' "$SMOKE_AGENT"; then
     echo "error: installed smoke plist retains placeholders" >&2
     exit 1
 fi
-HOME="$SMOKE_HOME" PREFIX="$SMOKE_PREFIX" BOB_MDICT_INSTALL_SMOKE=1 "$ROOT/uninstall.sh" >/dev/null
+HOME="$SMOKE_HOME" PREFIX="$SMOKE_PREFIX" PATH="$SMOKE_BIN:$PATH" \
+    BOB_MDICT_LAUNCHCTL_MARKER="$LAUNCHCTL_MARKER" BOB_MDICT_INSTALL_SMOKE=1 \
+    "$ROOT/uninstall.sh" >/dev/null
+[ ! -e "$LAUNCHCTL_MARKER" ]
 [ ! -e "$SMOKE_PREFIX/bin/bob-mdict" ]
 [ ! -e "$SMOKE_AGENT" ]
 printf 'installer smoke passed: %s\n' "$ARCHIVE"

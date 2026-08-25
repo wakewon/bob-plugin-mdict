@@ -47,7 +47,7 @@ mkdir -p "$BIN_DIR" "$DICT_DIR" "$LOG_DIR" "$AGENT_DIR"
 #
 # bootout 是异步的：命令返回时服务往往还没真正退出，此时立刻 bootstrap
 # 会失败，结果就是升级完一个服务都没跑起来。所以必须等它真的消失。
-if launchctl list 2>/dev/null | grep -q "$LABEL"; then
+if [ "${BOB_MDICT_INSTALL_SMOKE:-0}" != "1" ] && launchctl list 2>/dev/null | grep -q "$LABEL"; then
     echo "==> 停止正在运行的服务"
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || launchctl unload "$AGENT" 2>/dev/null || true
     for _ in $(seq 1 50); do
