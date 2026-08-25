@@ -42,7 +42,7 @@ anywhere in this repository.
 | Translations | ✅ | ✅ | ✅ | — |
 | Examples | ✅ | ✅ | ✅ | ✅ |
 | Inflected forms | ✅ | — | ✅ | — |
-| Phrases / idioms | — | ✅ | ✅ | ✅ |
+| Phrases / idioms | ✅ | ✅ | ✅ | ✅ |
 | Cross-references | ✅ | ✅ | ✅ | ✅ |
 | Images in MDD | 1 733 | 15 | 1 305 | — |
 | Audio files in MDD | 101 727 | 183 907 | 100 211 | — |
@@ -79,20 +79,22 @@ BOB_MDICT_MATRIX_OUT=/tmp/out \
   not fabricate a second headword.
 - **Duplicate exact keys preserve record boundaries.** Resolved byte-identical
   records are safely deduplicated; every remaining non-empty record is parsed
-  independently and shown in one Bob card with superscript record ordinals.
+  independently. Separate mode shows one record with sibling navigation;
+  Combined mode keeps all ordinal-labelled records in one Bob card.
 
 ## Performance
 
-Apple M4, measured against the four dictionaries above: 998 037 headwords across
-~2.7 GB of source files.
+Apple M4, measured on 2026-08-25 against the four dictionaries above: 998 037
+headwords across ~2.7 GB of source files. Values are medians or representative
+steady readings from the final 1.0.0 code; no dictionary content was captured.
 
 | | |
 |---|---|
-| Cold start (discover + index everything) | 0.62 s |
-| Lookup, one dictionary, uncached | 5.3 ms |
-| Lookup, all four dictionaries, uncached | 30 ms |
-| Lookup, repeated (entry cache) | 0.23 ms |
-| MDD audio resolution | 27 µs |
+| Cold start (discover + index everything) | 0.60 s benchmark; 0.77 s CLI rescan including process setup/cleanup |
+| Lookup, one dictionary | 3.5 ms |
+| Lookup, all four dictionaries, uncached | 29.6 ms |
+| Lookup, repeated (entry cache) | 54 µs |
+| MDD audio resolution | 7.2 µs |
 | Ogg-Speex transcode | once per file, then cached on disk |
 
 Resident memory, measured on the running process rather than reported by the
@@ -100,14 +102,13 @@ runtime:
 
 | Library | Headwords | RSS |
 |---|---|---|
-| One medium dictionary (OALD8) | 109 476 | 50 MB |
-| One large dictionary (LDOCE5++, 1.3 GB MDD) | 283 110 | 105 MB |
-| All four, at rest | 998 037 | 253 MB |
-| All four, after sustained lookups | 998 037 | 313 MB (plateaus) |
+| All four, after rescan | 998 037 | 260 MB |
+| All four, after representative queries | 998 037 | 325 MB |
 
 Indexes are held in memory so that lookups are instant without a database. The
-cost scales with headword count, so a typical user with one or two dictionaries
-sits well under 100 MB.
+cost scales with headword count. The table deliberately reports only the final
+four-dictionary configuration remeasured for 1.0.0 rather than retaining older
+per-dictionary values from a different build.
 
 Two things keep that number down: the service builds only the indexes it needs
 rather than the three the bundled engine would build, and GC is tuned for a
@@ -117,5 +118,5 @@ Both are described in [ARCHITECTURE.md](ARCHITECTURE.md).
 Reproduce with:
 
 ```bash
-go test ./internal/service -bench . -run XXX
+go test ./internal/service -run '^$' -bench . -benchmem
 ```

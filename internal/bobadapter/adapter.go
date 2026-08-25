@@ -407,14 +407,14 @@ func renderPhonetics(items []entryir.Pronunciation) ([]Phonetic, []string) {
 			target.audio = unknownAudio
 			target.annotation = "未标口音"
 			if unknownIPA == "" && unknownAudio != nil {
-				notes = append(notes, "该真人录音在原词典中未标注英/美口音；Bob 仅提供英式和美式发音槽。")
+				notes = append(notes, "该词典音频在原词典中未标注英/美口音；Bob 仅提供英式和美式发音槽。")
 			}
 		} else {
 			if unknownIPA != "" {
 				notes = append(notes, "原词典还提供未标注口音的音标 "+unknownIPA+"；Bob 的两个发音槽已被占用，无法同时展示。")
 			}
 			if unknownAudio != nil {
-				notes = append(notes, "原词典还提供一条未标注英/美口音的真人录音；Bob 的两个发音槽已被占用，无法同时展示。")
+				notes = append(notes, "原词典还提供一条未标注英/美口音的音频；Bob 的两个发音槽已被占用，无法同时展示。")
 			}
 		}
 	}

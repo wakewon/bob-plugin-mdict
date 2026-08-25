@@ -1,11 +1,12 @@
 # MDict for Bob
 
-Current product version: **0.2.1** · local API: **v2**.
+Current product version: **1.0.0** · local API: **v2**.
 
 English | [简体中文](README_CN.md)
 
 Look up your own local MDict dictionaries in [Bob](https://bobtranslate.com/),
-fully offline and with the real human recordings supplied by your dictionaries.
+fully offline. Pronunciation audio comes directly from the dictionary's MDD;
+this project never generates or uses TTS as a fallback.
 
 > This project is a reader. It ships no dictionary data. You provide and use
 > your own `.mdx` and optional `.mdd` files lawfully.
@@ -18,7 +19,7 @@ fully offline and with the real human recordings supplied by your dictionaries.
   request. The companion service listens on loopback only.
 - Structured entries: POS groups, senses and subsenses, bilingual definitions,
   examples, forms, phrases, idioms, phrasal verbs, cross-references and notes.
-- Real MDD pronunciation only. UK, US, shared and unlabelled provenance is
+- MDD-backed pronunciation only. UK, US, shared and unlabelled provenance is
   preserved. There is no text-to-speech fallback anywhere in the project.
 - Simple Bob setup: leave Dictionary ID empty for the first dictionary that
   contains the word, or set one ID to pin that service instance.
@@ -49,17 +50,17 @@ brew install wakewon/tap/bob-mdict
 brew services start bob-mdict
 ```
 
-Without Homebrew, download the matching archive from the
+Without Homebrew, download `bob-mdict-X.Y.Z-macos-installer.tar.gz` from the
 [latest release](https://github.com/wakewon/bob-plugin-mdict/releases), extract
-it, and run:
+it, and run inside the extracted directory:
 
 ```bash
-./packaging/install.sh
+./install.sh
 ```
 
 The standalone installer places the binary in `~/.local/bin`, installs a
 LaunchAgent and creates the default dictionary directory. To remove the service
-later, run `./packaging/uninstall.sh`; it keeps your dictionaries.
+later, run `./uninstall.sh`; it keeps your dictionaries.
 
 ### 2. Add dictionaries
 
@@ -257,15 +258,16 @@ go vet ./...
 go test ./...
 go test -race ./...
 node --test plugin/main.test.js
-./scripts/build-plugin.sh
-./scripts/build-server.sh
-./scripts/dev-deploy.sh
+./scripts/release.sh doctor
+./scripts/release.sh dev
+./scripts/release.sh build
 ```
 
-`build-server.sh` only creates artifacts. `dev-deploy.sh` safely updates the
-standalone development LaunchAgent, waits for the actual listener, and refuses
-to replace a Homebrew- or otherwise-managed daemon. It then verifies that the
-runtime version and commit equal `VERSION` and repository HEAD.
+`release.sh build` is pure: it writes only ignored release artifacts and proves
+that tracked source is unchanged. The development command labels dirty builds
+explicitly, safely updates the standalone LaunchAgent, and refuses to replace a
+Homebrew- or otherwise-managed daemon. Release operations are documented in
+[docs/RELEASE.md](docs/RELEASE.md).
 
 Real-dictionary integration tests never write entry content into tracked
 snapshots. Point them at a lawful local library:

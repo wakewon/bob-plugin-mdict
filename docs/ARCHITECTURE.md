@@ -158,15 +158,18 @@ already lowercase, and the fallback pass finds those by probing the exact map
 with the folded query. For an MDD, one map from normalized resource key to
 volume.
 
-Cold start went from 1.48 s to **0.62 s**, and resident memory from 464 MB to
-**253 MB** at rest for the same four dictionaries.
+On the final 1.0.0 code (Apple M4, 2026-08-25), index construction benchmarks
+at **0.60 s** for the same four dictionaries; the complete CLI rescan including
+process setup and memory cleanup is **0.77 s**. Resident memory is **260 MB**
+after rescan and **325 MB** after representative queries. Current reproducible
+measurements live in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 GC is tuned as well. The live set is large and almost entirely static, while
 each lookup produces a burst of short-lived garbage from parsing an entry; at
 the default GOGC the heap is allowed to double before collecting, so a handful
 of lookups permanently inflated the process to 526 MB. A lower GC target plus
-returning memory after the initial index build holds it at 313 MB under
-sustained use, and it plateaus there.
+returning memory after the initial index build keeps it bounded under
+representative use.
 
 The MDD index also replaces a linear scan. The engine's own resource lookup
 walks every entry — 184 000 of them for one volume — on every audio request.

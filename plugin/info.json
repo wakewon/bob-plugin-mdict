@@ -1,9 +1,9 @@
 {
   "identifier": "com.github.wakewon.mdict",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "category": "translate",
   "name": "MDict",
-  "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典自带的真人发音。",
+  "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典 MDD 音频。",
   "icon": "icon.png",
   "author": "wakewon",
   "homepage": "https://github.com/wakewon/bob-plugin-mdict",
@@ -39,8 +39,14 @@
       "defaultValue": "separate",
       "desc": "分条浏览：只显示一个词条记录，并提供可点击的其他记录入口。\n\n合并显示：在同一结果中使用 ¹ ² ³ 标记展示所有记录。",
       "menuValues": [
-        { "title": "分条浏览", "value": "separate" },
-        { "title": "合并显示", "value": "combined" }
+        {
+          "title": "分条浏览",
+          "value": "separate"
+        },
+        {
+          "title": "合并显示",
+          "value": "combined"
+        }
       ]
     },
     {
@@ -49,8 +55,14 @@
       "title": "显示例句",
       "defaultValue": "enable",
       "menuValues": [
-        { "title": "显示", "value": "enable" },
-        { "title": "隐藏", "value": "disable" }
+        {
+          "title": "显示",
+          "value": "enable"
+        },
+        {
+          "title": "隐藏",
+          "value": "disable"
+        }
       ]
     },
     {
@@ -60,8 +72,14 @@
       "defaultValue": "enable",
       "desc": "短语、习语、动词短语、搭配、用法说明、同义词、词源等。",
       "menuValues": [
-        { "title": "显示", "value": "enable" },
-        { "title": "隐藏", "value": "disable" }
+        {
+          "title": "显示",
+          "value": "enable"
+        },
+        {
+          "title": "隐藏",
+          "value": "disable"
+        }
       ]
     },
     {

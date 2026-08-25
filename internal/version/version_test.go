@@ -57,21 +57,16 @@ func TestReleaseVersionSourcesAreConsistent(t *testing.T) {
 	if err := json.Unmarshal(readRepositoryFile(t, root, "appcast.json"), &appcast); err != nil {
 		t.Fatal(err)
 	}
-	found := false
 	for _, release := range appcast.Versions {
-		if release.Version == want {
-			found = true
-			if release.MinBobVersion != info.MinBobVersion {
-				t.Errorf("appcast minBobVersion = %q, plugin = %q", release.MinBobVersion, info.MinBobVersion)
-			}
+		if release.MinBobVersion != info.MinBobVersion {
+			t.Errorf("appcast %s minBobVersion = %q, plugin = %q", release.Version, release.MinBobVersion, info.MinBobVersion)
 		}
 	}
-	if !found {
-		t.Errorf("appcast has no current version %q", want)
-	}
 
-	formula := string(readRepositoryFile(t, root, "packaging/homebrew/bob-mdict.rb"))
-	if !strings.Contains(formula, `version "`+want+`"`) {
-		t.Errorf("Homebrew formula template does not declare version %q", want)
+	formula := string(readRepositoryFile(t, root, "packaging/homebrew/bob-mdict.rb.tmpl"))
+	for _, placeholder := range []string{"@VERSION@", "@ARM64_SHA256@", "@AMD64_SHA256@"} {
+		if !strings.Contains(formula, placeholder) {
+			t.Errorf("Homebrew formula template is missing %s", placeholder)
+		}
 	}
 }

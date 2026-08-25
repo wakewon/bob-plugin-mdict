@@ -1,11 +1,12 @@
 # MDict for Bob
 
-当前产品版本：**0.2.1** · 本地 API：**v2**。
+当前产品版本：**1.0.0** · 本地 API：**v2**。
 
 [English](README.md) | 简体中文
 
 在 [Bob](https://bobtranslate.com/) 中查询你自己的本地 MDict 词典。查询、
-解析和发音播放全部在本机完成；真人录音直接来自词典配套的 MDD。
+解析和发音播放全部在本机完成；发音直接来自词典配套 MDD，本项目不会生成
+或使用 TTS 作为后备发音。
 
 > 本项目是词典阅读器，不提供任何词典数据。请自行合法取得并使用
 > `.mdx` 与可选的 `.mdd` 文件。
@@ -18,8 +19,8 @@
   loopback 地址。
 - 结构化词条：词性、义项与子义项、双语释义、例句、词形、短语、习语、
   短语动词、交叉引用和说明。
-- 真人发音优先且仅限真人发音。英式、美式、共用音标和未标口音信息分别
-  保留；项目中不存在 TTS 后备路径。
+- 仅使用 MDD 中的发音资源。英式、美式、共用音标和未标口音信息分别保留；
+  项目中不存在 TTS 后备路径。
 - 默认无需配置词典 ID：自动使用第一本收录当前词的词典。
 
 ## 工作方式
@@ -48,15 +49,15 @@ brew services start bob-mdict
 ```
 
 不使用 Homebrew 时，从
-[最新 Release](https://github.com/wakewon/bob-plugin-mdict/releases) 下载对应
-Mac 架构的压缩包，解压后运行：
+[最新 Release](https://github.com/wakewon/bob-plugin-mdict/releases) 下载
+`bob-mdict-X.Y.Z-macos-installer.tar.gz`，解压并进入目录后运行：
 
 ```bash
-./packaging/install.sh
+./install.sh
 ```
 
 独立安装脚本会把程序放入 `~/.local/bin`，注册登录时启动的 LaunchAgent，
-并创建默认词典目录。卸载可运行 `./packaging/uninstall.sh`；脚本不会删除
+并创建默认词典目录；在同一目录运行 `./uninstall.sh` 即可卸载，且不会删除
 你的词典。
 
 ### 2. 添加 MDX/MDD
@@ -186,7 +187,7 @@ bob-mdict --rescan
 bob-mdict --list-dictionaries
 ```
 
-每本词典至少需要一个 MDX。MDD 可选，主要提供真人录音和其它资源。
+每本词典至少需要一个 MDX。MDD 可选，主要提供发音和其它资源。
 
 ### 指定的词典 ID 无效或不可用
 
@@ -195,8 +196,8 @@ bob-mdict --list-dictionaries
 
 ### 查到词条但没有发音按钮
 
-只有词条引用的真人录音确实存在于匹配的 MDD 中时，才会显示发音。缺少
-MDD、资源键不存在或原词典没有录音时都不会显示；本项目不会用 TTS 补齐。
+只有词条引用的音频确实存在于匹配的 MDD 中时，才会显示发音。缺少 MDD、
+资源键不存在或原词典没有音频时都不会显示；本项目不会用 TTS 补齐。
 
 ### MDD 存在但部分发音缺失
 
@@ -244,14 +245,15 @@ go vet ./...
 go test ./...
 go test -race ./...
 node --test plugin/main.test.js
-./scripts/build-plugin.sh
-./scripts/build-server.sh
-./scripts/dev-deploy.sh
+./scripts/release.sh doctor
+./scripts/release.sh dev
+./scripts/release.sh build
 ```
 
-`build-server.sh` 只生成构建产物。`dev-deploy.sh` 会安全更新独立安装方式的
-开发 LaunchAgent，等待实际监听进程，并拒绝替换 Homebrew 或其它方式管理的
-daemon；最后核对 runtime 版本/commit 是否与 `VERSION` 和仓库 HEAD 一致。
+`release.sh build` 只写入 ignored release 产物，并验证 tracked source 完全
+不变。开发命令会明确标识 dirty build，安全更新独立安装的 LaunchAgent，且
+拒绝替换 Homebrew 或其它方式管理的 daemon。发布流程见
+[docs/RELEASE.md](docs/RELEASE.md)。
 
 真实词典集成测试不会把词条内容写入 tracked snapshot。可以指向自己合法
 持有的本地词典目录：

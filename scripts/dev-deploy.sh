@@ -5,6 +5,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+source scripts/lib-release.sh
 
 LABEL="com.github.wakewon.bob-mdict"
 PORT=15321
@@ -16,13 +17,8 @@ if [ "$(uname -s)" != "Darwin" ]; then
     exit 1
 fi
 
-if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
-    echo "错误: 工作区不干净。请先提交变更，让 buildCommit 能准确标识构建源码。"
-    exit 1
-fi
-
 VERSION=$(tr -d ' \t\n\r' < VERSION)
-COMMIT=$(git rev-parse --short HEAD)
+COMMIT=$(release_build_commit)
 
 listener_pid() {
     lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | sort -u | head -n 1

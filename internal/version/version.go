@@ -2,7 +2,7 @@
 package version
 
 // Version is the service version. Overridden at build time via -ldflags.
-var Version = "0.2.1"
+var Version = "1.0.0"
 
 // Commit is the git commit the binary was built from. Overridden via -ldflags.
 var Commit = "dev"

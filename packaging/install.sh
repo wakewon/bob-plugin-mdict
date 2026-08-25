@@ -72,6 +72,15 @@ sed -e "s|__BINARY_PATH__|$BINARY|g" \
     "$SCRIPT_DIR/launchd/$LABEL.plist" > "$AGENT"
 echo "==> 已写入 LaunchAgent: $AGENT"
 
+# Release verification uses an isolated HOME/PREFIX to prove the complete
+# bundle without registering a real user LaunchAgent.
+if [ "${BOB_MDICT_INSTALL_SMOKE:-0}" = "1" ]; then
+    grep -q "$BINARY" "$AGENT"
+    grep -q "$LOG_DIR" "$AGENT"
+    echo "==> installer smoke mode complete"
+    exit 0
+fi
+
 # 不吞掉 bootstrap 的错误：装完却没跑起来是最糟的失败方式。
 if ! launchctl bootstrap "gui/$(id -u)" "$AGENT" 2>/dev/null; then
     launchctl load "$AGENT"

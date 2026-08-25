@@ -1,0 +1,176 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_COMMIT: ${{ github.sha }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate immutable tag identity
+        run: |
+          version=$(tr -d ' \t\n\r' < VERSION)
+          test "$RELEASE_TAG" = "v$version"
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')
+            if [ "$draft" = true ]; then
+              echo "Removing an unpublished draft left by an earlier failed attempt."
+              gh release delete "$RELEASE_TAG" --yes
+            elif [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
+              echo "RELEASE_ALREADY_PUBLIC=1" >> "$GITHUB_ENV"
+            else
+              echo "Release $RELEASE_TAG is already public; same-version assets are immutable."
+              exit 1
+            fi
+          fi
+
+      - name: Full tests and security gates
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^local_assets/' || true)
+          test -z "$unformatted"
+          go vet ./...
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+          go test ./... -count=1
+          go test ./... -race -count=1
+          node --test plugin/main.test.js
+          ./scripts/security-check.sh
+
+      - name: Build and verify official artifacts
+        run: |
+          before=$(git status --porcelain --untracked-files=normal)
+          ./scripts/release.sh build
+          after=$(git status --porcelain --untracked-files=normal)
+          test "$before" = "$after"
+
+      - name: Create and verify draft release
+        if: env.RELEASE_ALREADY_PUBLIC != '1'
+        run: |
+          version=$(tr -d ' \t\n\r' < VERSION)
+          gh release create "$RELEASE_TAG" \
+            "release/MDict-v$version.bobplugin" \
+            "release/bob-mdict-$version-darwin-arm64.tar.gz" \
+            "release/bob-mdict-$version-darwin-amd64.tar.gz" \
+            "release/bob-mdict-$version-macos-installer.tar.gz" \
+            release/bob-mdict.rb release/SHA256SUMS release/RELEASE_MANIFEST.json \
+            --verify-tag --draft --title "MDict for Bob $version" --notes-file CHANGELOG.md
+          expected=$(printf '%s\n' \
+            "MDict-v$version.bobplugin" \
+            "bob-mdict-$version-darwin-arm64.tar.gz" \
+            "bob-mdict-$version-darwin-amd64.tar.gz" \
+            "bob-mdict-$version-macos-installer.tar.gz" \
+            bob-mdict.rb SHA256SUMS RELEASE_MANIFEST.json | sort)
+          actual=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | sort)
+          test "$expected" = "$actual"
+
+      - name: Publish release after asset verification
+        if: env.RELEASE_ALREADY_PUBLIC != '1'
+        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease=false
+
+      - name: Verify public release downloads and checksums
+        run: |
+          version=$(tr -d ' \t\n\r' < VERSION)
+          remote="$RUNNER_TEMP/remote-release"
+          mkdir -p "$remote"
+          gh release download "$RELEASE_TAG" --dir "$remote"
+          (cd "$remote" && shasum -a 256 -c SHA256SUMS)
+          jq -e --arg version "$version" --arg commit "$GITHUB_SHA" \
+            '.version==$version and .apiVersion=="v2" and .buildCommit==$commit' \
+            "$remote/RELEASE_MANIFEST.json" >/dev/null
+
+      - name: Update appcast on fresh main with bounded retries
+        run: |
+          version=$(tr -d ' \t\n\r' < VERSION)
+          plugin_sha=$(shasum -a 256 "$RUNNER_TEMP/remote-release/MDict-v$version.bobplugin" | awk '{print $1}')
+          published_at=$(gh release view "$RELEASE_TAG" --json publishedAt --jq '.publishedAt')
+          timestamp=$(($(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$published_at" '+%s') * 1000))
+          gh auth setup-git
+          appcast_checkout="$RUNNER_TEMP/appcast-main"
+          git clone --quiet --branch main https://github.com/wakewon/bob-plugin-mdict.git "$appcast_checkout"
+          cd "$appcast_checkout"
+          ./scripts/update-appcast.sh "$version" "$plugin_sha" "$GITHUB_SHA" "$timestamp"
+          git add appcast.json
+          if git diff --cached --quiet; then
+            echo "appcast already matches the public release"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Update appcast for v$version"
+          pushed=0
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then pushed=1; break; fi
+            git pull --rebase origin main
+          done
+          test "$pushed" = 1
+
+      - name: Publish formula with repository-scoped deploy key
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          set +x
+          test -n "$TAP_DEPLOY_KEY"
+          key_file="$RUNNER_TEMP/homebrew-tap-deploy-key"
+          printf '%s' "$TAP_DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          known_hosts="$RUNNER_TEMP/github-known-hosts"
+          ssh-keyscan -t rsa,ecdsa,ed25519 github.com > "$known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes -o UserKnownHostsFile=$known_hosts"
+          tap_checkout="$RUNNER_TEMP/homebrew-tap"
+          git clone --quiet git@github.com:wakewon/homebrew-tap.git "$tap_checkout"
+          mkdir -p "$tap_checkout/Formula"
+          cp "$RUNNER_TEMP/remote-release/bob-mdict.rb" "$tap_checkout/Formula/bob-mdict.rb"
+          rm -f "$tap_checkout/Formula/.gitkeep"
+          cd "$tap_checkout"
+          git add Formula
+          if ! git diff --cached --quiet; then
+            git -c user.name='bob-mdict release' -c user.email='actions@users.noreply.github.com' \
+              commit -m "bob-mdict $(tr -d ' \t\n\r' < "$GITHUB_WORKSPACE/VERSION")"
+            git push origin HEAD:main
+          fi
+          rm -f "$key_file"
+
+      - name: Verify remote appcast and Homebrew installation
+        run: |
+          version=$(tr -d ' \t\n\r' < VERSION)
+          plugin_sha=$(shasum -a 256 "$RUNNER_TEMP/remote-release/MDict-v$version.bobplugin" | awk '{print $1}')
+          appcast_url="https://raw.githubusercontent.com/wakewon/bob-plugin-mdict/main/appcast.json"
+          for _ in $(seq 1 30); do
+            remote_appcast=$(curl -fsSL "$appcast_url" 2>/dev/null || true)
+            if printf '%s' "$remote_appcast" | jq -e --arg version "$version" --arg sha "$plugin_sha" --arg commit "$GITHUB_SHA" \
+              '.versions[0].version==$version and .versions[0].sha256==$sha and .versions[0].buildCommit==$commit' >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          printf '%s' "$remote_appcast" | jq -e --arg version "$version" --arg sha "$plugin_sha" --arg commit "$GITHUB_SHA" \
+            '.versions[0].version==$version and .versions[0].sha256==$sha and .versions[0].buildCommit==$commit and .versions[0].minBobVersion=="1.20.0"' >/dev/null
+          brew tap wakewon/tap
+          brew install wakewon/tap/bob-mdict
+          identity=$(bob-mdict --version)
+          printf '%s' "$identity" | grep -F "bob-mdict $version ($GITHUB_SHA) api=v2"
+          empty_dicts="$RUNNER_TEMP/empty-dictionaries"
+          mkdir -p "$empty_dicts"
+          bob-mdict --dictionary-dir "$empty_dicts" --check

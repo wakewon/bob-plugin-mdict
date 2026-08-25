@@ -6,7 +6,8 @@
 # 这个脚本在发布前就把这类问题挡住。
 set -euo pipefail
 
-PACKAGE="${1:?用法: verify-plugin.sh <path-to-.bobplugin>}"
+PACKAGE="${1:?用法: verify-plugin.sh <path-to-.bobplugin> [expected-build-commit]}"
+EXPECTED_COMMIT="${2:-}"
 
 if [ ! -f "$PACKAGE" ]; then
     echo "❌ 找不到文件: $PACKAGE"
@@ -71,38 +72,13 @@ if ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var PLUGIN_VERSION = '$VERSION';";
     echo "❌ packaged main.js 未注入 plugin version $VERSION"
     FAILED=1
 fi
-# appcast 必须与包内实际内容对得上，否则 Bob 会拒绝更新。
-if [ -f appcast.json ]; then
-    APPCAST_ID=$(jq -r '.identifier' appcast.json)
-    if [ "$APPCAST_ID" != "$IDENTIFIER" ]; then
-        echo "❌ appcast.json identifier ($APPCAST_ID) 与 info.json ($IDENTIFIER) 不一致"
-        FAILED=1
-    fi
-    ENTRY=$(jq -r --arg v "$VERSION" '.versions[] | select(.version == $v)' appcast.json)
-    if [ -z "$ENTRY" ]; then
-        echo "❌ appcast.json 中没有版本 $VERSION 的条目"
-        FAILED=1
-    else
-        EXPECTED_SHA=$(shasum -a 256 "$PACKAGE" | awk '{print $1}')
-        ACTUAL_SHA=$(printf '%s' "$ENTRY" | jq -r '.sha256')
-        APPCAST_COMMIT=$(printf '%s' "$ENTRY" | jq -r '.buildCommit // ""')
-        if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
-            echo "❌ appcast.json 中的 sha256 与实际包不符"
-            echo "     期望 $EXPECTED_SHA"
-            echo "     实际 $ACTUAL_SHA"
-            FAILED=1
-        fi
-        if [ -z "$APPCAST_COMMIT" ] || ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var PLUGIN_BUILD_COMMIT = '$APPCAST_COMMIT';"; then
-            echo "❌ packaged main.js build commit 与 appcast.json 不一致"
-            FAILED=1
-        fi
-        TS=$(printf '%s' "$ENTRY" | jq -r '.timestamp')
-        # Bob 要求毫秒时间戳；秒级时间戳只有 10 位。
-        if [ "${#TS}" -lt 13 ]; then
-            echo "❌ appcast.json timestamp 应为毫秒 (13 位)，实际为 $TS"
-            FAILED=1
-        fi
-    fi
+if ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var REQUIRED_API_VERSION = 'v2';"; then
+    echo "❌ packaged main.js 不要求 API v2"
+    FAILED=1
+fi
+if [ -n "$EXPECTED_COMMIT" ] && ! printf '%s' "$PACKAGED_MAIN" | grep -Fq "var PLUGIN_BUILD_COMMIT = '$EXPECTED_COMMIT';"; then
+    echo "❌ packaged main.js build commit 不等于 $EXPECTED_COMMIT"
+    FAILED=1
 fi
 
 if [ "$FAILED" -eq 0 ]; then

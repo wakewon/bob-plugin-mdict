@@ -1,28 +1,23 @@
 #!/bin/bash
-# Generate the publishable Formula from VERSION and the built release tarballs.
+# Render the Homebrew formula template from release tarball checksums.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+source scripts/lib-release.sh
 
-VERSION=$(tr -d ' \t\n\r' < VERSION)
-ARM_TARBALL="release/bob-mdict-$VERSION-darwin-arm64.tar.gz"
-AMD_TARBALL="release/bob-mdict-$VERSION-darwin-amd64.tar.gz"
-
-for archive in "$ARM_TARBALL" "$AMD_TARBALL"; do
-    if [ ! -f "$archive" ]; then
-        echo "错误: 缺少 $archive；请先运行 ./scripts/build-server.sh"
-        exit 1
-    fi
+VERSION=$(release_version)
+OUT_DIR="${RELEASE_DIR:-release}"
+ARM="$OUT_DIR/bob-mdict-$VERSION-darwin-arm64.tar.gz"
+AMD="$OUT_DIR/bob-mdict-$VERSION-darwin-amd64.tar.gz"
+for archive in "$ARM" "$AMD"; do
+    [ -f "$archive" ] || { echo "error: missing $archive" >&2; exit 1; }
 done
 
-ARM_SHA=$(shasum -a 256 "$ARM_TARBALL" | awk '{print $1}')
-AMD_SHA=$(shasum -a 256 "$AMD_TARBALL" | awk '{print $1}')
-sed -e "s|REPLACE_WITH_ARM64_SHA256|$ARM_SHA|" \
-    -e "s|REPLACE_WITH_AMD64_SHA256|$AMD_SHA|" \
-    -e "s|version \"[0-9][^\"]*\"|version \"$VERSION\"|" \
-    packaging/homebrew/bob-mdict.rb > release/bob-mdict.rb
-
-echo "已生成 release/bob-mdict.rb (v$VERSION)"
-printf 'arm64 sha256: %s\n' "$ARM_SHA"
-printf 'amd64 sha256: %s\n' "$AMD_SHA"
+ARM_SHA=$(shasum -a 256 "$ARM" | awk '{print $1}')
+AMD_SHA=$(shasum -a 256 "$AMD" | awk '{print $1}')
+sed -e "s|@VERSION@|$VERSION|g" \
+    -e "s|@ARM64_SHA256@|$ARM_SHA|g" \
+    -e "s|@AMD64_SHA256@|$AMD_SHA|g" \
+    packaging/homebrew/bob-mdict.rb.tmpl > "$OUT_DIR/bob-mdict.rb"
+printf 'built %s/bob-mdict.rb\n' "$OUT_DIR"
