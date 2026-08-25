@@ -162,7 +162,14 @@ bob-mdict --check                # 安装、词典和音频解码检查
 bob-mdict --list-dictionaries    # 名称、ID、词条数和解析 Profile
 bob-mdict --rescan               # 重新发现并建立索引
 bob-mdict --debug-lookup WORD    # 输出结构化 EntrySet IR，供开发调试
+bob-mdict --diagnose NAME        # 单本词典的结构与解析覆盖诊断
+bob-mdict --diagnose-all         # 对目录中全部词典批量诊断
 ```
+
+`--debug-lookup` 回答“解析器把这个词解析成了什么”；`--diagnose` 回答“这本词典
+到底被理解到什么程度”——选中了哪个解析器、依据是什么、它使用哪些 DOM 约定，以及
+从它自己的代表性词条中恢复出多少语义结构。两者都只输出结构与统计，不输出词典正文。
+详见 [docs/PARSER.md](docs/PARSER.md#diagnosing-an-unknown-dictionary)。
 
 本地 HTTP API 见 [docs/API.md](docs/API.md)。
 

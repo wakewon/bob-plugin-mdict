@@ -43,6 +43,11 @@ func run() error {
 		listDicts    = flag.Bool("list-dictionaries", false, "list discovered dictionaries and exit")
 		rescanOnly   = flag.Bool("rescan", false, "rescan dictionaries, report the result and exit")
 		debugLookup  = flag.String("debug-lookup", "", "parse one word, print the EntrySet IR as JSON, and exit")
+		diagnoseOne  = flag.String("diagnose", "", "report one dictionary's structure and parser coverage (ID or title substring)")
+		diagnoseAll  = flag.Bool("diagnose-all", false, "run the diagnostics over every dictionary in the directory")
+		diagnoseOut  = flag.String("diagnose-out", "", "write diagnostic JSON and Markdown into this directory")
+		diagnoseJSON = flag.Bool("diagnose-json", false, "print the diagnostic as JSON instead of text")
+		parserFlag   = flag.String("parser", "", "development override: auto, generic, or a profile ID")
 		dictionaries = flag.String("dictionary-dir", "", "override the dictionary directory")
 		port         = flag.Int("port", 0, "override the loopback port")
 		debug        = flag.Bool("debug", false, "enable verbose logging")
@@ -81,6 +86,10 @@ func run() error {
 		return err
 	}
 
+	if *parserFlag != "" {
+		svc.SetParserOverride(*parserFlag)
+	}
+
 	switch {
 	case *check:
 		return runCheck(svc)
@@ -90,6 +99,10 @@ func run() error {
 		return runRescan(svc)
 	case *debugLookup != "":
 		return runDebugLookup(svc, *debugLookup)
+	case *diagnoseAll:
+		return runDiagnoseCorpus(svc, *parserFlag, *diagnoseOut, *diagnoseJSON)
+	case *diagnoseOne != "":
+		return runDiagnoseOne(svc, *diagnoseOne, *parserFlag, *diagnoseOut, *diagnoseJSON)
 	}
 
 	return serve(svc, log)

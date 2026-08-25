@@ -421,13 +421,19 @@ func (s *parseState) firstText(node *html.Node, sel Selector) string {
 	return ""
 }
 
-// markerPrefixes are the labels dictionaries prepend to cross-reference lists.
-var markerPrefixes = []string{"SYN", "OPP", "ANT", "SYNONYM", "ANTONYM", "→", "see", "同", "反"}
+// markerPrefixes are the labels dictionaries prepend to a cross-reference list.
+// Longer forms come first so "see also" is not left as a dangling "also".
+var markerPrefixes = []string{
+	"SYNONYMS", "ANTONYMS", "SYNONYM", "ANTONYM", "see also", "compare",
+	"SYN", "OPP", "ANT", "cf.", "cf", "→", "⇒", "see", "参见", "参照", "同", "反",
+}
 
+// stripLeadingMarker removes those labels, matching without regard to case
+// because dictionaries capitalise them however their typography demanded.
 func stripLeadingMarker(text string) string {
 	trimmed := Normalize(text)
 	for _, marker := range markerPrefixes {
-		if strings.HasPrefix(trimmed, marker) {
+		if len(trimmed) >= len(marker) && strings.EqualFold(trimmed[:len(marker)], marker) {
 			trimmed = strings.TrimSpace(trimmed[len(marker):])
 		}
 	}

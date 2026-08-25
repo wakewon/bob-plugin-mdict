@@ -58,6 +58,9 @@ func hiddenByStyle(node *html.Node) bool {
 type TextOptions struct {
 	// Skip matches nodes whose subtree is excluded entirely.
 	Skip Selector
+	// SkipNodes excludes specific subtrees by identity, for callers that have
+	// already decided which nodes to leave out rather than how to select them.
+	SkipNodes map[*html.Node]struct{}
 	// SkipHidden drops nodes hidden with inline styles.
 	SkipHidden bool
 	// Separator is inserted between block-level elements.
@@ -96,6 +99,9 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 				return
 			}
 			if !opts.Skip.IsEmpty() && opts.Skip.Matches(node) {
+				return
+			}
+			if _, skipped := opts.SkipNodes[node]; skipped {
 				return
 			}
 		}
@@ -238,14 +244,29 @@ func DescriptorText(node *html.Node) string {
 		}
 		appendNode(ancestor)
 	}
-	// Immediate siblings often carry the only "NAmE"/"BrE" marker.
+	// A block that prints its own "BrE" or "NAmE" label is stating the region
+	// outright, and that statement outranks anything nearby.
+	own := Text(node, TextOptions{SkipHidden: true})
+	if len([]rune(own)) <= maxRegionLabelRunes {
+		builder.WriteString(" ")
+		builder.WriteString(own)
+	}
 	if node.PrevSibling != nil {
 		appendNode(node.PrevSibling)
-		builder.WriteString(" ")
-		builder.WriteString(Text(node.PrevSibling, TextOptions{}))
 	}
 	if node.NextSibling != nil {
 		appendNode(node.NextSibling)
 	}
-	return strings.ToLower(builder.String())
+	descriptor := strings.ToLower(builder.String())
+	// Only when the node says nothing about itself is a neighbour's text worth
+	// reading. Borrowing it unconditionally is how the American half of a
+	// pronunciation block inherits the British label printed just above it.
+	if node.PrevSibling != nil && !hasRegionMarker(descriptor) {
+		descriptor += " " + strings.ToLower(Text(node.PrevSibling, TextOptions{}))
+	}
+	return descriptor
 }
+
+// maxRegionLabelRunes keeps a whole entry's prose out of the region evidence
+// when the "node" turns out to be a large container.
+const maxRegionLabelRunes = 120

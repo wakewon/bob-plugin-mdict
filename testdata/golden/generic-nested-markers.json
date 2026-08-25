@@ -1,0 +1,77 @@
+{
+  "headword": "trundle",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "verb",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "",
+          "subsenses": [
+            {
+              "number": "a",
+              "definition": "To move a small cart slowly.",
+              "confidence": 0.65,
+              "rule": "generic:markerBlocks"
+            },
+            {
+              "number": "b",
+              "definition": "To roll something heavy along the ground.",
+              "confidence": 0.65,
+              "rule": "generic:markerBlocks"
+            }
+          ],
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        },
+        {
+          "number": "2",
+          "definition": "",
+          "subsenses": [
+            {
+              "number": "a",
+              "definition": "To walk with a rolling gait.",
+              "confidence": 0.65,
+              "rule": "generic:markerBlocks"
+            },
+            {
+              "number": "b",
+              "definition": "To proceed without any haste at all.",
+              "confidence": 0.65,
+              "rule": "generic:markerBlocks"
+            }
+          ],
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        }
+      ],
+      "confidence": 0.7,
+      "rule": "generic:markerBlocks"
+    },
+    {
+      "pos": "noun",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "A small wheel or roller.",
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        },
+        {
+          "number": "2",
+          "definition": "The sound made by such a wheel.",
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        }
+      ],
+      "confidence": 0.7,
+      "rule": "generic:markerBlocks"
+    }
+  ]
+}

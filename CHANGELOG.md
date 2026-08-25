@@ -5,6 +5,26 @@ HTTP API version are independent; MDict for Bob 1.0.0 continues to use API v2.
 
 ## [Unreleased]
 
+- Recover senses from visible numbering, ordered and definition lists, and
+  repeated definition blocks when a dictionary's class names say nothing. A
+  survey of 99 unknown MDX dictionaries went from 22 % mean structural coverage
+  to 56 %, with 50 dictionaries improved and none regressed.
+- Extract bilingual glosses without a profile, from the scripts in play and the
+  script the headword is written in.
+- Detect an entry's own headword from headword-class evidence, and decline a
+  heading that has nothing to do with the key the record was found under.
+- Read a pronunciation block's own `BrE`/`NAmE` label in preference to a
+  neighbour's, so the American half of a pair no longer inherits the British
+  label printed above it.
+- Fingerprint dictionaries from representative records strided across the key
+  index instead of a fixed list of English probe words, so non-English
+  dictionaries are recognised at all, and require several records to agree
+  before a profile is applied.
+- Add `oxford-xml-learner`, a reusable family profile for Oxford learner's
+  builds that ship publisher XML element names rather than CSS classes.
+- Add `--diagnose`, `--diagnose-all` and `--parser` for inspecting how well an
+  unknown dictionary is understood. Reports carry structure and counts only,
+  never dictionary text.
 - Harden release credentials with isolated least-privilege jobs, non-persistent
   checkout authentication, commit-pinned official Actions, pinned GitHub SSH
   host keys, history-aware secret scanning, and deterministic release notes.

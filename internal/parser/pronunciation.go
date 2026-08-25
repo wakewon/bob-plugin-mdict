@@ -141,6 +141,11 @@ func (s *parseState) resolveAudioFrom(node *html.Node, attrs []string) *entryir.
 }
 
 func (s *parseState) audioFromAttrs(node *html.Node, attrs []string) *entryir.Audio {
+	// A caller with no resolver — a diagnostic run against an MDX with no MDD
+	// alongside it — asks for structure without asking for playable assets.
+	if s.opts.Audio == nil || node == nil {
+		return nil
+	}
 	for _, name := range attrs {
 		value := strings.TrimSpace(Attr(node, name))
 		if value == "" || !looksLikeAudioRef(value) {

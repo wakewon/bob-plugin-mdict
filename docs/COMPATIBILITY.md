@@ -48,6 +48,13 @@ anywhere in this repository.
 | Audio files in MDD | 101 727 | 183 907 | 100 211 | — |
 | Parser | `collins-cobuild-overhaul` | `ldoce5pp` | `oald8` | `ode-living-online` |
 
+A fifth profile, `oxford-xml-learner`, covers the Oxford learner's builds that
+ship the publisher's own XML element names (`sn-g`, `def`, `chn`, `pron-g`)
+rather than CSS classes. It is a *family* profile: two unrelated repacks in the
+survey corpus share that template exactly, and both go from no recoverable
+structure to full sense, translation, example, label, idiom and UK/US
+pronunciation extraction under it.
+
 Entry counts: 141 091 / 283 110 / 109 476 / 464 360 headwords — 998 037 total.
 
 Regenerate against your own library:
@@ -56,6 +63,56 @@ Regenerate against your own library:
 BOB_MDICT_TEST_DICTIONARIES=/path/to/dictionaries \
 BOB_MDICT_MATRIX_OUT=/tmp/out \
   go test ./internal/service -run TestCompatibilityMatrix -v
+```
+
+## Unknown dictionaries
+
+The table above measures dictionaries that have a profile. The question a new
+user actually has is different: what happens to a dictionary nobody has ever
+looked at?
+
+To answer it, the generic parser was surveyed against a private local corpus of
+**99 MDX files** — English, Chinese, Japanese, Korean, German, French, Italian,
+Arabic and Malay; monolingual, bilingual, learner, unabridged, encyclopedic,
+thesaurus and terminology titles — using `bob-mdict --diagnose-all`. The corpus
+is the developer's own and is never committed; only these aggregate numbers are.
+
+| | Before this round | After |
+|---|---:|---:|
+| Dictionaries analysed | 99 | 99 |
+| Opened and indexed | 96 | 96 |
+| Mean structural coverage | 22.0 % | 56.1 % |
+| Mean fallback rate | 77.9 % | 43.8 % |
+| Produced no structure at all | 73 | 24 |
+| Yielded definitions | 22 | 72 |
+| Yielded parts of speech | 13 | 43 |
+| Yielded examples | 11 | 27 |
+| Yielded translations | 1 | 15 |
+| Yielded cross-references | 0 | 12 |
+| Flagged for manual inspection | 91 | 58 |
+
+Fifty dictionaries improved and none regressed. The four profiled dictionaries
+above produce a byte-identical capability matrix before and after.
+
+Three of the 99 files could not be opened at all. Their key-block info is not
+zlib-compressed, which is what a newer container revision or an unsupported
+key-block encryption looks like from here. They are isolated and reported as
+unavailable; the other 96 are unaffected. MDict v3 is not implemented.
+
+**Coverage is not accuracy.** These are counts of samples that produced
+structure of a given kind, not of samples that produced *correct* structure.
+Nothing here has been compared against a human reading of an entry.
+
+A high fallback rate is often the right answer. Roughly a quarter of the corpus
+is terminology banks, name lists, etymology dictionaries and encyclopedias whose
+records are one prose body under a headword: there is no sense structure to
+recover, and reporting the entry honestly as unparsed content beats inventing
+divisions in it.
+
+Reproduce against your own library:
+
+```bash
+bob-mdict --dictionary-dir /path/to/mdxs --diagnose-all --diagnose-out /tmp/corpus
 ```
 
 ## Known boundaries

@@ -481,5 +481,128 @@
     "root": [
       ".entryWrapper"
     ]
+  },
+  {
+    "id": "oxford-xml-learner",
+    "name": "Oxford learner's dictionaries, publisher XML build (OALD9 family)",
+    "match": {
+      "titleContains": [
+        "牛津高阶",
+        "Oxford Advanced Learner"
+      ],
+      "selectors": [
+        "sn-gs sn-g",
+        "sn-g def",
+        "top-g pos-g"
+      ]
+    },
+    "ignore": [
+      "xsymb",
+      "symbol",
+      "ill-g",
+      "cset",
+      "audio",
+      "ftindex",
+      "fthzmark",
+      "chnsep",
+      "hkey",
+      "res-g",
+      "topic"
+    ],
+    "headword": [
+      "top-g h"
+    ],
+    "translation": [
+      "chn"
+    ],
+    "pronunciation": [
+      {
+        "selector": [
+          "pron-g-blk"
+        ],
+        "region": "auto",
+        "ipa": [
+          "phon"
+        ],
+        "audio": [
+          "href"
+        ]
+      }
+    ],
+    "partBlock": [
+      "subentry-g"
+    ],
+    "pos": [
+      "pos-g pos"
+    ],
+    "sense": [
+      "sn-g"
+    ],
+    "definition": [
+      "def"
+    ],
+    "labels": [
+      "label-g reg",
+      "label-g geo"
+    ],
+    "example": [
+      "x-g-blk"
+    ],
+    "exampleText": [
+      "x"
+    ],
+    "forms": [
+      {
+        "container": [
+          "infl-g"
+        ],
+        "label": [
+          "prefix"
+        ],
+        "word": [
+          "infl"
+        ],
+        "name": "Forms"
+      }
+    ],
+    "sections": [
+      {
+        "selector": [
+          "idm-g"
+        ],
+        "kind": "idiom",
+        "lemma": [
+          "idm"
+        ],
+        "body": [
+          "def"
+        ]
+      },
+      {
+        "selector": [
+          "pv-g"
+        ],
+        "kind": "phrasalVerb",
+        "lemma": [
+          "pv"
+        ],
+        "body": [
+          "def"
+        ]
+      },
+      {
+        "selector": [
+          "unbox"
+        ],
+        "kind": "usage"
+      },
+      {
+        "selector": [
+          "xr-g-blk"
+        ],
+        "kind": "generic",
+        "title": "See also"
+      }
+    ]
   }
 ]

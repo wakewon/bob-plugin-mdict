@@ -8,17 +8,72 @@ You do not need one to use a dictionary. The generic parser handles unknown
 dictionaries on its own; a profile raises accuracy for a dictionary you use a
 lot.
 
-## Finding out what you are dealing with
+## Diagnosing an unknown dictionary
+
+Before writing anything, find out whether a profile is even needed:
 
 ```bash
-bob-mdict --debug-lookup abandon
+bob-mdict --diagnose "Penguin"
 ```
+
+The argument is a stable dictionary ID or any fragment of a title or filename.
+The report gives you the container facts (health, entry count, encoding, engine
+version, MDD volumes), which parser was selected and on what evidence, the
+dictionary's tag/class/attribute histograms and recurring selector signatures,
+how much structure the current parser recovers from a sample of its own
+records, and a short list of conservative signals worth a human look.
+
+`--diagnose-json` prints it as JSON; `--diagnose-out DIR` writes it to a file.
+
+To survey a whole directory:
+
+```bash
+bob-mdict --dictionary-dir /path/to/mdxs --diagnose-all --diagnose-out /tmp/corpus
+```
+
+That writes `corpus.json` and `corpus.md` with per-dictionary rows, the
+generic-versus-profile distribution, aggregate extraction coverage, warning
+counts, and any groups of dictionaries whose class vocabularies coincide
+strongly enough to be one template family. Keep the output somewhere
+git-ignored; it names dictionaries, and the dictionaries are the developer's
+own.
+
+To compare parsers on the same dictionary while you work:
+
+```bash
+bob-mdict --diagnose "Penguin" --parser generic
+bob-mdict --diagnose "Penguin" --parser oald8
+```
+
+`--parser` is a debugging aid, not a setting. Nothing persists it, and the
+product always resolves a parser from the current MDX and the current rules —
+which is exactly what lets a dictionary benefit from a future parser
+improvement with no action from anyone.
+
+### How records are chosen
+
+Sampling strides the key index and scores candidates from their markup alone:
+size, distinct tags, distinct class vocabulary, classes that repeat several
+times in one record (the signature of a sense list), cross-references and
+pronunciation references. It is deterministic, so the same file always yields
+the same samples and a before/after comparison means something, and it involves
+no word list, so it works the same on a Japanese or German dictionary as on an
+English one.
+
+### Reading the numbers
+
+They are **coverage**, not accuracy. Nothing has been compared against a human
+reading of the entry. "definitions 8/10" means eight samples produced something
+the parser filed as a definition — not that eight are correct. A high fallback
+rate on an encyclopedia or a terminology bank is the right answer, not a bug.
+
+## Finding out what a dictionary's markup looks like
 
 To see the raw HTML a dictionary actually stores, add a profile with only a
 `match` block and run the parser against it — or read the record directly with
-any MDict tool. Class histograms are the fastest way in: dictionaries are
-remarkably consistent with themselves, and the ten most common class names
-usually reveal the whole structure.
+any MDict tool. The class histogram in `--diagnose` is usually the fastest way
+in: dictionaries are remarkably consistent with themselves, and the ten most
+common class names often reveal the whole structure.
 
 ## The selector language
 
@@ -96,6 +151,29 @@ dropped.
 - **Sense wrappers that do not exist.** A part with a single meaning often has
   no numbered wrapper. The parser falls back to treating the block itself as one
   sense when a `definition` selector matches inside it.
+
+## Before you write a profile
+
+The generic parser recovers senses from four kinds of evidence in turn — class
+names, visible numbering, `<ol>`/`<dl>`, and a repeated definition element —
+and lifts glosses out of bilingual entries by script when no profile names them.
+Across a survey of a hundred real dictionaries it produced structure for
+three-quarters of them unaided. Check `--diagnose` first: a dictionary already
+at 100% structural coverage does not need a profile, and adding one is more
+code to maintain for no reader-visible gain.
+
+Prefer, in order:
+
+1. **A generic improvement**, when the structure you are looking at recurs
+   across several unrelated publishers. Generic rules must encode a real
+   semantic convention, never one dictionary's habits.
+2. **A family profile**, when several dictionaries share the same element
+   hierarchy, class conventions, pronunciation markup and semantic
+   organisation — as the publisher-XML Oxford learner builds do. Different
+   titles do not imply different templates, and a shared `.sense` class does
+   not imply a shared one.
+3. **A dedicated profile**, only when a dictionary matters enough, is genuinely
+   specialised, and cannot be recovered any other way.
 
 ## Verifying
 

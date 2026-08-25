@@ -14,6 +14,7 @@ bob-mdict  (127.0.0.1 only)
  ├── registry      recursive discovery, stable IDs, per-dictionary health
  ├── mdict         MDX/MDD access, duplicate-aware lookup, redirects, resources
  ├── profiles      declarative per-dictionary selectors, fingerprint-matched
+ ├── diagnose      representative sampling, profile evidence, structure reports
  ├── parser        one resolved MDX record + profile overrides → one Entry IR
  ├── entryir       EntrySet aggregate preserving semantic record boundaries
  ├── presentation  cached EntrySet → combined or selected record
@@ -66,9 +67,43 @@ subset, compiled once. It raises confidence and fixes structures the heuristics
 would miss — but it never removes the generic fallback, so an unknown dictionary
 is still usable on the day it is installed.
 
-A dictionary is fingerprinted once, by probing a few common words and testing
-structural selectors against the result. Titles are a weak hint only; repacks
-rename themselves constantly.
+A dictionary is fingerprinted once at rescan, from a handful of representative
+records, by testing structural selectors against them. Titles are a weak hint
+only; repacks rename themselves constantly.
+
+### Sense evidence, in order
+
+The generic parser tries four kinds of evidence and stops at the first that
+produces something, because they are in descending order of how much the
+dictionary is telling you:
+
+1. **Class names.** `sense`, `def-g`, `n-g`, `trg` and their relatives. Only
+   works when the publisher named its classes for humans.
+2. **Visible numbering.** `1.`, `①`, `(a)`, `II` — either at the start of a
+   block's text or in an element of its own. A survey of a hundred real
+   dictionaries found this to be the one convention that survives everything:
+   several titles ship machine-generated class names, sixteen carry no class
+   attribute at all, and no class vocabulary is shared by more than a handful
+   of unrelated publishers. Numbering is in all of them.
+3. **`<ol>` and `<dl>`.** HTML already says what an ordered list and a
+   definition list mean.
+4. **A repeated boundary element.** A definition-classed span that occurs once
+   per meaning, with the examples that follow it belonging to it.
+
+Numbering is only believed when it forms a sequence: at least two markers of
+one kind, ascending, starting at the beginning, restarting only where a new
+part of speech would restart it, and yielding pieces small enough to be
+meanings rather than whole articles. A lone "1." is far more often a homograph
+superscript than a sense.
+
+### Bilingual entries without a profile
+
+Which half of a bilingual entry is the gloss follows from the headword: in a
+dictionary keyed by English words the CJK text is the translation, and in one
+keyed by Chinese the English is. Nothing in the parser needs to know which
+languages are involved — only that two scripts are present and which of them
+the entry is keyed by. A profile's `translation` selector, when there is one,
+always wins.
 
 ### What the parser refuses to do
 
@@ -88,7 +123,11 @@ rename themselves constantly.
 The single worst failure mode in a dictionary plugin is attaching one recording
 to both the UK and US buttons. Region is therefore decided per candidate, from
 all the evidence around it — class names, ids, titles, hrefs, the audio
-filename, and the neighbouring text. `IPARegion` and `AudioRegion` are separate
+filename, and the neighbouring text — but a block that prints its own `BrE` or
+`NAmE` label is stating the region outright, and a neighbour's text is read only
+when the block says nothing about itself. Borrowing it unconditionally is how
+the American half of a pronunciation pair inherits the British label printed
+just above it. `IPARegion` and `AudioRegion` are separate
 IR facts, so a shared transcription can coexist with two regional recordings
 and an unlabelled clip never inherits the IPA's region. Profiles can state the
 region outright, and a rule may declare that it contributes a transcription but
@@ -104,6 +143,37 @@ schema limitation, not a dictionary or parser fact.
 Audio is offered only when the reference actually resolves in the user's MDD,
 and only when a Speex asset can actually be decoded on this machine. There is
 no synthesis path anywhere in the codebase.
+
+## Diagnostics
+
+`--debug-lookup` answers a question about one word. `internal/diagnose` answers
+the question that comes before it: is this dictionary understood at all?
+
+It picks a handful of representative records by **striding the key index and
+scoring the results structurally** — record size, distinct tags, distinct class
+vocabulary, repeated sibling structures, cross-references, pronunciation
+references. Deterministic, so before/after comparisons mean something, and
+language-independent, because a probe list of English words fingerprints only
+the languages it was written for. The service uses the same sampling to choose
+a parser at rescan, so there is one code path rather than two that drift.
+
+The reports carry tag names, class names, attribute names, reference schemes,
+counts, rates and warning codes — never dictionary text. That is what makes
+them safe to keep, quote and check into a report.
+
+Coverage numbers are **not accuracy**. Nothing has been compared against a
+human reading of the entry; a field being present says the parser produced
+something of that kind, not that what it produced is right. A small set of
+conservative signals (`rich-html-no-definitions`, `oversized-definition`,
+`implausible-sense-count`, `bilingual-without-translations`, …) marks
+dictionaries worth a human look. Every one of them has a legitimate
+explanation for some dictionary; they are observations, not verdicts.
+
+`--parser generic|<id>|auto` forces a parser for comparison runs. It is a
+debugging aid with no persisted state: the product always resolves a parser
+from the current MDX and the current rules, which is what lets an existing
+dictionary pick up a future parser improvement without anyone re-recording a
+mapping for it.
 
 ## Bob result boundary
 

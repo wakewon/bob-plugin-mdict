@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"strings"
+	"unicode"
 
 	"golang.org/x/net/html"
 
@@ -73,12 +74,14 @@ func Parse(raw []byte, opts Options) (*entryir.Entry, error) {
 	state.applyRoot()
 	state.stripChrome()
 	state.parseHeadword()
+	state.entryScript = dominantScript(firstNonEmpty(opts.Headword, entry.Headword))
 	state.parsePronunciations()
 	state.parseForms()
 	state.parseWordFamily()
 	// Sections are lifted out (and detached) before sense parsing so their
 	// internal structure cannot be mistaken for the entry's own senses.
 	state.parseSections()
+	state.parseGenericCrossReferences()
 	state.parseParts()
 	state.finalize()
 
@@ -92,6 +95,9 @@ type parseState struct {
 	entry        *entryir.Entry
 	notes        []string
 	partsHandled bool
+	// entryScript is the writing system the headword is in. It is what tells
+	// generic bilingual extraction which side of an entry is the gloss.
+	entryScript script
 }
 
 func (s *parseState) note(format string, args ...any) {
@@ -169,11 +175,16 @@ func (s *parseState) textOf(node *html.Node) string {
 // splitTranslation returns a node's own-language text and the translation
 // carried inside it, which bilingual dictionaries interleave in one element.
 func (s *parseState) splitTranslation(node *html.Node) (string, string) {
-	main := s.textOf(node)
 	sel := s.translationSelector()
 	if sel.IsEmpty() {
-		return main, ""
+		// With no profile to name the gloss element, the scripts in play are
+		// the only evidence of one.
+		if own, translated, ok := s.splitByScript(node); ok {
+			return own, translated
+		}
+		return s.textOf(node), ""
 	}
+	main := s.textOf(node)
 	var parts []string
 	for _, match := range QueryAll(node, sel) {
 		if text := Text(match, TextOptions{SkipHidden: true}); text != "" {
@@ -191,22 +202,81 @@ func (s *parseState) parseHeadword() {
 	if s.profile != nil && !s.profile.headword.IsEmpty() {
 		if node := Query(s.doc, s.profile.headword); node != nil {
 			// Hyphenation markers split "a·ban·don" across child spans.
-			if text := Normalize(strings.NewReplacer("·", "", "‧", "", "|", "").Replace(s.textOf(node))); text != "" {
+			if text := cleanHeadword(s.textOf(node)); text != "" {
 				s.entry.Headword = text
 				s.note("headword from profile selector %q", s.profile.headword)
 				return
 			}
 		}
 	}
-	// Generic: the first h1/h2 that is short enough to be a headword.
+	// Generic: an element that says it holds the headword, before any heading.
+	// A heading is a position; a class named "hw" or "entry_title" is a claim.
+	found := ""
+	Walk(s.doc, func(node *html.Node) bool {
+		if found != "" {
+			return false
+		}
+		if !classTokenMatches(node, headwordClassHints) {
+			return true
+		}
+		if text := cleanHeadword(s.textOf(node)); text != "" && len([]rune(text)) <= 60 {
+			found = text
+			return false
+		}
+		return true
+	})
+	if found != "" {
+		s.entry.Headword = found
+		s.note("headword from generic headword class")
+		return
+	}
+
+	// Otherwise the first h1/h2 short enough to be a headword — but only when
+	// it resembles the key the record was reached by. Dictionaries put "Examples"
+	// and "Word History" in headings too, and a heading that has nothing to do
+	// with the key is a section title, not the entry's name.
 	for _, node := range QueryAll(s.doc, ParseSelector("h1, h2")) {
-		text := Normalize(Text(node, TextOptions{SkipHidden: true}))
-		if text != "" && len([]rune(text)) <= 60 && !strings.Contains(text, " in English") {
-			s.entry.Headword = text
-			s.note("headword from generic heading")
-			return
+		text := cleanHeadword(Text(node, TextOptions{SkipHidden: true}))
+		if text == "" || len([]rune(text)) > 60 || strings.Contains(text, " in English") {
+			continue
+		}
+		if s.opts.Headword != "" && !HeadwordMatchesKey(text, s.opts.Headword) {
+			continue
+		}
+		s.entry.Headword = text
+		s.note("headword from generic heading")
+		return
+	}
+}
+
+// cleanHeadword removes the hyphenation markers dictionaries scatter through a
+// headword to show where it may be broken across lines.
+func cleanHeadword(raw string) string {
+	return Normalize(strings.NewReplacer("·", "", "‧", "", "|", "", "•", "").Replace(raw))
+}
+
+// HeadwordMatchesKey reports whether a parsed headword plausibly names the same
+// entry as the key it was looked up under.
+//
+// The comparison is deliberately loose. Hyphenation dots, letter case,
+// diacritics rendered as separate spans and a trailing homograph number are all
+// normal differences between the two; a completely different string is not.
+func HeadwordMatchesKey(headword, key string) bool {
+	left, right := headwordIdentity(headword), headwordIdentity(key)
+	if left == "" || right == "" {
+		return true
+	}
+	return strings.HasPrefix(left, right) || strings.HasPrefix(right, left)
+}
+
+func headwordIdentity(value string) string {
+	var builder strings.Builder
+	for _, r := range strings.ToLower(cleanHeadword(value)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
 		}
 	}
+	return builder.String()
 }
 
 func sprintf(format string, args ...any) string {

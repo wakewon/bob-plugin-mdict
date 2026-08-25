@@ -3,7 +3,6 @@
 package service
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,14 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/html"
-
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/config"
+	"github.com/wakewon/bob-plugin-mdict/internal/diagnose"
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
 	"github.com/wakewon/bob-plugin-mdict/internal/parser"
-	"github.com/wakewon/bob-plugin-mdict/internal/profiles"
 	"github.com/wakewon/bob-plugin-mdict/internal/resource"
 )
 
@@ -34,9 +31,10 @@ type Service struct {
 	// baseURL is the loopback origin resource URLs are built from.
 	baseURL string
 
-	profileMu    sync.RWMutex
-	profileByDic map[string]*parser.Profile
-	profileDone  map[string]bool
+	profileMu      sync.RWMutex
+	profileByDic   map[string]*parser.Profile
+	profileDone    map[string]bool
+	parserOverride string
 
 	cacheMu sync.Mutex
 	cache   *entryCache
@@ -96,10 +94,6 @@ func (s *Service) Rescan() error {
 	return nil
 }
 
-// sampleWords are probed when fingerprinting a dictionary. They are chosen to
-// exist in essentially every English dictionary while being cheap to resolve.
-var sampleWords = []string{"abandon", "hello", "run", "water", "book", "the", "good"}
-
 // profileFor returns the parser profile for a dictionary, detecting it once.
 func (s *Service) profileFor(dict *mdict.Dictionary) *parser.Profile {
 	id := dict.ID()
@@ -120,31 +114,44 @@ func (s *Service) profileFor(dict *mdict.Dictionary) *parser.Profile {
 	return profile
 }
 
+// detectProfile fingerprints a dictionary from representative records.
+//
+// Sampling is language-independent — it strides the key index rather than
+// probing English words — and several records vote, so one coincidental match
+// cannot decide. Ambiguous or minority evidence resolves to generic, which is
+// always a working parser rather than a wrong one.
 func (s *Service) detectProfile(dict *mdict.Dictionary) *parser.Profile {
 	info := dict.Info()
 	if info.Health != mdict.HealthOK {
 		return nil
 	}
-	for _, word := range sampleWords {
-		set, err := dict.LookupAll(word)
-		if err != nil {
-			continue
-		}
-		for _, result := range set.Records {
-			if len(result.HTML) < 200 {
-				continue
-			}
-			doc, parseErr := html.Parse(bytes.NewReader(result.HTML))
-			if parseErr != nil {
-				continue
-			}
-			title := info.Title + " " + path.Base(dict.SourcePath())
-			if profile := profiles.Match(title, doc); profile != nil {
-				return profile
-			}
-		}
+	samples := diagnose.Samples(dict, diagnose.DetectionSampling)
+	title := info.Title + " " + path.Base(dict.SourcePath())
+	profile, _ := diagnose.SelectProfile(title, samples)
+	if override := strings.TrimSpace(s.parserOverride); override != "" {
+		profile, _ = diagnose.ApplyProfileOverride(profile, override)
 	}
-	return nil
+	return profile
+}
+
+// SetParserOverride forces every dictionary onto one parser, for development
+// comparisons between auto, generic and a named profile. It is a debugging aid
+// with no persisted state; the product always runs on automatic detection.
+func (s *Service) SetParserOverride(override string) {
+	s.profileMu.Lock()
+	s.parserOverride = override
+	s.profileByDic = make(map[string]*parser.Profile)
+	s.profileDone = make(map[string]bool)
+	s.profileMu.Unlock()
+}
+
+// ProfileEvidence re-runs detection for a dictionary and reports why the
+// profile was chosen. Diagnostics only.
+func (s *Service) ProfileEvidence(dict *mdict.Dictionary) diagnose.ProfileEvidence {
+	info := dict.Info()
+	samples := diagnose.Samples(dict, diagnose.DetectionSampling)
+	_, evidence := diagnose.SelectProfile(info.Title+" "+path.Base(dict.SourcePath()), samples)
+	return evidence
 }
 
 // ProfileID returns the profile identifier for a dictionary, or "generic".

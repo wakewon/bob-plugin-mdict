@@ -243,6 +243,21 @@ func compileMarkers(markers []string) []*regexp.Regexp {
 	return out
 }
 
+// hasRegionMarker reports whether text carries any variety marker at all.
+func hasRegionMarker(text string) bool {
+	for _, re := range ukMarkerRes {
+		if re.MatchString(text) {
+			return true
+		}
+	}
+	for _, re := range usMarkerRes {
+		if re.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
 // DetectRegion classifies a pronunciation from all the evidence around it:
 // class names, ids, titles, hrefs, resource filenames and neighbouring text.
 //

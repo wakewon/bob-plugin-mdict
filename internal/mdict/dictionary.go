@@ -613,3 +613,57 @@ func (d *Dictionary) Close() {
 }
 
 var _ = os.ErrNotExist
+
+// SampleKeys returns up to limit headwords spread deterministically across the
+// key index.
+//
+// It is the language-independent replacement for probing a fixed list of
+// English words: a Japanese or German dictionary contains none of "abandon",
+// "hello" or "run", so a probe list can only ever fingerprint the languages it
+// was written for. Striding the index instead works for any script, and the
+// same file always yields the same keys, so before/after comparisons are
+// meaningful.
+func (d *Dictionary) SampleKeys(limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	if err := d.Load(); err != nil {
+		return nil
+	}
+	d.mu.RLock()
+	dict := d.mdx
+	d.mu.RUnlock()
+	if dict == nil {
+		return nil
+	}
+	entries, err := dict.GetKeyWordEntries()
+	if err != nil || len(entries) == 0 {
+		return nil
+	}
+	// Stride across the whole index rather than taking a prefix: the first
+	// thousand keys of a dictionary are usually abbreviations, symbols and
+	// single letters, which are the least structurally representative records
+	// it contains.
+	stride := len(entries) / limit
+	if stride < 1 {
+		stride = 1
+	}
+	out := make([]string, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for i := 0; i < len(entries) && len(out) < limit; i += stride {
+		entry := entries[i]
+		if entry == nil {
+			continue
+		}
+		key := strings.TrimSpace(entry.KeyWord)
+		if key == "" {
+			continue
+		}
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
+}

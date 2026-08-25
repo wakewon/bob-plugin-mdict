@@ -169,7 +169,16 @@ bob-mdict --check
 bob-mdict --list-dictionaries
 bob-mdict --rescan
 bob-mdict --debug-lookup WORD
+bob-mdict --diagnose NAME      # one dictionary: structure and parser coverage
+bob-mdict --diagnose-all       # every dictionary in the directory
 ```
+
+`--debug-lookup` answers "what did the parser make of this word?"; `--diagnose`
+answers "how well is this dictionary understood at all?" — which parser was
+chosen and on what evidence, what markup conventions it uses, and how much
+semantic structure a sample of its own records yields. Both report structure
+and counts, never dictionary text. See
+[docs/PARSER.md](docs/PARSER.md#diagnosing-an-unknown-dictionary).
 
 The local HTTP API is documented in [docs/API.md](docs/API.md).
 

@@ -586,8 +586,13 @@ func TestNoDictionaryContentLeavesTheRepository(t *testing.T) {
 				t.Errorf("fixture contains publisher-specific skeleton/resource marker %q: %s", forbidden, path)
 			}
 		}
-		if strings.Count(lower, "sound://") != strings.Count(lower, "sound://synthetic/") {
-			t.Errorf("fixture contains a non-synthetic audio path: %s", path)
+		// Both resource schemes real dictionaries use have to point at invented
+		// paths. A fixture is allowed to reproduce the shape of a reference,
+		// never a publisher's actual asset layout.
+		for _, scheme := range []string{"sound://", "snd://"} {
+			if strings.Count(lower, scheme) != strings.Count(lower, scheme+"synthetic/") {
+				t.Errorf("fixture contains a non-synthetic %s audio path: %s", scheme, path)
+			}
 		}
 		return nil
 	})
