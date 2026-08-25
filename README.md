@@ -171,6 +171,8 @@ bob-mdict --rescan
 bob-mdict --debug-lookup WORD
 bob-mdict --diagnose NAME      # one dictionary: structure and parser coverage
 bob-mdict --diagnose-all       # every dictionary in the directory
+bob-mdict --validate NAME --validate-out DIR   # end-to-end review snapshots
+bob-mdict --validate-all --validate-out DIR
 ```
 
 `--debug-lookup` answers "what did the parser make of this word?"; `--diagnose`
@@ -179,6 +181,16 @@ chosen and on what evidence, what markup conventions it uses, and how much
 semantic structure a sample of its own records yields. Both report structure
 and counts, never dictionary text. See
 [docs/PARSER.md](docs/PARSER.md#diagnosing-an-unknown-dictionary).
+
+`--validate` answers the question after that: is the structure a fair reading
+of the record, and does it survive the rest of the pipeline? It runs the real
+service and the real Bob adapter over records the dictionary actually
+contains, measures how much of each record the parse accounts for and how much
+it repeats, checks the invariants between parser, service, adapter and the
+experimental Markdown renderer, and writes a ranked set of Markdown review
+files. Unlike the diagnostics, those files quote real entries, so they are
+written only where you point them and belong somewhere private. See
+[docs/PARSER.md](docs/PARSER.md#validating-what-the-parser-produced).
 
 The local HTTP API is documented in [docs/API.md](docs/API.md).
 

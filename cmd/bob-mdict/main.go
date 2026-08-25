@@ -47,6 +47,11 @@ func run() error {
 		diagnoseAll  = flag.Bool("diagnose-all", false, "run the diagnostics over every dictionary in the directory")
 		diagnoseOut  = flag.String("diagnose-out", "", "write diagnostic JSON and Markdown into this directory")
 		diagnoseJSON = flag.Bool("diagnose-json", false, "print the diagnostic as JSON instead of text")
+		validateOne  = flag.String("validate", "", "validate one dictionary end to end (ID or title substring)")
+		validateAll  = flag.Bool("validate-all", false, "validate every dictionary in the directory")
+		validateOut  = flag.String("validate-out", "", "write the Markdown review set and baseline into this directory")
+		validateBase = flag.String("validate-baseline", "", "compare against a baseline.json from an earlier run")
+		validateSize = flag.Int("validate-queue", 0, "how many records to put in the human-review queue")
 		parserFlag   = flag.String("parser", "", "development override: auto, generic, or a profile ID")
 		dictionaries = flag.String("dictionary-dir", "", "override the dictionary directory")
 		port         = flag.Int("port", 0, "override the loopback port")
@@ -103,6 +108,14 @@ func run() error {
 		return runDiagnoseCorpus(svc, *parserFlag, *diagnoseOut, *diagnoseJSON)
 	case *diagnoseOne != "":
 		return runDiagnoseOne(svc, *diagnoseOne, *parserFlag, *diagnoseOut, *diagnoseJSON)
+	case *validateAll || *validateOne != "":
+		return runValidate(svc, validateFlags{
+			selector: *validateOne,
+			all:      *validateAll,
+			out:      *validateOut,
+			baseline: *validateBase,
+			queue:    *validateSize,
+		})
 	}
 
 	return serve(svc, log)

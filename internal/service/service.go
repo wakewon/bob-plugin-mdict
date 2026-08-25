@@ -198,7 +198,11 @@ func matchFromSet(dict *mdict.Dictionary, set *entryir.EntrySet, parseMillis flo
 	}
 }
 
-func (m *Match) entrySet() *entryir.EntrySet {
+// EntrySet rebuilds the canonical aggregate this match was rendered from.
+//
+// It is the contract every presentation layer reads: the Bob adapter, and any
+// other adapter, start here rather than from the wire shape of a Match.
+func (m *Match) EntrySet() *entryir.EntrySet {
 	if m == nil {
 		return nil
 	}
@@ -302,7 +306,7 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 		// Bob presents one result card per configured service instance. Even
 		// when an API client asks the server for several matches, the Bob view is
 		// deliberately rendered from the first match only.
-		set := result.Matches[0].entrySet()
+		set := result.Matches[0].EntrySet()
 		if ordinal := opts.BobOptions.RecordOrdinal; ordinal > len(set.Records) {
 			return nil, &RecordNotFoundError{
 				Query:     query,

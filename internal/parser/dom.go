@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 
@@ -270,3 +271,46 @@ func DescriptorText(node *html.Node) string {
 // maxRegionLabelRunes keeps a whole entry's prose out of the region evidence
 // when the "node" turns out to be a large container.
 const maxRegionLabelRunes = 120
+
+// VisibleText is the normalized text a reader would see in a raw record.
+//
+// It exists for diagnostics that need a denominator: how much of the record
+// did the parse account for? Producing it here rather than in the caller keeps
+// one definition of "visible" — scripts, styles and document head removed,
+// inline-hidden nodes skipped — shared with what the parser itself reads.
+func VisibleText(raw []byte) string {
+	doc, err := html.Parse(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	RemoveMatching(doc, ParseSelector("script, style, head, link"))
+	return Normalize(Text(doc, TextOptions{SkipHidden: true}))
+}
+
+// ScopedVisibleText is the visible text a profile actually puts in scope.
+//
+// It is the fair denominator for asking how much of a record a parse
+// accounted for. A profile's `root` narrows a record that holds several
+// regional editions of one entry to the edition being presented, and its
+// `ignore` list names fold buttons and speaker icons as chrome. Neither is
+// content the parser failed to keep, so neither belongs in the total it is
+// measured against. With no profile this is exactly VisibleText.
+func ScopedVisibleText(raw []byte, profile *Profile) string {
+	doc, err := html.Parse(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	RemoveMatching(doc, ParseSelector("script, style, head, link"))
+	if profile != nil {
+		profile.Compile()
+		if compiled := profile.compiled; compiled != nil {
+			if !compiled.root.IsEmpty() {
+				if matches := QueryAll(doc, compiled.root); len(matches) > 0 {
+					doc = matches[0]
+				}
+			}
+			RemoveMatching(doc, compiled.ignore)
+		}
+	}
+	return Normalize(Text(doc, TextOptions{SkipHidden: true}))
+}

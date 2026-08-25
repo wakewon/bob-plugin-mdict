@@ -77,42 +77,108 @@ Arabic and Malay; monolingual, bilingual, learner, unabridged, encyclopedic,
 thesaurus and terminology titles — using `bob-mdict --diagnose-all`. The corpus
 is the developer's own and is never committed; only these aggregate numbers are.
 
-| | Before this round | After |
-|---|---:|---:|
-| Dictionaries analysed | 99 | 99 |
-| Opened and indexed | 96 | 96 |
-| Mean structural coverage | 22.0 % | 56.1 % |
-| Mean fallback rate | 77.9 % | 43.8 % |
-| Produced no structure at all | 73 | 24 |
-| Yielded definitions | 22 | 72 |
-| Yielded parts of speech | 13 | 43 |
-| Yielded examples | 11 | 27 |
-| Yielded translations | 1 | 15 |
-| Yielded cross-references | 0 | 12 |
-| Flagged for manual inspection | 91 | 58 |
+| | Before numbering | After numbering | After validation |
+|---|---:|---:|---:|
+| Dictionaries analysed | 99 | 99 | 99 |
+| Opened and indexed | 96 | 96 | 96 |
+| Mean structural coverage | 22.0 % | 56.1 % | 54.2 % |
+| Mean fallback rate | 77.9 % | 43.8 % | 45.7 % |
+| Produced no structure at all | 73 | 24 | 25 |
+| Yielded definitions | 22 | 72 | 71 |
+| Yielded parts of speech | 13 | 43 | 42 |
+| Yielded examples | 11 | 27 | **44** |
+| Yielded translations | 1 | 15 | **26** |
+| Yielded IPA | 73 | 73 | **45** |
+| Yielded cross-references | 0 | 12 | 12 |
+| Flagged for manual inspection | 91 | 58 | 51 |
 
-Fifty dictionaries improved and none regressed. The four profiled dictionaries
-above produce a byte-identical capability matrix before and after.
+**Coverage is not accuracy, and the last column is the proof.** Structural
+coverage went slightly *down* between the second and third columns while the
+parse got substantially better, because the third column is the first one
+measured after the output was actually read.
+
+Two of those movements are worth stating outright:
+
+- **IPA falls from 73 dictionaries to 45.** The IPA character class contained
+  `y`, which is the close front rounded vowel and also the twenty-fifth letter
+  of the English alphabet. Every heading, label and section title ending in one
+  was being reported as a transcription. Forty-five is the honest number.
+- **Examples rise from 27 to 44 and translations from 15 to 26.** Both come
+  from reading real records: many dictionaries keep the definition in one
+  element and its examples in the elements after it, and many fuse an English
+  definition and its Chinese gloss into a single text node.
+
+Coverage is not the measure the third column was tuned against. That was
+**content retention** — how much of a record the parse accounts for — which is
+reported separately below.
+
+## Validating the output
+
+A second survey runs the real service and the real Bob adapter over 1 132
+records from the same corpus and measures what happens to them. Dictionaries
+are weighted by what this project is for: Chinese on either side first, English
+monolingual second.
+
+| tier | dictionaries | records | retention | duplication |
+|---|---:|---:|---:|---:|
+| A · Chinese | 40 | 625 | 82 % | 3.3 % |
+| B · English monolingual | 26 | 312 | 73 % | 2.7 % |
+| C · English ↔ other | 15 | 120 | 68 % | 6.4 % |
+| D · other lexical | 10 | 60 | 95 % | 3.8 % |
+| E · reference / non-lexical | 5 | 15 | 78 % | 1.0 % |
+
+Mean content retention across the corpus rose from **68 % to 79 %**, and on
+Chinese-related dictionaries from **66 % to 82 %**, against a baseline measured
+with the same harness before any of this round's parser changes. Of 1 132
+records, 202 were classified as likely improvements and 9 as possible
+regressions; every one of the nine is a case where confidently wrong structure
+was replaced by a fallback that keeps far more of the record.
+
+Every backend invariant held on every record: the EntrySet is keyed by the key
+the MDX matched, record ordinals stay consecutive, duplicate records stay
+distinguishable, sense order survives into the Bob result, every semantic field
+reaches both presentations, and no token appears in the Markdown rendering that
+is absent from the IR.
+
+**Retention and duplication are not accuracy either.** They detect the shapes a
+wrong parse takes — text that vanished, text emitted twice — not whether the
+text that survived was understood. The hundred-record review queue those
+numbers rank is where a human reads the entries themselves.
+
+## What is still weak, and what is correct
 
 Three of the 99 files could not be opened at all. Their key-block info is not
 zlib-compressed, which is what a newer container revision or an unsupported
 key-block encryption looks like from here. They are isolated and reported as
 unavailable; the other 96 are unaffected. MDict v3 is not implemented.
 
-**Coverage is not accuracy.** These are counts of samples that produced
-structure of a given kind, not of samples that produced *correct* structure.
-Nothing here has been compared against a human reading of an entry.
+**A high fallback rate is often the right answer.** Roughly a quarter of the
+corpus is terminology banks, name lists, etymology dictionaries and
+encyclopedias whose records are one prose body under a headword: there is no
+sense structure to recover, and reporting the entry honestly as unparsed
+content beats inventing divisions in it. An article-style reference work is
+deliberately sampled three times rather than sixteen, and is kept out of the
+review queue, so its fallbacks cannot drown the dictionaries this project
+exists for.
 
-A high fallback rate is often the right answer. Roughly a quarter of the corpus
-is terminology banks, name lists, etymology dictionaries and encyclopedias whose
-records are one prose body under a headword: there is no sense structure to
-recover, and reporting the entry honestly as unparsed content beats inventing
-divisions in it.
+Known imprecisions that remain, all visible in the review snapshots:
+
+- A collocations or thesaurus dictionary's lists are recovered and attached to
+  the right sense, but filed as **examples**. There is no generic evidence that
+  distinguishes a collocation list from a citation list, and losing them was
+  worse than labelling them approximately.
+- Dictionaries that print a **sense menu** at the top of a long entry and then
+  the entry itself yield both, so the short menu entries appear alongside the
+  full senses.
+- Material printed **after** the last sense is attached only when the dictionary
+  has already shown that shape of element to be an example. Otherwise it is left
+  where it is rather than swallowed, which loses it from a structured parse.
 
 Reproduce against your own library:
 
 ```bash
 bob-mdict --dictionary-dir /path/to/mdxs --diagnose-all --diagnose-out /tmp/corpus
+bob-mdict --dictionary-dir /path/to/mdxs --validate-all --validate-out /private/review
 ```
 
 ## Known boundaries

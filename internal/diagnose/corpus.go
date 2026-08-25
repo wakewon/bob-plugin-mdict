@@ -124,6 +124,11 @@ func Corpus(registry *mdict.Registry, opts Options, progress func(index, total i
 // twelve class names have.
 const familyOverlap = 0.7
 
+// Families groups dictionaries whose class vocabularies substantially coincide.
+// It is exported so tooling that already holds a set of reports can ask the
+// question without re-running the whole corpus scan.
+func Families(reports []Report) []Family { return detectFamilies(reports) }
+
 // detectFamilies groups dictionaries whose class vocabularies substantially
 // coincide, by single-link clustering.
 func detectFamilies(reports []Report) []Family {

@@ -33,8 +33,25 @@ const (
 const scriptPurity = 0.8
 
 // minTranslationRunes keeps a stray loanword or abbreviation from being lifted
-// out of a definition as though it were a gloss.
-const minTranslationRunes = 4
+// out of a definition as though it were a gloss. CJK writes a whole word in
+// two characters, so the floor there is two rather than four.
+const (
+	minTranslationRunes    = 4
+	minCJKTranslationRunes = 2
+)
+
+// A translation says the same thing in another language, so the two sides stay
+// in proportion — but the proportion depends on which way round they are. CJK
+// writes in characters what Latin script writes in words, so a four-character
+// gloss of a thirty-five-letter definition is ordinary, while four Latin
+// letters beside a sixty-character CJK definition are not a translation at all:
+// they are a romanized reading printed next to the character they belong to.
+// Reading one of those as the gloss both invents a translation and truncates
+// the definition it was taken from.
+const (
+	maxCJKGlossImbalance   = 20
+	maxLatinGlossImbalance = 2
+)
 
 // dominantScript classifies text by the script most of its letters are in.
 func dominantScript(text string) script {
@@ -94,10 +111,14 @@ func (s *parseState) foreignScriptNodes(root *html.Node) map[*html.Node]struct{}
 			return true
 		}
 		text := Normalize(Text(node, TextOptions{SkipHidden: true}))
-		if len([]rune(text)) < minTranslationRunes {
+		if dominantScript(text) != want {
 			return true
 		}
-		if dominantScript(text) != want {
+		floor := minTranslationRunes
+		if want == scriptCJK {
+			floor = minCJKTranslationRunes
+		}
+		if len([]rune(text)) < floor {
 			return true
 		}
 		found[node] = struct{}{}
@@ -119,9 +140,6 @@ func (s *parseState) splitByScript(node *html.Node) (string, string, bool) {
 		return "", "", false
 	}
 	main := Text(node, TextOptions{SkipHidden: true, SkipNodes: foreign})
-	if len([]rune(main)) < minSenseTextRunes {
-		return "", "", false
-	}
 	var parts []string
 	for child := range foreign {
 		if text := Normalize(Text(child, TextOptions{SkipHidden: true})); text != "" {
@@ -135,7 +153,11 @@ func (s *parseState) splitByScript(node *html.Node) (string, string, bool) {
 	if len(parts) == 0 {
 		return "", "", false
 	}
-	return main, Normalize(strings.Join(parts, " ")), true
+	translated := Normalize(strings.Join(parts, " "))
+	if !plausibleGloss(main, translated) {
+		return "", "", false
+	}
+	return main, translated, true
 }
 
 // sortByDocumentOrder rewrites parts in the order their nodes appear.
@@ -153,4 +175,78 @@ func sortByDocumentOrder(root *html.Node, nodes map[*html.Node]struct{}, parts *
 	if len(ordered) == len(*parts) {
 		*parts = ordered
 	}
+}
+
+// splitTextByScript separates a gloss that shares one text node with the text
+// it glosses.
+//
+// Bilingual dictionaries do this constantly: "to include sth with sth else
+// 把…加进去" is one string with no element boundary anywhere in it, so the
+// node-level split has nothing to hold on to. The scripts still mark the seam.
+//
+// The rule is deliberately narrow. The text has to fall into exactly two runs
+// — one in the entry's own script, one in the other — because a definition
+// that alternates between scripts is quoting, not glossing, and splitting it
+// anywhere would produce two halves of a sentence rather than a meaning and
+// its translation.
+func (s *parseState) splitTextByScript(text string) (string, string, bool) {
+	want := s.entryScript.opposite()
+	if want == scriptUnknown || text == "" {
+		return "", "", false
+	}
+	runes := []rune(text)
+
+	type run struct {
+		kind  script
+		start int
+	}
+	var runs []run
+	for i, r := range runes {
+		kind := scriptUnknown
+		switch {
+		case unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul):
+			kind = scriptCJK
+		case unicode.IsLetter(r):
+			kind = scriptLatin
+		}
+		// Digits, punctuation and spaces belong to whichever run they follow;
+		// they are the one thing both scripts genuinely share.
+		if kind == scriptUnknown {
+			continue
+		}
+		if len(runs) == 0 || runs[len(runs)-1].kind != kind {
+			runs = append(runs, run{kind: kind, start: i})
+		}
+	}
+	if len(runs) != 2 {
+		return "", "", false
+	}
+	first := strings.TrimSpace(string(runes[:runs[1].start]))
+	second := strings.TrimSpace(string(runes[runs[1].start:]))
+
+	own, translated := first, second
+	if runs[0].kind == want {
+		own, translated = second, first
+	}
+	if !plausibleGloss(own, translated) {
+		return "", "", false
+	}
+	return Normalize(own), Normalize(translated), true
+}
+
+// plausibleGloss reports whether one side of a split is a translation of the
+// other rather than an annotation attached to it.
+func plausibleGloss(own, translated string) bool {
+	source, gloss := len([]rune(own)), len([]rune(translated))
+	if source < minSenseTextRunes {
+		return false
+	}
+	floor, imbalance := minTranslationRunes, maxLatinGlossImbalance
+	if dominantScript(translated) == scriptCJK {
+		floor, imbalance = minCJKTranslationRunes, maxCJKGlossImbalance
+	}
+	if gloss < floor {
+		return false
+	}
+	return gloss*imbalance >= source
 }

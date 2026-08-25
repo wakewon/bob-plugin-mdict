@@ -66,6 +66,22 @@ const maxMarkerGroup = 200
 // a meaning rather than a stray digit.
 const minSenseTextRunes = 3
 
+// minSenseShareOfRecord is how much of a record its sense list has to account
+// for.
+//
+// A dictionary entry is mostly its meanings. A numbered list that accounts for
+// a fortieth of the record is an index of the record, not the meanings in it —
+// which is exactly what an encyclopedia's table of contents looks like to a
+// parser that only checks whether the numbering ascends. The bar is set low
+// because a long etymology, a usage note or a citation block can legitimately
+// outweigh short definitions; it only has to separate "some of the entry" from
+// "a listing of it".
+const minSenseShareOfRecord = 0.12
+
+// exampleBilingualShare is how consistently an element shape has to carry a
+// translation before that becomes the test for what an example is.
+const exampleBilingualShare = 0.6
+
 var openingBrackets = "(（[【〔"
 var closingBrackets = ")）]】〕"
 
@@ -359,7 +375,9 @@ type enumBlock struct {
 	// its own element rather than in the block's text. It is detached before
 	// the definition is read.
 	markerNode *html.Node
-	children   []enumBlock
+	// examples are sibling elements that follow this block and belong to it.
+	examples []*html.Node
+	children []enumBlock
 }
 
 // markerLedBlocks finds the elements whose numbering is the entry's sense
@@ -433,6 +451,16 @@ func (s *parseState) chooseMarkerGroup(candidates []enumBlock, keyOf func(*html.
 		groups[key] = append(groups[key], i)
 	}
 
+	// Senses sit beside one another, never inside one another. Markup with
+	// unclosed tags parses into a chain where each sense element contains the
+	// whole rest of the entry, and reading that as a sense list emits the
+	// entry once per sense. Keeping only the outermost members of a group
+	// leaves the real senses where the nesting is an artefact, and leaves a
+	// single member — which cannot be a sequence — where it is not.
+	for key, members := range groups {
+		groups[key] = outermost(members, nearest, groups[key])
+	}
+
 	var passing []string
 	for _, key := range order {
 		members := groups[key]
@@ -496,24 +524,231 @@ func (s *parseState) chooseMarkerGroup(candidates []enumBlock, keyOf func(*html.
 		blocks[owner].children = append(blocks[owner].children, item)
 	}
 	for i := range blocks {
-		// One nested numbered block is a wrapper repeating its parent, not a
-		// subdivision of it. Keeping it would print the same sense twice.
-		if len(blocks[i].children) < 2 || !sameMarkerKind(blocks[i].children) {
+		if !sameMarkerKind(blocks[i].children) {
+			blocks[i].children = nil
+			continue
+		}
+		// A single nested numbered block may be a wrapper repeating its
+		// parent, or it may be the one subsense that sense happens to have.
+		// What tells them apart is whether it is the parent: same number, or
+		// nearly all of the parent's text. Discarding it wholesale left a real
+		// subsense glued to the end of its parent's definition, with both
+		// translations run together after it.
+		if len(blocks[i].children) == 1 && s.childRepeatsParent(blocks[i]) {
 			blocks[i].children = nil
 		}
 	}
+	s.attachSiblingExamples(blocks)
+
 	sizes := make([]int, 0, len(blocks))
+	total := 0
 	for _, block := range blocks {
-		sizes = append(sizes, len([]rune(Normalize(s.textOf(block.node)))))
+		size := len([]rune(Normalize(s.textOf(block.node))))
+		sizes = append(sizes, size)
+		for _, example := range block.examples {
+			total += len([]rune(Normalize(s.textOf(example))))
+		}
+		total += size
 	}
 	if !plausibleSenseSizes(sizes) {
+		return nil
+	}
+	if record := s.recordTextRunes(); record > 0 && float64(total) < minSenseShareOfRecord*float64(record) {
 		return nil
 	}
 	detachMarkerNodes(blocks)
 	return blocks
 }
 
+// outermost drops members that are contained by another member of the same
+// group, following the chain of enclosing candidates.
+func outermost(members []int, nearest []int, group []int) []int {
+	inGroup := make(map[int]struct{}, len(group))
+	for _, member := range group {
+		inGroup[member] = struct{}{}
+	}
+	kept := make([]int, 0, len(members))
+	for _, member := range members {
+		nested := false
+		for owner := nearest[member]; owner >= 0; owner = nearest[owner] {
+			if _, ok := inGroup[owner]; ok {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			kept = append(kept, member)
+		}
+	}
+	return kept
+}
+
+// attachSiblingExamples gives each numbered block the material that follows it.
+func (s *parseState) attachSiblingExamples(blocks []enumBlock) {
+	nodes := make([]*html.Node, 0, len(blocks))
+	for _, block := range blocks {
+		nodes = append(nodes, block.node)
+	}
+	runs := s.siblingRuns(nodes)
+	for i := range blocks {
+		blocks[i].examples = runs[blocks[i].node]
+	}
+}
+
+// siblingRuns divides the material around a set of sense elements between
+// them.
+//
+// A great many dictionaries put the number and the definition in one element
+// and the examples in the elements after it, as siblings rather than children.
+// Everything between one sense and the next belongs to the first — that is
+// what a numbered list means on a printed page — and without this the examples
+// are simply lost: they are inside no sense, so no sense ever reads them.
+//
+// Which of those siblings are examples is decided, where it can be, by the
+// dictionary's own habit. In a bilingual dictionary the examples are the
+// elements that carry both languages, and the grammar codes, pattern labels
+// and next-lemma headings mixed in among them carry only one. Where there is
+// no such habit to read, the boundary rule stands on its own: attaching a
+// grammar code as an example is a small misreading, and dropping the entry's
+// examples outright is not.
+func (s *parseState) siblingRuns(nodes []*html.Node) map[*html.Node][]*html.Node {
+	runs := make(map[*html.Node][]*html.Node, len(nodes))
+	if len(nodes) < 2 {
+		return runs
+	}
+	boundary := make(map[*html.Node]struct{}, len(nodes))
+	byParent := map[*html.Node]int{}
+	for _, node := range nodes {
+		boundary[node] = struct{}{}
+		if node.Parent != nil {
+			byParent[node.Parent]++
+		}
+	}
+
+	// The material after the last sense has no next sense to end it, so it runs
+	// to the end of the parent and takes with it whatever the dictionary
+	// prints after its sense list — derivatives, a thesaurus panel, an origin
+	// note. Those are not that sense's examples, and attaching them both
+	// swallows the sections and duplicates them when they are parsed again in
+	// their own right.
+	last := map[*html.Node]*html.Node{}
+	for _, node := range nodes {
+		if node.Parent != nil {
+			last[node.Parent] = node
+		}
+	}
+
+	signatures := map[string]int{}
+	bilingual := map[string]int{}
+	for _, node := range nodes {
+		// One sense alone under a parent is not a list, and the rest of that
+		// parent is as likely to be a heading as an example.
+		if node.Parent == nil || byParent[node.Parent] < 2 {
+			continue
+		}
+		var run []*html.Node
+		for sibling := node.NextSibling; sibling != nil; sibling = sibling.NextSibling {
+			if sibling.Type != html.ElementNode {
+				continue
+			}
+			if _, isBoundary := boundary[sibling]; isBoundary {
+				break
+			}
+			if len([]rune(Normalize(s.textOf(sibling)))) < minSenseTextRunes {
+				continue
+			}
+			run = append(run, sibling)
+			key := signatureKey(sibling)
+			signatures[key]++
+			if _, translation := s.splitTranslation(sibling); translation != "" {
+				bilingual[key]++
+			}
+		}
+		runs[node] = run
+	}
+
+	// The last sense keeps only what the dictionary has already shown to be an
+	// example: an element of a shape that held examples for an earlier sense.
+	established := map[string]struct{}{}
+	for _, node := range nodes {
+		if last[node.Parent] == node {
+			continue
+		}
+		for _, candidate := range runs[node] {
+			established[signatureKey(candidate)] = struct{}{}
+		}
+	}
+	for _, node := range nodes {
+		if last[node.Parent] != node {
+			continue
+		}
+		kept := runs[node][:0]
+		for _, candidate := range runs[node] {
+			if _, ok := established[signatureKey(candidate)]; ok {
+				kept = append(kept, candidate)
+			}
+		}
+		runs[node] = kept
+	}
+
+	translated := false
+	for key, count := range signatures {
+		if count >= 2 && float64(bilingual[key]) >= exampleBilingualShare*float64(count) {
+			translated = true
+			break
+		}
+	}
+	if !translated {
+		return runs
+	}
+	for node, run := range runs {
+		kept := run[:0]
+		for _, candidate := range run {
+			key := signatureKey(candidate)
+			if float64(bilingual[key]) < exampleBilingualShare*float64(signatures[key]) {
+				continue
+			}
+			kept = append(kept, candidate)
+		}
+		runs[node] = kept
+	}
+	return runs
+}
+
+// appendSiblingExamples adds the material that followed a sense to it.
+func (s *parseState) appendSiblingExamples(sense *entryir.Sense, nodes []*html.Node) {
+	for _, node := range nodes {
+		if len(sense.Examples) >= s.opts.MaxExamplesPerSense {
+			return
+		}
+		text, translation := s.splitTranslation(node)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		sense.Examples = append(sense.Examples, entryir.Example{
+			Text:        text,
+			Translation: translation,
+			Audio:       s.resolveAudioFrom(node, audioAttrs),
+		})
+	}
+}
+
+// childRepeatsParent reports whether a lone nested block is its parent again
+// rather than a subdivision of it.
+func (s *parseState) childRepeatsParent(block enumBlock) bool {
+	child := block.children[0]
+	if child.marker.Text == block.marker.Text {
+		return true
+	}
+	parentText := len([]rune(Normalize(s.textOf(block.node))))
+	childText := len([]rune(Normalize(s.textOf(child.node))))
+	return parentText > 0 && float64(childText) >= 0.9*float64(parentText)
+}
+
 func sameMarkerKind(blocks []enumBlock) bool {
+	if len(blocks) == 0 {
+		return false
+	}
 	for _, block := range blocks[1:] {
 		if block.marker.Kind != blocks[0].marker.Kind {
 			return false
@@ -528,6 +763,13 @@ func (s *parseState) markerCandidates() []enumBlock {
 	var candidates []enumBlock
 	Walk(s.doc, func(node *html.Node) bool {
 		if node == s.doc {
+			return true
+		}
+		// A block whose every word is link text points at content rather than
+		// being content. Encyclopedias open with a numbered table of contents
+		// built exactly that way, and it ascends as convincingly as any sense
+		// list.
+		if s.textIsAllLinks(node) {
 			return true
 		}
 		if marker, markerNode, ok := s.leadingMarkerElement(node); ok {
@@ -588,6 +830,35 @@ func (s *parseState) leadingMarkerElement(node *html.Node) (enumMarker, *html.No
 		return marker, child, true
 	}
 	return enumMarker{}, nil, false
+}
+
+// textIsAllLinks reports whether every word a node shows comes from a link.
+func (s *parseState) textIsAllLinks(node *html.Node) bool {
+	if Normalize(s.textOf(node)) == "" {
+		return false
+	}
+	links := map[*html.Node]struct{}{}
+	Walk(node, func(child *html.Node) bool {
+		if child != node && child.Data == "a" && child.Type == html.ElementNode {
+			links[child] = struct{}{}
+			return false
+		}
+		return true
+	})
+	if len(links) == 0 {
+		return false
+	}
+	return Normalize(Text(node, TextOptions{SkipHidden: true, SkipNodes: links})) == ""
+}
+
+// recordTextRunes is how much text the record holds at this point in parsing,
+// after chrome and detached sections have gone. It is memoized because the
+// sense strategies each ask for it.
+func (s *parseState) recordTextRunes() int {
+	if s.recordRunes < 0 {
+		s.recordRunes = len([]rune(Normalize(s.textOf(s.doc))))
+	}
+	return s.recordRunes
 }
 
 // anyText reads a node's text whether it is an element or a bare text node.
@@ -662,6 +933,23 @@ func (s *parseState) markerRunSenses() []enumBlock {
 	return s.materializeSplit(best, false)
 }
 
+// oversizedSense marks a piece that is not a meaning but the remainder of the
+// entry.
+//
+// Numbered indexes at the top of a long entry are a real convention — one
+// thesaurus opens every article with its own list of senses and then prints
+// the article — and the division at those numbers is correct right up to the
+// last one, which takes everything left. The median-size check cannot see it,
+// because one huge piece among many small ones leaves the median small.
+//
+// Such a piece is emitted as untyped content rather than dropped or presented
+// as a definition. It is the same choice the parser makes everywhere else:
+// text it cannot classify stays visible and stays unlabelled.
+const (
+	oversizeMedianFactor = 10
+	oversizeMinRunes     = 3000
+)
+
 // buildEnumeratedParts turns marker-carrying blocks into parts and senses.
 func (s *parseState) buildEnumeratedParts(blocks []enumBlock, rule string) bool {
 	type group struct {
@@ -671,7 +959,20 @@ func (s *parseState) buildEnumeratedParts(blocks []enumBlock, rule string) bool 
 	var groups []group
 	current := -1
 
+	sizes := make([]int, 0, len(blocks))
 	for _, block := range blocks {
+		sizes = append(sizes, len([]rune(Normalize(s.textOf(block.node)))))
+	}
+	ordered := append([]int(nil), sizes...)
+	sort.Ints(ordered)
+	median := ordered[len(ordered)/2]
+
+	for index, block := range blocks {
+		if sizes[index] > oversizeMinRunes && sizes[index] > oversizeMedianFactor*median {
+			s.genericSectionFrom(block.node)
+			s.note("enumerated block %d is too large to be a sense; kept as untyped content", index+1)
+			continue
+		}
 		sense := s.enumeratedSense(block, rule)
 		if sense.Definition == "" && sense.Translation == "" &&
 			len(sense.Examples) == 0 && len(sense.Subsenses) == 0 {
@@ -724,6 +1025,7 @@ func (s *parseState) enumeratedSense(block enumBlock, rule string) entryir.Sense
 		}
 	}
 	sense := s.genericSense(block.node)
+	s.appendSiblingExamples(&sense, block.examples)
 	sense.Number = block.marker.Text
 	sense.Rule = rule
 	sense.Definition = stripLeadingNumber(sense.Definition, sense.Number)

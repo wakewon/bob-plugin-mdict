@@ -164,12 +164,20 @@ bob-mdict --rescan               # 重新发现并建立索引
 bob-mdict --debug-lookup WORD    # 输出结构化 EntrySet IR，供开发调试
 bob-mdict --diagnose NAME        # 单本词典的结构与解析覆盖诊断
 bob-mdict --diagnose-all         # 对目录中全部词典批量诊断
+bob-mdict --validate NAME --validate-out DIR   # 端到端校验并生成人工复核快照
+bob-mdict --validate-all --validate-out DIR
 ```
 
 `--debug-lookup` 回答“解析器把这个词解析成了什么”；`--diagnose` 回答“这本词典
 到底被理解到什么程度”——选中了哪个解析器、依据是什么、它使用哪些 DOM 约定，以及
 从它自己的代表性词条中恢复出多少语义结构。两者都只输出结构与统计，不输出词典正文。
 详见 [docs/PARSER.md](docs/PARSER.md#diagnosing-an-unknown-dictionary)。
+
+`--validate` 回答再下一个问题：解析出的结构是否忠实于原始记录，又能否完整地走完
+后端链路。它用真实的 service 与 Bob adapter 处理词典自身的记录，度量每条记录被解析
+覆盖了多少、重复了多少，校验 parser、service、adapter 与实验性 Markdown 渲染器之间
+的一致性约束，并按优先级生成一组 Markdown 复核文件。与诊断不同，这些文件会引用真实
+词条，因此只会写入你指定的目录，且应保存在私有位置。
 
 本地 HTTP API 见 [docs/API.md](docs/API.md)。
 

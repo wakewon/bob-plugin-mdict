@@ -65,28 +65,52 @@ func TestOversizedDefinitionIsFlagged(t *testing.T) {
 	}
 }
 
-func TestHeadwordMismatchIsFlagged(t *testing.T) {
+// A headword-classed element that names something else entirely is a page
+// banner, not the entry's name. The generic parser declines it, so the
+// mismatch never reaches the IR and the signal has nothing to report — which
+// is the outcome the signal existed to provoke.
+func TestHeadwordUnlikeTheKeyIsNotAdopted(t *testing.T) {
 	report := inspectEntries(t, func(i int) (string, string) {
 		key := fmt.Sprintf("glimmet%02d", i)
-		// The record names a completely different word from the key it is
-		// stored under, which is worth a human look either way.
 		return key, fmt.Sprintf(`<div class="entry"><h1 class="hw">unrelated</h1>`+
 			`<div class="sense"><span class="def">An invented thing, number %d.</span></div>`+
 			`<div class="sense"><span class="def">Another invented thing, number %d.</span></div></div>`, i, i)
 	})
-	if !hasWarning(report, "headword-unlike-lookup-key") {
-		t.Errorf("expected headword-unlike-lookup-key, got %+v", report.Warnings)
+	if hasWarning(report, "headword-unlike-lookup-key") {
+		t.Errorf("the parser adopted a headword unlike the key: %+v", report.Warnings)
+	}
+	if report.Coverage.Headword != report.Coverage.Samples {
+		t.Errorf("every sample should still carry a headword, got %d of %d",
+			report.Coverage.Headword, report.Coverage.Samples)
 	}
 }
 
-func TestBilingualWithoutTranslationsIsFlagged(t *testing.T) {
+// Two scripts fused into one text node used to defeat gloss extraction
+// entirely. They no longer do, as long as the seam is a single one.
+func TestFusedBilingualTextIsSeparated(t *testing.T) {
 	report := inspectEntries(t, func(i int) (string, string) {
 		key := fmt.Sprintf("glimmet%02d", i)
-		// Two scripts fused into one text node: there is no element boundary
-		// for the gloss to be lifted out of.
 		return key, fmt.Sprintf(`<div class="entry"><h1 class="hw">%s</h1>`+
 			`<div class="sense"><span class="def">An invented thing 一件虚构的东西</span></div>`+
 			`<div class="sense"><span class="def">Another invented thing 另一件虚构的东西</span></div></div>`, key)
+	})
+	if hasWarning(report, "bilingual-without-translations") {
+		t.Errorf("the gloss was not lifted out: %+v", report.Warnings)
+	}
+	if report.Coverage.Translations != report.Coverage.Samples {
+		t.Errorf("every sample should yield a translation, got %d of %d",
+			report.Coverage.Translations, report.Coverage.Samples)
+	}
+}
+
+// Text that changes script repeatedly is quoting, not glossing. The parser
+// refuses to guess where the seam is, and the signal reports that it did.
+func TestInterleavedBilingualTextIsFlagged(t *testing.T) {
+	report := inspectEntries(t, func(i int) (string, string) {
+		key := fmt.Sprintf("glimmet%02d", i)
+		return key, fmt.Sprintf(`<div class="entry"><h1 class="hw">%s</h1>`+
+			`<div class="sense"><span class="def">An invented 一件 thing 虚构 of some kind</span></div>`+
+			`<div class="sense"><span class="def">Another invented 另一件 thing 虚构 of some kind</span></div></div>`, key)
 	})
 	if !hasWarning(report, "bilingual-without-translations") {
 		t.Errorf("expected bilingual-without-translations, got %+v", report.Warnings)

@@ -1,0 +1,48 @@
+{
+  "headword": "wexal",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "a small hook used to fasten a sail",
+          "translation": "系帆小钩:",
+          "examples": [
+            {
+              "text": "She reached for the wexal.",
+              "translation": "她伸手去拿小钩。"
+            },
+            {
+              "text": "The wexal held fast all night.",
+              "translation": "小钩整夜牢牢固定住了。"
+            }
+          ],
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        },
+        {
+          "number": "2",
+          "definition": "the act of fastening such a hook",
+          "translation": "系钩:",
+          "examples": [
+            {
+              "text": "A careful wexal takes practice.",
+              "translation": "仔细系钩需要练习。"
+            }
+          ],
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        }
+      ],
+      "confidence": 0.35,
+      "rule": "generic:markerBlocks"
+    }
+  ]
+}

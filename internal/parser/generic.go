@@ -123,6 +123,12 @@ func (s *parseState) parseGenericSenseBlocks() bool {
 	var groups []group
 	current := -1
 
+	// A sense located by its class name loses its examples the same way a
+	// numbered one does when the dictionary keeps them as siblings rather than
+	// children — so the same boundary rule applies, whatever the evidence that
+	// found the sense in the first place.
+	runs := s.siblingRuns(senseNodes)
+
 	for _, node := range senseNodes {
 		pos := s.genericPOSFor(node)
 		if current < 0 || (pos != "" && pos != groups[current].pos) {
@@ -130,6 +136,7 @@ func (s *parseState) parseGenericSenseBlocks() bool {
 			current = len(groups) - 1
 		}
 		sense := s.genericSense(node)
+		s.appendSiblingExamples(&sense, runs[node])
 		if sense.Definition == "" && len(sense.Examples) == 0 {
 			continue
 		}
@@ -390,17 +397,26 @@ const FallbackSectionTitle = "Entry"
 // genericFallbackSection preserves an entry whose structure could not be
 // recovered, labelled honestly rather than presented as parsed definitions.
 func (s *parseState) genericFallbackSection() {
-	text := Normalize(Text(s.doc, TextOptions{SkipHidden: true}))
-	if text == "" {
-		return
+	if s.genericSectionFrom(s.doc) {
+		s.note("no structure recognised; emitted raw entry text as a section")
 	}
-	const limit = 4000
-	if len([]rune(text)) > limit {
-		runes := []rune(text)
-		text = string(runes[:limit]) + " …"
+}
+
+// fallbackSectionLimit is how much unstructured text is worth showing. Past
+// this, a popup is not a reading environment.
+const fallbackSectionLimit = 4000
+
+// genericSectionFrom emits a node's text as untyped content.
+func (s *parseState) genericSectionFrom(node *html.Node) bool {
+	text := Normalize(Text(node, TextOptions{SkipHidden: true}))
+	if text == "" {
+		return false
+	}
+	if runes := []rune(text); len(runes) > fallbackSectionLimit {
+		text = string(runes[:fallbackSectionLimit]) + " …"
 	}
 	s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: FallbackSectionTitle, Body: text})
-	s.note("no structure recognised; emitted raw entry text as a section")
+	return true
 }
 
 // parseGenericCrossReferences lifts "see also" pointers out of an entry with

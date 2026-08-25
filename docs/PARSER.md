@@ -67,6 +67,67 @@ reading of the entry. "definitions 8/10" means eight samples produced something
 the parser filed as a definition — not that eight are correct. A high fallback
 rate on an encyclopedia or a terminology bank is the right answer, not a bug.
 
+## Validating what the parser produced
+
+Coverage says a field exists. It does not say the field is a fair reading of
+the record, and it does not say the reader will ever see it.
+
+```bash
+bob-mdict --validate "Penguin" --validate-out /private/review
+bob-mdict --dictionary-dir /path/to/mdxs --validate-all --validate-out /private/review
+```
+
+This runs the real service and the real Bob adapter over records the dictionary
+actually contains, then writes a Markdown review set: an index, a page per
+dictionary, and one file per queued record showing the source markup, the
+canonical EntrySet, what Bob would receive, the experimental Markdown
+rendering, and every automatic measurement of the three.
+
+**These files quote real entries.** That is what they are for, and it is why
+they are written only where you point them. Keep them somewhere private and
+never commit them.
+
+### What is measured
+
+| | |
+|---|---|
+| content retention | how much of the record's text the parse accounts for |
+| duplication | how much output text exists beyond what the record contains |
+| largest field | whether one field swallowed the record |
+| backend parity | whether the layers agree about what was found |
+
+Retention is measured against the record *as the profile scopes it*. A `root`
+that picks one edition out of a record holding several, and an `ignore` list
+naming speaker icons, are decisions rather than losses.
+
+None of these is accuracy either. What they do is rank: a record with low
+retention and high duplication is a better use of your attention than a random
+one, and that is the whole claim.
+
+### The review queue
+
+A corpus run produces around a thousand validated records. The queue is the
+hundred most informative of them, scored by product priority first — Chinese on
+either side, then English monolingual, then English with another language —
+and after that by evidence that something is wrong, by reliance on a heuristic
+with no track record, and by what changed since the last run.
+
+### Comparing runs
+
+```bash
+bob-mdict --validate-all --validate-out /private/review-2 \
+  --validate-baseline /private/review/baseline.json
+```
+
+Each run writes a `baseline.json` of measurements and hashes — never dictionary
+text — and a later run classifies every record against it: unchanged, changed,
+likely improvement, possible regression, or source changed.
+
+More extracted fields is deliberately **not** treated as an improvement. A
+parse can double its sense count by splitting one meaning in half. What counts
+is structure recovered where there was none without losing retention, or a
+parse that now accounts for materially more of its record.
+
 ## Finding out what a dictionary's markup looks like
 
 To see the raw HTML a dictionary actually stores, add a profile with only a
@@ -157,6 +218,10 @@ dropped.
 The generic parser recovers senses from four kinds of evidence in turn — class
 names, visible numbering, `<ol>`/`<dl>`, and a repeated definition element —
 and lifts glosses out of bilingual entries by script when no profile names them.
+Whatever evidence located the senses, the material *between* one sense and the
+next is treated as belonging to the first: a great many dictionaries keep the
+definition in one element and the examples in the elements after it, where no
+sense contains them and nothing else reads them.
 Across a survey of a hundred real dictionaries it produced structure for
 three-quarters of them unaided. Check `--diagnose` first: a dictionary already
 at 100% structural coverage does not need a profile, and adding one is more

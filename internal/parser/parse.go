@@ -66,7 +66,7 @@ func Parse(raw []byte, opts Options) (*entryir.Entry, error) {
 		entry.Source.Profile = "generic"
 	}
 
-	state := &parseState{doc: doc, opts: opts, entry: entry}
+	state := &parseState{doc: doc, opts: opts, entry: entry, recordRunes: -1}
 	if profile != nil {
 		state.profile = profile.compiled
 	}
@@ -98,6 +98,8 @@ type parseState struct {
 	// entryScript is the writing system the headword is in. It is what tells
 	// generic bilingual extraction which side of an entry is the gloss.
 	entryScript script
+	// recordRunes memoizes the record's text length; -1 means not yet measured.
+	recordRunes int
 }
 
 func (s *parseState) note(format string, args ...any) {
@@ -178,11 +180,17 @@ func (s *parseState) splitTranslation(node *html.Node) (string, string) {
 	sel := s.translationSelector()
 	if sel.IsEmpty() {
 		// With no profile to name the gloss element, the scripts in play are
-		// the only evidence of one.
+		// the only evidence of one. Prefer the element-level split: a gloss in
+		// its own span is stated structure, and only when there is none does
+		// the seam have to be found inside the text.
 		if own, translated, ok := s.splitByScript(node); ok {
 			return own, translated
 		}
-		return s.textOf(node), ""
+		text := s.textOf(node)
+		if own, translated, ok := s.splitTextByScript(text); ok {
+			return own, translated
+		}
+		return text, ""
 	}
 	main := s.textOf(node)
 	var parts []string
@@ -190,6 +198,20 @@ func (s *parseState) splitTranslation(node *html.Node) (string, string) {
 		if text := Text(match, TextOptions{SkipHidden: true}); text != "" {
 			parts = append(parts, text)
 		}
+	}
+	if len(parts) == 0 {
+		// The profile names the gloss element and it is not here. Repacks of a
+		// profiled dictionary reuse its structure while renaming that one
+		// class, and the result is a definition with its translation glued to
+		// the end of it. Script evidence is weaker than a profile selector,
+		// which is why it is consulted only where the selector found nothing.
+		if own, translated, ok := s.splitByScript(node); ok {
+			return own, translated
+		}
+		if own, translated, ok := s.splitTextByScript(main); ok {
+			return own, translated
+		}
+		return main, ""
 	}
 	// Bilingual dictionaries often emit the same gloss twice, once before and
 	// once after the source-language definition, and hide one of them with CSS
@@ -211,6 +233,13 @@ func (s *parseState) parseHeadword() {
 	}
 	// Generic: an element that says it holds the headword, before any heading.
 	// A heading is a position; a class named "hw" or "entry_title" is a claim.
+	//
+	// The claim still has to survive comparison with the key the record was
+	// found under. "entry_title" is used both for the headword and for a page
+	// banner reading "Definition of 'below'", and "headword" is used both for
+	// the word and for the block that contains the word, its word classes and
+	// its pronunciation. Taking the first match on trust turns either into the
+	// entry's name.
 	found := ""
 	Walk(s.doc, func(node *html.Node) bool {
 		if found != "" {
@@ -219,11 +248,17 @@ func (s *parseState) parseHeadword() {
 		if !classTokenMatches(node, headwordClassHints) {
 			return true
 		}
-		if text := cleanHeadword(s.textOf(node)); text != "" && len([]rune(text)) <= 60 {
-			found = text
-			return false
+		text := cleanHeadword(s.textOf(node))
+		if text == "" || len([]rune(text)) > 60 {
+			return true
 		}
-		return true
+		if s.opts.Headword != "" && !HeadwordMatchesKey(text, s.opts.Headword) {
+			// Keep looking: the real headword is often nested inside the
+			// block that carries the class.
+			return true
+		}
+		found = text
+		return false
 	})
 	if found != "" {
 		s.entry.Headword = found

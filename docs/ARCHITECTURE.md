@@ -19,6 +19,8 @@ bob-mdict  (127.0.0.1 only)
  ├── entryir       EntrySet aggregate preserving semantic record boundaries
  ├── presentation  cached EntrySet → combined or selected record
  ├── bobadapter    selected view → one Bob toDict (+ sibling navigation)
+ ├── mdrender      EntrySet → Markdown (experimental sibling of bobadapter)
+ ├── validate      development only: real backend over real records, ranked
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
 ```
 
@@ -45,6 +47,31 @@ is the reason a future Bob with richer display needs one new adapter rather than
 changes reaching back into the MDX layer. It is also why the sense hierarchy
 survives: the IR keeps source numbers and nested subsenses, while the adapter
 generates display numbers afresh inside each POS at the very last step.
+
+### Two adapters, no conversion path
+
+`internal/mdrender` renders the same EntrySet as Markdown. It is a *sibling* of
+the Bob adapter, not a layer on top of it:
+
+```text
+EntrySet → bobadapter → Bob toDict
+EntrySet → mdrender   → Markdown
+```
+
+Neither can see the other, and neither reads entry HTML. A second semantic path
+— MDX HTML straight to Markdown — would drift from the parser the moment either
+changed, and would have to relearn everything the parser already knows.
+
+Today the Markdown renderer is a development surface: a deterministic, diffable
+picture of exactly what the parser recovered, which is what makes reviewing a
+thousand real records possible without launching Bob. If Bob ever displays
+Markdown, the same renderer becomes a presentation adapter and nothing below it
+moves. Until then it is explicitly experimental and is not part of API v2.
+
+Determinism is a requirement rather than a nicety, and it costs one design
+decision: a resolved recording's URL carries a per-process resource token, so
+the renderer reports that a recording exists rather than linking to it unless
+asked. Otherwise every entry would compare as changed on every run.
 
 ## Parsing: generic first, profiles as reinforcement
 
@@ -174,6 +201,55 @@ debugging aid with no persisted state: the product always resolves a parser
 from the current MDX and the current rules, which is what lets an existing
 dictionary pick up a future parser improvement without anyone re-recording a
 mapping for it.
+
+## Validation
+
+`internal/validate` answers the question after *that*: structure the parser
+produced may still be a misreading, and structure it produced correctly may
+still be lost on the way to a client.
+
+It runs the shipping implementation end to end — the same sampling as profile
+detection, the same `service.Lookup`, the same Bob adapter — over records the
+dictionaries really contain, and it measures three things the coverage numbers
+cannot see:
+
+- **Content retention.** How much of the record's text the parse accounts for,
+  compared token for token. A structured parse that keeps a twentieth of the
+  record has found a table of contents, not a sense list.
+- **Duplication.** How much output text exists beyond what the record contains.
+  The same passage emitted under two fields shows up here and nowhere else.
+- **Largest-field dominance.** Whether one extracted field is most of the
+  record, which is what whole-record swallowing looks like from outside.
+
+Retention is measured against the record *as the profile scopes it*: a `root`
+that narrows a record to the edition being presented, and an `ignore` list that
+names speaker icons as chrome, are deliberate decisions, not content the parser
+dropped.
+
+Alongside the metrics it checks invariants between the layers — the EntrySet is
+keyed by the key the MDX matched, visible record ordinals are consecutive,
+duplicate records stay distinguishable, the Bob word derives from the lookup key
+rather than from a parser guess, sense order survives, every semantic field
+survives into both presentations, and no token appears in the Markdown that is
+absent from the IR. That last one is what makes "the Markdown is derived from
+the IR" a checked fact rather than an intention.
+
+Nothing in the served request path imports the package, and the daemon never
+starts it.
+
+### Priority, because a corpus is not a product
+
+A hundred dictionaries are not equally important to this project. Validation
+weights its sampling and its review queue by what the dictionaries are:
+Chinese on either side first, English monolingual second, English paired with
+another language third, other lexicons fourth, and article-style reference
+works last. The classification is made from scripts in the sampled records —
+Han characters with no kana and no hangul are Chinese, wherever the title
+claims otherwise — corroborated but never decided by the title.
+
+That ordering only affects how much attention a dictionary gets. No parsing
+behaviour depends on it, which is why a rough classification is acceptable: the
+cost of getting one wrong is that a person reads it in the wrong order.
 
 ## Bob result boundary
 
