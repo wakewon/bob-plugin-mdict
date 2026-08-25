@@ -74,7 +74,9 @@ BOB_MDICT_MATRIX_OUT=/tmp/out \
   implemented; most dictionaries already carry inflected headwords as redirects.
 - **Case-sensitive headwords are preserved.** An exactly cased key wins;
   case-insensitive matching is used only after an exact miss. Canonically
-  equivalent NFC/NFD input shares identity without folding case.
+  equivalent NFC/NFD input shares identity without folding case. Bob displays
+  and navigates with the actual selected MDX key, so fallback input casing does
+  not fabricate a second headword.
 - **Duplicate exact keys preserve record boundaries.** Resolved byte-identical
   records are safely deduplicated; every remaining non-empty record is parsed
   independently and shown in one Bob card with superscript record ordinals.

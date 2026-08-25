@@ -137,6 +137,71 @@ func TestServiceCaseFallbackAndUnicodeCanonicalIdentity(t *testing.T) {
 	}
 }
 
+func TestServiceLowercaseOnlyFallbackUsesActualLookupKeyEverywhere(t *testing.T) {
+	svc := newSyntheticCaseService(t, []testmdx.Entry{
+		{Key: "china", HTML: syntheticCaseHTML("china1", "lowercase first definition")},
+		{Key: "china", HTML: syntheticCaseHTML("china2", "lowercase second definition")},
+	})
+	for _, query := range []string{"China", "CHINA"} {
+		result, err := svc.Lookup(query, service.LookupOptions{
+			Limit: 1, RenderBob: true, BobOptions: bobadapter.DefaultOptions(),
+		})
+		if err != nil || len(result.Matches) != 1 || result.Bob == nil {
+			t.Fatalf("Lookup(%q): result=%+v err=%v", query, result, err)
+		}
+		match := &result.Matches[0]
+		if result.Query != query || match.LookupKey != "china" || match.Headword != "china1" ||
+			result.Bob.Word != "china" || len(match.Records) != 2 {
+			t.Fatalf("Lookup(%q) aggregate provenance = %+v bob=%+v", query, match, result.Bob)
+		}
+		for index, record := range match.Records {
+			if record.Entry.Source.MatchedKey != "china" || record.Entry.Headword != []string{"china1", "china2"}[index] {
+				t.Errorf("Lookup(%q) record %d provenance = %+v", query, index, record.Entry)
+			}
+		}
+		other := result.Bob.RelatedWordParts[len(result.Bob.RelatedWordParts)-1]
+		if other.Part != "Other entries" || len(other.Words) != 1 || other.Words[0].Word != "china²" {
+			t.Fatalf("Lookup(%q) sibling aliases = %+v", query, result.Bob.RelatedWordParts)
+		}
+
+		selectedOptions := bobadapter.DefaultOptions()
+		selectedOptions.RecordOrdinal = 2
+		selected, selectErr := svc.Lookup(query, service.LookupOptions{
+			Limit: 1, RenderBob: true, BobOptions: selectedOptions,
+		})
+		if selectErr != nil || selected.Bob == nil || selected.Bob.Word != "china²" ||
+			selected.Matches[0].LookupKey != "china" {
+			t.Fatalf("Lookup(%q) explicit second = %+v err=%v", query, selected, selectErr)
+		}
+		siblings := selected.Bob.RelatedWordParts[len(selected.Bob.RelatedWordParts)-1].Words
+		if len(siblings) != 1 || siblings[0].Word != "china¹" {
+			t.Fatalf("Lookup(%q) explicit siblings = %+v", query, siblings)
+		}
+
+		combinedOptions := bobadapter.DefaultOptions()
+		combinedOptions.MultiRecordMode = bobadapter.MultiRecordCombined
+		combined, combinedErr := svc.Lookup(query, service.LookupOptions{
+			Limit: 1, RenderBob: true, BobOptions: combinedOptions,
+		})
+		if combinedErr != nil || combined.Bob == nil || combined.Bob.Word != "china" {
+			t.Fatalf("Lookup(%q) combined word = %+v err=%v", query, combined.Bob, combinedErr)
+		}
+		if selected.Matches[0].Records[0].Entry != match.Records[0].Entry || selected.Matches[0].LookupKey != match.LookupKey {
+			t.Fatalf("Lookup(%q) cache hit lost aggregate provenance", query)
+		}
+
+		outOfRangeOptions := bobadapter.DefaultOptions()
+		outOfRangeOptions.RecordOrdinal = 3
+		_, rangeErr := svc.Lookup(query, service.LookupOptions{
+			Limit: 1, RenderBob: true, BobOptions: outOfRangeOptions,
+		})
+		var recordErr *service.RecordNotFoundError
+		if !errors.As(rangeErr, &recordErr) || recordErr.Query != query {
+			t.Fatalf("Lookup(%q) out-of-range error = %#v", query, rangeErr)
+		}
+	}
+}
+
 func TestSmartSuggestionsPreserveCaseDistinctHeadwords(t *testing.T) {
 	svc := newSyntheticCaseService(t, []testmdx.Entry{
 		{Key: "Polish", HTML: syntheticCaseHTML("Polish", "synthetic proper adjective")},
@@ -219,7 +284,7 @@ func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
 		t.Fatalf("Lookup: matches=%d err=%v", len(result.Matches), err)
 	}
 	match := &result.Matches[0]
-	if match.Headword != "flimber" || len(match.Records) != 3 {
+	if match.LookupKey != "flimber" || match.Headword != "flimber" || len(match.Records) != 3 {
 		t.Fatalf("entry set = %+v", match)
 	}
 	for index, wantPOS := range []string{"noun", "verb", "adjective"} {
@@ -292,6 +357,9 @@ func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
 	if _, ok := envelope.Matches[0]["records"]; !ok {
 		t.Fatalf("v2 payload omitted matches[].records: %s", payload)
 	}
+	if _, ok := envelope.Matches[0]["lookupKey"]; !ok {
+		t.Fatalf("v2 payload omitted matches[].lookupKey: %s", payload)
+	}
 }
 
 func TestServiceFiltersExactAndRedirectDuplicatesWithoutVisibleOrdinal(t *testing.T) {
@@ -347,8 +415,8 @@ func TestServiceMultiRecordCaseResolutionDoesNotMixSpellings(t *testing.T) {
 		{"CHINA", "china", "lower"},
 	} {
 		match := lookupSynthetic(t, svc, tc.query, service.LookupOptions{})
-		if len(match.Records) != 2 {
-			t.Fatalf("Lookup(%q) records = %d", tc.query, len(match.Records))
+		if match.LookupKey != tc.matched || len(match.Records) != 2 {
+			t.Fatalf("Lookup(%q) key=%q records=%d, want %q/2", tc.query, match.LookupKey, len(match.Records), tc.matched)
 		}
 		for _, record := range match.Records {
 			if record.Entry.Source.MatchedKey != tc.matched || !strings.HasPrefix(record.Entry.Parts[0].Senses[0].Definition, tc.prefix) {
@@ -358,7 +426,8 @@ func TestServiceMultiRecordCaseResolutionDoesNotMixSpellings(t *testing.T) {
 		selectedOpts := bobadapter.DefaultOptions()
 		selectedOpts.RecordOrdinal = 2
 		selected, err := svc.Lookup(tc.query, service.LookupOptions{Limit: 1, RenderBob: true, BobOptions: selectedOpts})
-		if err != nil || selected.Bob == nil || !strings.HasPrefix(selected.Bob.Parts[0].Means[0], "1. "+tc.prefix) {
+		if err != nil || selected.Bob == nil || selected.Bob.Word != tc.matched+"²" ||
+			selected.Matches[0].LookupKey != tc.matched || !strings.HasPrefix(selected.Bob.Parts[0].Means[0], "1. "+tc.prefix) {
 			t.Errorf("Lookup(%q) selector crossed case group: bob=%+v err=%v", tc.query, selected.Bob, err)
 		}
 	}
@@ -375,7 +444,7 @@ func TestServiceRecordSelectionKeepsUnicodeCanonicalLookup(t *testing.T) {
 	if err != nil || result.Bob == nil {
 		t.Fatalf("NFD selector base lookup: result=%+v err=%v", result, err)
 	}
-	if result.Query != "Café" || result.Bob.Word != "Café²" ||
+	if result.Query != "Café" || result.Matches[0].LookupKey != "Café" || result.Bob.Word != "Café²" ||
 		result.Matches[0].Records[1].Entry.Source.MatchedKey != "Café" {
 		t.Fatalf("NFD selection changed canonical facts: %+v", result)
 	}
@@ -392,8 +461,29 @@ func TestServiceNavigationAliasUsesCanonicalBaseQueryNotParsedTitle(t *testing.T
 	if err != nil || result.Bob == nil {
 		t.Fatalf("navigation alias lookup: result=%+v err=%v", result, err)
 	}
-	if result.Bob.Word != "lead²" || result.Matches[0].Records[1].Entry.Headword != "lead2" ||
+	if result.Matches[0].LookupKey != "lead" || result.Matches[0].Headword != "lead1" ||
+		result.Bob.Word != "lead²" || result.Matches[0].Records[1].Entry.Headword != "lead2" ||
 		result.Matches[0].Records[1].Entry.Source.MatchedKey != "lead" {
 		t.Fatalf("navigation alias polluted or ignored dictionary facts: %+v", result)
+	}
+}
+
+func TestServiceRedirectKeepsAggregateAndRecordProvenanceDistinct(t *testing.T) {
+	svc := newSyntheticCaseService(t, []testmdx.Entry{
+		{Key: "foo", HTML: "@@@LINK=bar\x00"},
+		{Key: "bar", HTML: syntheticCaseHTML("bar", "redirect target definition")},
+	})
+	result, err := svc.Lookup("foo", service.LookupOptions{
+		Limit: 1, RenderBob: true, BobOptions: bobadapter.DefaultOptions(),
+	})
+	if err != nil || len(result.Matches) != 1 || result.Bob == nil {
+		t.Fatalf("redirect lookup: result=%+v err=%v", result, err)
+	}
+	match := result.Matches[0]
+	entry := match.Records[0].Entry
+	if result.Query != "foo" || match.LookupKey != "foo" || match.Headword != "bar" ||
+		entry.Headword != "bar" || entry.Source.MatchedKey != "bar" || entry.Source.RedirectedFrom != "foo" ||
+		result.Bob.Word != "foo" {
+		t.Fatalf("redirect provenance collapsed: result=%+v", result)
 	}
 }

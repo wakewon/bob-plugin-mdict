@@ -419,6 +419,38 @@ func TestRenderEntrySetPreservesEveryRecordBoundary(t *testing.T) {
 	}
 }
 
+func TestRenderEntrySetUsesLookupKeyForEveryBobAlias(t *testing.T) {
+	set := &entryir.EntrySet{LookupKey: "china", Headword: "china1", Records: []entryir.EntryRecord{
+		{RecordOrdinal: 1, Entry: navigationEntry("noun", "first", "")},
+		{RecordOrdinal: 2, Entry: navigationEntry("noun", "second", "")},
+	}}
+	separate := RenderEntrySet(set, DefaultOptions())
+	if separate.Word != "china" || separate.RelatedWordParts[len(separate.RelatedWordParts)-1].Words[0].Word != "china²" {
+		t.Fatalf("separate aliases = %+v", separate)
+	}
+	selectedOptions := DefaultOptions()
+	selectedOptions.RecordOrdinal = 2
+	selected := RenderEntrySet(set, selectedOptions)
+	if selected.Word != "china²" || selected.RelatedWordParts[len(selected.RelatedWordParts)-1].Words[0].Word != "china¹" {
+		t.Fatalf("selected aliases = %+v", selected)
+	}
+	combinedOptions := DefaultOptions()
+	combinedOptions.MultiRecordMode = MultiRecordCombined
+	if combined := RenderEntrySet(set, combinedOptions); combined.Word != "china" {
+		t.Fatalf("combined word = %q, want china", combined.Word)
+	}
+}
+
+func TestRenderSingleRedirectUsesItsReLookupableSourceAlias(t *testing.T) {
+	entry := navigationEntry("noun", "redirected", "")
+	entry.Headword = "bar"
+	entry.Source.MatchedKey = "bar"
+	entry.Source.RedirectedFrom = "foo"
+	if dict := Render(entry, DefaultOptions()); dict.Word != "foo" {
+		t.Fatalf("redirected single-record word = %q, want foo", dict.Word)
+	}
+}
+
 func TestRenderEntrySetSingleRecordDoesNotShowOrdinal(t *testing.T) {
 	entry := sampleEntry()
 	direct := Render(entry, DefaultOptions())

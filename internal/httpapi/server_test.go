@@ -199,6 +199,10 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 	if _, legacy := payload.Matches[0]["entry"]; legacy {
 		t.Fatalf("v2 response contains legacy entry field: %s", recorder.Body.String())
 	}
+	var lookupKey string
+	if err := json.Unmarshal(payload.Matches[0]["lookupKey"], &lookupKey); err != nil || lookupKey != "flimber" {
+		t.Fatalf("lookupKey=%q err=%v response=%s", lookupKey, err, recorder.Body.String())
+	}
 	var records []struct {
 		RecordOrdinal int `json:"recordOrdinal"`
 	}
@@ -208,6 +212,48 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 	}
 	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ noun" || payload.Bob.Parts[1].Part != "² verb" {
 		t.Fatalf("Bob parts=%+v", payload.Bob.Parts)
+	}
+}
+
+func TestV2LookupExposesInputAndActualLookupKeySeparately(t *testing.T) {
+	root := t.TempDir()
+	markup := `<article><h1>china1</h1><div class="sense"><span class="pos">noun</span>` +
+		`<span class="definition">synthetic lowercase definition</span></div></article>`
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{{Key: "china", HTML: markup}}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
+		strings.NewReader(`{"query":"CHINA","format":"bob","limit":1}`)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Query   string `json:"query"`
+		Matches []struct {
+			LookupKey string `json:"lookupKey"`
+			Headword  string `json:"headword"`
+			Records   []struct {
+				Entry struct {
+					Source struct {
+						MatchedKey string `json:"matchedKey"`
+					} `json:"source"`
+				} `json:"entry"`
+			} `json:"records"`
+		} `json:"matches"`
+		Bob struct {
+			Word string `json:"word"`
+		} `json:"bob"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Query != "CHINA" || len(payload.Matches) != 1 || payload.Matches[0].LookupKey != "china" ||
+		payload.Matches[0].Headword != "china1" || len(payload.Matches[0].Records) != 1 ||
+		payload.Matches[0].Records[0].Entry.Source.MatchedKey != "china" ||
+		payload.Bob.Word != "china" {
+		t.Fatalf("v2 provenance response = %+v", payload)
 	}
 }
 

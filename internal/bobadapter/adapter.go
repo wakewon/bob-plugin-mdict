@@ -71,9 +71,6 @@ type Options struct {
 	MaxExamplesPerSense int
 	MultiRecordMode     MultiRecordMode
 	RecordOrdinal       int
-	// NavigationHeadword is the canonical base query used only for clickable
-	// aliases. It never rewrites EntrySet or Entry facts.
-	NavigationHeadword string
 }
 
 // MultiRecordMode controls only Bob presentation. The service cache always
@@ -100,9 +97,17 @@ func Render(entry *entryir.Entry, opts Options) *Dict {
 	if entry == nil {
 		return nil
 	}
+	lookupKey := strings.TrimSpace(entry.Source.RedirectedFrom)
+	if lookupKey == "" {
+		lookupKey = strings.TrimSpace(entry.Source.MatchedKey)
+	}
+	if lookupKey == "" {
+		lookupKey = entry.Headword
+	}
 	return RenderEntrySet(&entryir.EntrySet{
-		Headword: entry.Headword,
-		Records:  []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+		LookupKey: lookupKey,
+		Headword:  entry.Headword,
+		Records:   []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
 	}, opts)
 }
 
@@ -117,26 +122,25 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) *Dict {
 		opts.MaxExamplesPerSense = DefaultOptions().MaxExamplesPerSense
 	}
 
-	headword := set.Headword
-	if headword == "" && set.Primary() != nil {
-		headword = set.Primary().Headword
+	lookupKey := strings.TrimSpace(set.LookupKey)
+	if lookupKey == "" {
+		lookupKey = strings.TrimSpace(set.Headword)
+	}
+	if lookupKey == "" && set.Primary() != nil {
+		lookupKey = set.Primary().Headword
 	}
 	if opts.MultiRecordMode == "" {
 		opts.MultiRecordMode = MultiRecordSeparate
 	}
 	if opts.RecordOrdinal > 0 || opts.MultiRecordMode == MultiRecordSeparate {
-		navigationHeadword := strings.TrimSpace(opts.NavigationHeadword)
-		if navigationHeadword == "" {
-			navigationHeadword = headword
-		}
 		selected := opts.RecordOrdinal
 		if selected == 0 {
 			selected = 1
 		}
-		return renderSelectedRecord(set, navigationHeadword, selected, opts, opts.RecordOrdinal > 0)
+		return renderSelectedRecord(set, lookupKey, selected, opts, opts.RecordOrdinal > 0)
 	}
 
-	dict := &Dict{Word: headword}
+	dict := &Dict{Word: lookupKey}
 	multi := len(set.Records) > 1
 	for index, record := range set.Records {
 		if record.Entry == nil {

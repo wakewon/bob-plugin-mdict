@@ -110,7 +110,8 @@ hint. An empty registry returns `503 noDictionaries` with the directory.
 An ordinal beyond the visible EntrySet returns `404 recordNotFound`; it never
 falls back to record 1 or reports the selector-shaped alias as a missing word.
 
-Each match carries a dictionary-neutral `headword` and `records[]`. Every
+`query` is the normalized user input. Each match carries the actual aggregate
+MDX `lookupKey`, a parser-discovered display `headword`, and `records[]`. Every
 record has a consecutive `recordOrdinal` plus an independently parsed `entry`:
 
 ```json
@@ -118,22 +119,38 @@ record has a consecutive `recordOrdinal` plus an independently parsed `entry`:
   "matches": [{
     "dictionaryId": "2f4c6a8e10b3d597",
     "dictionaryTitle": "My Local Dictionary",
-    "headword": "lead",
+    "lookupKey": "lead",
+    "headword": "lead1",
     "records": [
-      {"recordOrdinal": 1, "entry": {"headword": "lead", "source": {"matchedKey": "lead"}}},
-      {"recordOrdinal": 2, "entry": {"headword": "lead", "source": {"matchedKey": "lead"}}}
+      {"recordOrdinal": 1, "entry": {"headword": "lead1", "source": {"matchedKey": "lead"}}},
+      {"recordOrdinal": 2, "entry": {"headword": "lead2", "source": {"matchedKey": "lead"}}}
     ]
   }]
 }
 ```
+
+These fields deliberately describe different facts:
+
+- `query`: normalized request text, retained for the response and errors.
+- `matches[].lookupKey`: actual MDX key chosen before duplicate expansion; this
+  is the stable, re-lookupable base used by Bob `word` and sibling aliases.
+- `matches[].headword` / `entry.headword`: parser-discovered display text.
+- `entry.source.matchedKey`: actual semantic record target after redirect
+  resolution, so it may differ from `lookupKey`.
+
+For example, if only lowercase `china` exists, a `China` request keeps
+`query: "China"` but returns `lookupKey: "china"` and Bob `word: "china"`.
+For a redirect `foo → bar`, `lookupKey` and Bob `word` remain `foo`, while the
+record's `source.matchedKey` is `bar`.
 
 Duplicate expansion happens only after one exact spelling has been selected.
 Resolved byte-identical records are removed, parser-empty records are omitted,
 and the remaining records keep MDX source order. `format: "bob"` adds a
 top-level `bob` object. In separate mode it is one ordinary record plus an
 `Other entries` related-word group; an explicit selection uses a presentation
-alias such as `lead²` while the IR headword and `source.matchedKey` remain
-`lead`. Combined mode preserves the complete ordinal-labelled card.
+alias such as `lead²` while `lookupKey` remains `lead`; parsed headwords and
+record provenance remain unchanged. Combined mode preserves the complete
+ordinal-labelled card and uses the same `lookupKey` for Bob `word`.
 
 Exact headword spelling is always preferred. Case-insensitive matching is used
 only as a fallback when no exact key exists; NFC and NFD spellings share the

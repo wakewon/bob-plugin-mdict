@@ -114,9 +114,9 @@ requests only that dictionary. Users who want several pinned dictionaries add
 several Bob MDict service instances, keeping cards, ordering and enablement
 under Bob's control.
 
-The cache always stores the complete EntrySet under dictionary ID, normalized
-base query and parser options. `recordOrdinal` and `multiRecordMode` are applied
-after that cache boundary:
+The cache always stores the complete EntrySet—including its actual MDX
+`LookupKey`—under dictionary ID, normalized input query and parser options.
+`recordOrdinal` and `multiRecordMode` are applied after that cache boundary:
 
 ```text
 MDX LookupAll → EntrySet cache → presentation selection
@@ -129,8 +129,12 @@ Within a single-record EntrySet, presentation remains unchanged. Separate mode
 renders one ordinary record and an independent `Other entries`
 `relatedWordParts` group containing clickable aliases and deterministic source
 previews. A preview receives an ellipsis both when its text is truncated and
-when further meaningful senses/subsenses remain in that record. The alias changes only Bob's `word`; it never rewrites the Entry
-headword or source matched key. Combined mode retains compact superscript
+when further meaningful senses/subsenses remain in that record. Every Bob
+`word` and sibling alias derives from `EntrySet.LookupKey`, never the raw input
+query or a parser-discovered title. The input remains `Result.Query`; each
+resolved semantic record retains its own `Source.MatchedKey`, which can differ
+after a redirect. These presentation aliases never rewrite the provenance.
+Combined mode retains compact superscript
 ordinals (`¹`, `²`, …) on phonetics, parts, exchanges, related words and
 additions without changing sense/subsense numbering. Each top-level sense becomes one Bob `Part`. The part label
 may repeat for consecutive senses of the same POS, while subsenses stay in the

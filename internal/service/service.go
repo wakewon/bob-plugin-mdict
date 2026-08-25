@@ -168,10 +168,14 @@ const (
 
 // Match is one dictionary's answer to a lookup.
 type Match struct {
-	DictionaryID    string                `json:"dictionaryId"`
-	DictionaryTitle string                `json:"dictionaryTitle"`
-	Headword        string                `json:"headword"`
-	Records         []entryir.EntryRecord `json:"records"`
+	DictionaryID    string `json:"dictionaryId"`
+	DictionaryTitle string `json:"dictionaryTitle"`
+	// LookupKey is the actual aggregate MDX key selected before duplicate
+	// expansion. It remains distinct from parsed Headword and record-level
+	// Source.MatchedKey provenance.
+	LookupKey string                `json:"lookupKey"`
+	Headword  string                `json:"headword"`
+	Records   []entryir.EntryRecord `json:"records"`
 	// ParseMillis is how long parsing took, for diagnostics.
 	ParseMillis float64 `json:"parseMillis,omitempty"`
 }
@@ -180,6 +184,7 @@ func matchFromSet(dict *mdict.Dictionary, set *entryir.EntrySet, parseMillis flo
 	return Match{
 		DictionaryID:    dict.ID(),
 		DictionaryTitle: dict.Info().Title,
+		LookupKey:       set.LookupKey,
 		Headword:        set.Headword,
 		Records:         set.Records,
 		ParseMillis:     parseMillis,
@@ -190,7 +195,7 @@ func (m *Match) entrySet() *entryir.EntrySet {
 	if m == nil {
 		return nil
 	}
-	return &entryir.EntrySet{Headword: m.Headword, Records: m.Records}
+	return &entryir.EntrySet{LookupKey: m.LookupKey, Headword: m.Headword, Records: m.Records}
 }
 
 // Result is the full answer to a lookup request.
@@ -293,14 +298,12 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 		set := result.Matches[0].entrySet()
 		if ordinal := opts.BobOptions.RecordOrdinal; ordinal > len(set.Records) {
 			return nil, &RecordNotFoundError{
-				Query:     set.Headword,
+				Query:     query,
 				Requested: ordinal,
 				Available: len(set.Records),
 			}
 		}
-		bobOptions := opts.BobOptions
-		bobOptions.NavigationHeadword = query
-		result.Bob = bobadapter.RenderEntrySet(set, bobOptions)
+		result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
 	}
 	return result, nil
 }
@@ -331,7 +334,7 @@ func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOpt
 	if profile != nil {
 		profileID = profile.ID
 	}
-	set := &entryir.EntrySet{}
+	set := &entryir.EntrySet{LookupKey: lookupSet.MatchedKey}
 	for _, lookupResult := range lookupSet.Records {
 		entry, parseErr := parser.Parse(lookupResult.HTML, parser.Options{
 			Headword:            lookupResult.MatchedKey,

@@ -131,10 +131,16 @@ type EntryRecord struct {
 	Entry         *Entry `json:"entry"`
 }
 
-// EntrySet is the dictionary-neutral aggregate produced for one exact key.
+// EntrySet is the dictionary-neutral aggregate produced for one selected key.
 // Parser remains strictly one raw record -> one Entry; adapters decide how to
 // present the preserved record boundaries.
 type EntrySet struct {
+	// LookupKey is the actual MDX key selected for the aggregate before
+	// duplicate expansion. It is the stable, re-lookupable presentation alias;
+	// redirects and parser-discovered titles do not rewrite it.
+	LookupKey string `json:"lookupKey"`
+	// Headword is the parser-discovered display headword of the first semantic
+	// record. It is a content fact and need not equal LookupKey.
 	Headword string        `json:"headword"`
 	Records  []EntryRecord `json:"records"`
 }

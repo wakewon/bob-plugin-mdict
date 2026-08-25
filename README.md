@@ -123,6 +123,11 @@ English-Chinese dictionaries index only English headwords; their Chinese
 translations are not reverse-search keys. For Chinese-to-English lookup,
 install an MDX whose headword index contains Chinese entries.
 
+Lookup prefers an exactly cased headword and uses case-insensitive matching
+only after an exact miss. Result titles and multi-record aliases use the actual
+selected MDX key: if only `china` exists, `China` and `CHINA` still display and
+navigate as `china`; if both `China` and `china` exist, they remain distinct.
+
 ## Multiple records for one headword
 
 Some MDict files store several independent records under the same headword.

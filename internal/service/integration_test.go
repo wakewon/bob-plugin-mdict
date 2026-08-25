@@ -87,7 +87,7 @@ func matchEntrySet(match *service.Match) *entryir.EntrySet {
 	if match == nil {
 		return nil
 	}
-	return &entryir.EntrySet{Headword: match.Headword, Records: match.Records}
+	return &entryir.EntrySet{LookupKey: match.LookupKey, Headword: match.Headword, Records: match.Records}
 }
 
 func TestRealDictionariesAreDiscoveredAndHealthy(t *testing.T) {

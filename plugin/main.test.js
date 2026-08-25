@@ -193,6 +193,8 @@ test('record selectors use originalText and send a canonical v2 request', () => 
         ['foo^{2}', 'foo', 2],
         ['foo^{12}', 'foo', 12],
         ['China²', 'China', 2],
+        ['China^2', 'China', 2],
+        ['China^{2}', 'China', 2],
         ['china²', 'china', 2],
         ['Cafe\u0301²', 'Cafe\u0301', 2]
     ];
