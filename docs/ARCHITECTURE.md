@@ -128,7 +128,8 @@ MDX LookupAll → EntrySet cache → presentation selection
 Within a single-record EntrySet, presentation remains unchanged. Separate mode
 renders one ordinary record and an independent `Other entries`
 `relatedWordParts` group containing clickable aliases and deterministic source
-previews. The alias changes only Bob's `word`; it never rewrites the Entry
+previews. A preview receives an ellipsis both when its text is truncated and
+when further meaningful senses/subsenses remain in that record. The alias changes only Bob's `word`; it never rewrites the Entry
 headword or source matched key. Combined mode retains compact superscript
 ordinals (`¹`, `²`, …) on phonetics, parts, exchanges, related words and
 additions without changing sense/subsense numbering. Each top-level sense becomes one Bob `Part`. The part label

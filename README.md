@@ -129,7 +129,9 @@ Some MDict files store several independent records under the same headword.
 The default **Separate** mode shows the first complete record and adds clickable
 siblings under `Other entries`, for example `wound²` and `wound³`. You can also
 type `wound²`, `wound^2` or `wound^{2}` directly; `wound¹` returns to the first
-record. A trailing superscript integer is reserved for this navigation syntax.
+record. A sibling preview ends in `…` when that record contains further
+meanings beyond the excerpt. A trailing superscript integer is reserved for
+this navigation syntax.
 
 Choose **Combined** in the plugin settings to keep all records in one card,
 labelled with `¹`, `²`, `³`, and so on.

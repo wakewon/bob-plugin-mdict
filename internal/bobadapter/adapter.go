@@ -60,6 +60,11 @@ type Dict struct {
 	Additions        []Addition        `json:"additions,omitempty"`
 }
 
+// siblingPreviewMaxRunes is deliberately conservative for Bob's compact
+// related-word layout. Longer source text is cut before Bob can clip it without
+// showing our explicit ellipsis.
+const siblingPreviewMaxRunes = 80
+
 type Options struct {
 	IncludeExamples     bool
 	IncludeExtras       bool
@@ -195,7 +200,7 @@ func appendSiblingNavigation(dict *Dict, set *entryir.EntrySet, selected int, he
 			continue
 		}
 		related := RelatedWord{Word: headword + superscriptOrdinal(ordinal)}
-		if preview := recordPreview(record.Entry, 100); preview != "" {
+		if preview := recordPreview(record.Entry, siblingPreviewMaxRunes); preview != "" {
 			related.Means = []string{preview}
 		}
 		words = append(words, related)
@@ -212,29 +217,49 @@ func recordPreview(entry *entryir.Entry, maxRunes int) string {
 	if entry == nil {
 		return ""
 	}
+	firstSense := ""
+	senseCount := 0
 	for _, part := range entry.Parts {
+		var visitSense func(entryir.Sense)
+		visitSense = func(sense entryir.Sense) {
+			content := sensePreviewText(sense)
+			if content != "" {
+				senseCount++
+				if firstSense == "" {
+					if pos := strings.TrimSpace(part.POS); pos != "" {
+						content = pos + " · " + content
+					}
+					firstSense = content
+				}
+			}
+			for _, subsense := range sense.Subsenses {
+				visitSense(subsense)
+			}
+		}
 		for _, sense := range part.Senses {
-			content := strings.TrimSpace(sense.Definition)
-			translation := strings.TrimSpace(sense.Translation)
-			if content != "" && translation != "" {
-				content += " — " + translation
-			} else if content == "" {
-				content = translation
-			}
-			if content == "" {
-				continue
-			}
-			if pos := strings.TrimSpace(part.POS); pos != "" {
-				content = pos + " · " + content
-			}
-			return truncatePreview(content, maxRunes)
+			visitSense(sense)
 		}
 	}
+	if firstSense != "" {
+		return truncatePreview(firstSense, maxRunes, senseCount > 1)
+	}
+
+	firstSection := ""
+	sectionCount := 0
 	for _, section := range entry.Sections {
 		if body := strings.TrimSpace(section.Body); body != "" {
-			return truncatePreview(body, maxRunes)
+			sectionCount++
+			if firstSection == "" {
+				firstSection = body
+			}
 		}
 	}
+	if firstSection != "" {
+		return truncatePreview(firstSection, maxRunes, sectionCount > 1)
+	}
+
+	firstPhrase := ""
+	phraseCount := 0
 	for _, entries := range [][]entryir.PhraseEntry{entry.Phrases, entry.Idioms, entry.PhrasalVerbs, entry.Derivatives} {
 		for _, phrase := range entries {
 			text := strings.TrimSpace(phrase.Phrase)
@@ -245,23 +270,42 @@ func recordPreview(entry *entryir.Entry, maxRunes int) string {
 				text = definition
 			}
 			if text != "" {
-				return truncatePreview(text, maxRunes)
+				phraseCount++
+				if firstPhrase == "" {
+					firstPhrase = text
+				}
 			}
 		}
 	}
-	return ""
+	return truncatePreview(firstPhrase, maxRunes, phraseCount > 1)
 }
 
-func truncatePreview(value string, maxRunes int) string {
+func sensePreviewText(sense entryir.Sense) string {
+	content := strings.TrimSpace(sense.Definition)
+	translation := strings.TrimSpace(sense.Translation)
+	if content != "" && translation != "" {
+		return content + " — " + translation
+	}
+	if content == "" {
+		return translation
+	}
+	return content
+}
+
+func truncatePreview(value string, maxRunes int, hasMore bool) string {
 	value = strings.Join(strings.FieldsFunc(value, unicode.IsSpace), " ")
-	if maxRunes <= 0 {
+	if value == "" || maxRunes <= 0 {
 		return ""
 	}
 	runes := []rune(value)
-	if len(runes) <= maxRunes {
-		return value
+	if len(runes) > maxRunes {
+		value = strings.TrimSpace(string(runes[:maxRunes]))
+		hasMore = true
 	}
-	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
+	if hasMore && !strings.HasSuffix(value, "…") && !strings.HasSuffix(value, "...") {
+		value += "…"
+	}
+	return value
 }
 
 type carrier struct {

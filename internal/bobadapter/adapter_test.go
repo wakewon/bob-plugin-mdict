@@ -511,6 +511,18 @@ func TestRenderEntrySetExplicitSelectionUsesAliasAndBidirectionalSiblings(t *tes
 	}
 }
 
+func TestSiblingPreviewIsCappedBeforeBobCanClipIt(t *testing.T) {
+	set := &entryir.EntrySet{Headword: "foo", Records: []entryir.EntryRecord{
+		{RecordOrdinal: 1, Entry: navigationEntry("noun", "first", "")},
+		{RecordOrdinal: 2, Entry: navigationEntry("noun", strings.Repeat("界", 100), "")},
+	}}
+	dict := RenderEntrySet(set, DefaultOptions())
+	preview := dict.RelatedWordParts[len(dict.RelatedWordParts)-1].Words[0].Means[0]
+	if len([]rune(preview)) != siblingPreviewMaxRunes+1 || !strings.HasSuffix(preview, "…") {
+		t.Fatalf("compact sibling preview = %q (%d runes)", preview, len([]rune(preview)))
+	}
+}
+
 func TestRecordPreviewFallbacksAndUnicodeTruncation(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -521,9 +533,14 @@ func TestRecordPreviewFallbacksAndUnicodeTruncation(t *testing.T) {
 		{name: "definition", entry: navigationEntry("noun", "definition", ""), max: 100, want: "noun · definition"},
 		{name: "definition translation", entry: navigationEntry("verb", "definition", "翻译"), max: 100, want: "verb · definition — 翻译"},
 		{name: "translation", entry: navigationEntry("", "", "只有翻译"), max: 100, want: "只有翻译"},
+		{name: "more senses", entry: &entryir.Entry{Parts: []entryir.Part{{POS: "noun", Senses: []entryir.Sense{{Definition: "first definition"}, {Definition: "second definition"}}}}}, max: 100, want: "noun · first definition…"},
+		{name: "more subsenses", entry: &entryir.Entry{Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{{Definition: "first definition", Subsenses: []entryir.Sense{{Definition: "subsense definition"}}}}}}}, max: 100, want: "verb · first definition…"},
 		{name: "empty sense then section", entry: &entryir.Entry{Parts: []entryir.Part{{Senses: []entryir.Sense{{}}}}, Sections: []entryir.Section{{Title: "note", Body: "section body"}}}, max: 100, want: "section body"},
+		{name: "more sections", entry: &entryir.Entry{Sections: []entryir.Section{{Body: "first section"}, {Body: "second section"}}}, max: 100, want: "first section…"},
 		{name: "phrase", entry: &entryir.Entry{Phrases: []entryir.PhraseEntry{{Phrase: "take foo", Definition: "phrase definition"}}}, max: 100, want: "take foo — phrase definition"},
+		{name: "more phrases", entry: &entryir.Entry{Phrases: []entryir.PhraseEntry{{Phrase: "first phrase"}, {Phrase: "second phrase"}}}, max: 100, want: "first phrase…"},
 		{name: "unicode truncate", entry: navigationEntry("", "中文字符测试", ""), max: 4, want: "中文字符…"},
+		{name: "no duplicate ellipsis", entry: &entryir.Entry{Parts: []entryir.Part{{Senses: []entryir.Sense{{Definition: "already…"}, {Definition: "second"}}}}}, max: 100, want: "already…"},
 		{name: "none", entry: &entryir.Entry{Pronunciations: []entryir.Pronunciation{{IPA: "x"}}}, max: 100, want: ""},
 	}
 	for _, test := range tests {
