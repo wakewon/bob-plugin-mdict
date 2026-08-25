@@ -66,6 +66,9 @@ type Options struct {
 	MaxExamplesPerSense int
 	MultiRecordMode     MultiRecordMode
 	RecordOrdinal       int
+	// NavigationHeadword is the canonical base query used only for clickable
+	// aliases. It never rewrites EntrySet or Entry facts.
+	NavigationHeadword string
 }
 
 // MultiRecordMode controls only Bob presentation. The service cache always
@@ -117,11 +120,15 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) *Dict {
 		opts.MultiRecordMode = MultiRecordSeparate
 	}
 	if opts.RecordOrdinal > 0 || opts.MultiRecordMode == MultiRecordSeparate {
+		navigationHeadword := strings.TrimSpace(opts.NavigationHeadword)
+		if navigationHeadword == "" {
+			navigationHeadword = headword
+		}
 		selected := opts.RecordOrdinal
 		if selected == 0 {
 			selected = 1
 		}
-		return renderSelectedRecord(set, headword, selected, opts, opts.RecordOrdinal > 0)
+		return renderSelectedRecord(set, navigationHeadword, selected, opts, opts.RecordOrdinal > 0)
 	}
 
 	dict := &Dict{Word: headword}

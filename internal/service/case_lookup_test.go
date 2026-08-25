@@ -380,3 +380,20 @@ func TestServiceRecordSelectionKeepsUnicodeCanonicalLookup(t *testing.T) {
 		t.Fatalf("NFD selection changed canonical facts: %+v", result)
 	}
 }
+
+func TestServiceNavigationAliasUsesCanonicalBaseQueryNotParsedTitle(t *testing.T) {
+	svc := newSyntheticCaseService(t, []testmdx.Entry{
+		{Key: "lead", HTML: syntheticCaseHTML("lead1", "first record")},
+		{Key: "lead", HTML: syntheticCaseHTML("lead2", "second record")},
+	})
+	opts := bobadapter.DefaultOptions()
+	opts.RecordOrdinal = 2
+	result, err := svc.Lookup("lead", service.LookupOptions{Limit: 1, RenderBob: true, BobOptions: opts})
+	if err != nil || result.Bob == nil {
+		t.Fatalf("navigation alias lookup: result=%+v err=%v", result, err)
+	}
+	if result.Bob.Word != "lead²" || result.Matches[0].Records[1].Entry.Headword != "lead2" ||
+		result.Matches[0].Records[1].Entry.Source.MatchedKey != "lead" {
+		t.Fatalf("navigation alias polluted or ignored dictionary facts: %+v", result)
+	}
+}

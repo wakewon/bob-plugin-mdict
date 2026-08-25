@@ -298,7 +298,9 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 				Available: len(set.Records),
 			}
 		}
-		result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
+		bobOptions := opts.BobOptions
+		bobOptions.NavigationHeadword = query
+		result.Bob = bobadapter.RenderEntrySet(set, bobOptions)
 	}
 	return result, nil
 }
