@@ -178,7 +178,7 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 	handler := newTestServerForDir(t, root)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
-		strings.NewReader(`{"query":"flimber","format":"bob","limit":1}`)))
+		strings.NewReader(`{"query":"flimber","format":"bob","limit":1,"multiRecordMode":"combined"}`)))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -208,6 +208,82 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 	}
 	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ noun" || payload.Bob.Parts[1].Part != "² verb" {
 		t.Fatalf("Bob parts=%+v", payload.Bob.Parts)
+	}
+}
+
+func TestV2LookupSeparatesAndSelectsVisibleRecordOrdinals(t *testing.T) {
+	root := t.TempDir()
+	markup := func(pos, definition string) string {
+		return `<article><h1>foo</h1><div class="sense"><span class="pos">` + pos +
+			`</span><span class="definition">` + definition + `</span></div></article>`
+	}
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{
+		{Key: "foo", HTML: markup("noun", "first definition")},
+		{Key: "foo", HTML: `<div class="technical"></div>`},
+		{Key: "foo", HTML: markup("verb", "second definition")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	lookup := func(body string) (int, map[string]any) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(body)))
+		var payload map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode %s: %v", recorder.Body.String(), err)
+		}
+		return recorder.Code, payload
+	}
+
+	code, payload := lookup(`{"query":"foo","format":"bob","limit":1,"multiRecordMode":"separate"}`)
+	if code != http.StatusOK {
+		t.Fatalf("default separate status=%d payload=%+v", code, payload)
+	}
+	bob := payload["bob"].(map[string]any)
+	if bob["word"] != "foo" || len(bob["parts"].([]any)) != 1 {
+		t.Fatalf("default separate bob=%+v", bob)
+	}
+	groups := bob["relatedWordParts"].([]any)
+	other := groups[len(groups)-1].(map[string]any)
+	words := other["words"].([]any)
+	if other["part"] != "Other entries" || len(words) != 1 || words[0].(map[string]any)["word"] != "foo²" {
+		t.Fatalf("default separate navigation=%+v", groups)
+	}
+
+	code, payload = lookup(`{"query":"foo","recordOrdinal":2,"multiRecordMode":"separate","format":"bob","limit":1}`)
+	if code != http.StatusOK {
+		t.Fatalf("explicit second status=%d payload=%+v", code, payload)
+	}
+	bob = payload["bob"].(map[string]any)
+	parts := bob["parts"].([]any)
+	if bob["word"] != "foo²" || len(parts) != 1 || parts[0].(map[string]any)["part"] != "verb" {
+		t.Fatalf("explicit second bob=%+v", bob)
+	}
+	groups = bob["relatedWordParts"].([]any)
+	words = groups[len(groups)-1].(map[string]any)["words"].([]any)
+	if len(words) != 1 || words[0].(map[string]any)["word"] != "foo¹" {
+		t.Fatalf("explicit second siblings=%+v", groups)
+	}
+
+	code, payload = lookup(`{"query":"foo","recordOrdinal":3,"multiRecordMode":"separate","format":"bob","limit":1}`)
+	if code != http.StatusNotFound || payload["error"] != "recordNotFound" || !strings.Contains(payload["message"].(string), "只有 2 个") {
+		t.Fatalf("out-of-range status=%d payload=%+v", code, payload)
+	}
+}
+
+func TestV2LookupValidatesMultiRecordPresentationOptions(t *testing.T) {
+	handler := newTestServer(t)
+	for _, body := range []string{
+		`{"query":"foo","recordOrdinal":-1}`,
+		`{"query":"foo","multiRecordMode":"sideways"}`,
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(body)))
+		if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "badRequest") {
+			t.Fatalf("body=%s status=%d response=%s", body, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 

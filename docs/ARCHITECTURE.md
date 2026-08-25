@@ -6,8 +6,8 @@
 Bob
  │  selected text
  ▼
-plugin/main.js                 thin: no MDX, no HTML parsing, no libraries
- │  POST /v2/lookup {query, format:"bob"}
+plugin/main.js                 thin: selector → base query + recordOrdinal
+ │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"}
  ▼
 bob-mdict  (127.0.0.1 only)
  │
@@ -16,7 +16,8 @@ bob-mdict  (127.0.0.1 only)
  ├── profiles      declarative per-dictionary selectors, fingerprint-matched
  ├── parser        one resolved MDX record + profile overrides → one Entry IR
  ├── entryir       EntrySet aggregate preserving semantic record boundaries
- ├── bobadapter    EntrySet IR → one Bob toDict
+ ├── presentation  cached EntrySet → combined or selected record
+ ├── bobadapter    selected view → one Bob toDict (+ sibling navigation)
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
 ```
 
@@ -113,10 +114,24 @@ requests only that dictionary. Users who want several pinned dictionaries add
 several Bob MDict service instances, keeping cards, ordering and enablement
 under Bob's control.
 
-Within a single-record EntrySet, presentation remains unchanged. In a
-multi-record EntrySet, compact superscript ordinals (`¹`, `²`, …) label
-phonetics, parts, exchanges, related words and additions without changing the
-sense/subsense numbering inside each record. Each top-level sense becomes one Bob `Part`. The part label
+The cache always stores the complete EntrySet under dictionary ID, normalized
+base query and parser options. `recordOrdinal` and `multiRecordMode` are applied
+after that cache boundary:
+
+```text
+MDX LookupAll → EntrySet cache → presentation selection
+                                  ├── combined
+                                  └── separate + recordOrdinal
+                               → Bob adapter
+```
+
+Within a single-record EntrySet, presentation remains unchanged. Separate mode
+renders one ordinary record and an independent `Other entries`
+`relatedWordParts` group containing clickable aliases and deterministic source
+previews. The alias changes only Bob's `word`; it never rewrites the Entry
+headword or source matched key. Combined mode retains compact superscript
+ordinals (`¹`, `²`, …) on phonetics, parts, exchanges, related words and
+additions without changing sense/subsense numbering. Each top-level sense becomes one Bob `Part`. The part label
 may repeat for consecutive senses of the same POS, while subsenses stay in the
 same `Part` as their parent.
 

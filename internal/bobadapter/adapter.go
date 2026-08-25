@@ -6,6 +6,7 @@ package bobadapter
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 )
@@ -63,10 +64,26 @@ type Options struct {
 	IncludeExamples     bool
 	IncludeExtras       bool
 	MaxExamplesPerSense int
+	MultiRecordMode     MultiRecordMode
+	RecordOrdinal       int
 }
 
+// MultiRecordMode controls only Bob presentation. The service cache always
+// keeps the complete EntrySet, regardless of this value.
+type MultiRecordMode string
+
+const (
+	MultiRecordSeparate MultiRecordMode = "separate"
+	MultiRecordCombined MultiRecordMode = "combined"
+)
+
 func DefaultOptions() Options {
-	return Options{IncludeExamples: true, IncludeExtras: true, MaxExamplesPerSense: 8}
+	return Options{
+		IncludeExamples:     true,
+		IncludeExtras:       true,
+		MaxExamplesPerSense: 8,
+		MultiRecordMode:     MultiRecordSeparate,
+	}
 }
 
 // Render is the single-record convenience renderer. RenderEntrySet owns the
@@ -81,9 +98,9 @@ func Render(entry *entryir.Entry, opts Options) *Dict {
 	}, opts)
 }
 
-// RenderEntrySet renders every semantic record from one exact dictionary key
-// into one Bob card. Record ordinals are shown only when more than one visible
-// record remains after service-level filtering.
+// RenderEntrySet presents one cached semantic EntrySet. Combined mode renders
+// every record with ordinal labels. Separate mode (and any explicit ordinal)
+// renders one ordinary record plus native related-word sibling navigation.
 func RenderEntrySet(set *entryir.EntrySet, opts Options) *Dict {
 	if set == nil || len(set.Records) == 0 {
 		return nil
@@ -96,6 +113,17 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) *Dict {
 	if headword == "" && set.Primary() != nil {
 		headword = set.Primary().Headword
 	}
+	if opts.MultiRecordMode == "" {
+		opts.MultiRecordMode = MultiRecordSeparate
+	}
+	if opts.RecordOrdinal > 0 || opts.MultiRecordMode == MultiRecordSeparate {
+		selected := opts.RecordOrdinal
+		if selected == 0 {
+			selected = 1
+		}
+		return renderSelectedRecord(set, headword, selected, opts, opts.RecordOrdinal > 0)
+	}
+
 	dict := &Dict{Word: headword}
 	multi := len(set.Records) > 1
 	for index, record := range set.Records {
@@ -121,6 +149,112 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) *Dict {
 		}
 	}
 	return dict
+}
+
+func renderSelectedRecord(set *entryir.EntrySet, headword string, selected int, opts Options, explicit bool) *Dict {
+	if selected < 1 || selected > len(set.Records) {
+		return nil
+	}
+	record := set.Records[selected-1]
+	if record.Entry == nil {
+		return nil
+	}
+	word := headword
+	if explicit {
+		word += superscriptOrdinal(selected)
+	}
+	dict := &Dict{Word: word}
+	phonetics, pronunciationNotes := renderPhonetics(record.Entry.Pronunciations)
+	dict.Phonetics = append(dict.Phonetics, phonetics...)
+	renderEntry(dict, record.Entry, opts, "")
+	for _, note := range pronunciationNotes {
+		appendTextAddition(dict, "发音说明", note)
+	}
+	appendSiblingNavigation(dict, set, selected, headword)
+	return dict
+}
+
+func appendSiblingNavigation(dict *Dict, set *entryir.EntrySet, selected int, headword string) {
+	if len(set.Records) <= 1 {
+		return
+	}
+	words := make([]RelatedWord, 0, len(set.Records)-1)
+	for index, record := range set.Records {
+		ordinal := record.RecordOrdinal
+		if ordinal <= 0 {
+			ordinal = index + 1
+		}
+		if ordinal == selected || record.Entry == nil {
+			continue
+		}
+		related := RelatedWord{Word: headword + superscriptOrdinal(ordinal)}
+		if preview := recordPreview(record.Entry, 100); preview != "" {
+			related.Means = []string{preview}
+		}
+		words = append(words, related)
+	}
+	if len(words) > 0 {
+		dict.RelatedWordParts = append(dict.RelatedWordParts, RelatedWordPart{
+			Part:  "Other entries",
+			Words: words,
+		})
+	}
+}
+
+func recordPreview(entry *entryir.Entry, maxRunes int) string {
+	if entry == nil {
+		return ""
+	}
+	for _, part := range entry.Parts {
+		for _, sense := range part.Senses {
+			content := strings.TrimSpace(sense.Definition)
+			translation := strings.TrimSpace(sense.Translation)
+			if content != "" && translation != "" {
+				content += " — " + translation
+			} else if content == "" {
+				content = translation
+			}
+			if content == "" {
+				continue
+			}
+			if pos := strings.TrimSpace(part.POS); pos != "" {
+				content = pos + " · " + content
+			}
+			return truncatePreview(content, maxRunes)
+		}
+	}
+	for _, section := range entry.Sections {
+		if body := strings.TrimSpace(section.Body); body != "" {
+			return truncatePreview(body, maxRunes)
+		}
+	}
+	for _, entries := range [][]entryir.PhraseEntry{entry.Phrases, entry.Idioms, entry.PhrasalVerbs, entry.Derivatives} {
+		for _, phrase := range entries {
+			text := strings.TrimSpace(phrase.Phrase)
+			definition := strings.TrimSpace(phrase.Definition)
+			if text != "" && definition != "" {
+				text += " — " + definition
+			} else if text == "" {
+				text = definition
+			}
+			if text != "" {
+				return truncatePreview(text, maxRunes)
+			}
+		}
+	}
+	return ""
+}
+
+func truncatePreview(value string, maxRunes int) string {
+	value = strings.Join(strings.FieldsFunc(value, unicode.IsSpace), " ")
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
 }
 
 type carrier struct {

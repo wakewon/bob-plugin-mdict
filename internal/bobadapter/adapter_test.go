@@ -375,7 +375,9 @@ func TestRenderEntrySetPreservesEveryRecordBoundary(t *testing.T) {
 		{RecordOrdinal: 3, Entry: record("adjective", "gamma", entryir.RegionUS, "http://127.0.0.1/us-three")},
 	}}
 
-	dict := RenderEntrySet(set, DefaultOptions())
+	opts := DefaultOptions()
+	opts.MultiRecordMode = MultiRecordCombined
+	dict := RenderEntrySet(set, opts)
 	if len(dict.Phonetics) != 3 {
 		t.Fatalf("phonetics = %+v", dict.Phonetics)
 	}
@@ -427,12 +429,109 @@ func TestRenderEntrySetSingleRecordDoesNotShowOrdinal(t *testing.T) {
 	if !reflect.DeepEqual(direct, set) {
 		t.Fatalf("single-record EntrySet changed presentation\ndirect=%+v\nset=%+v", direct, set)
 	}
+	combined := DefaultOptions()
+	combined.MultiRecordMode = MultiRecordCombined
+	if got := RenderEntrySet(&entryir.EntrySet{Headword: entry.Headword, Records: []entryir.EntryRecord{{
+		RecordOrdinal: 1, Entry: entry,
+	}}}, combined); !reflect.DeepEqual(direct, got) {
+		t.Fatalf("combined single-record presentation changed\ndirect=%+v\ngot=%+v", direct, got)
+	}
 	payload, err := json.Marshal(set)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(payload), "¹") {
 		t.Fatalf("single-record output exposed ordinal: %s", payload)
+	}
+}
+
+func navigationEntry(pos, definition, translation string) *entryir.Entry {
+	return &entryir.Entry{
+		Headword: "foo",
+		Parts: []entryir.Part{{POS: pos, Senses: []entryir.Sense{{
+			Definition: definition, Translation: translation,
+		}}}},
+		CrossReferences: []string{pos + "-see-also"},
+	}
+}
+
+func navigationSet() *entryir.EntrySet {
+	return &entryir.EntrySet{Headword: "foo", Records: []entryir.EntryRecord{
+		{RecordOrdinal: 1, Entry: navigationEntry("noun", "first definition", "第一义")},
+		{RecordOrdinal: 2, Entry: navigationEntry("verb", "second definition", "第二义")},
+		{RecordOrdinal: 3, Entry: navigationEntry("adjective", "third definition", "第三义")},
+	}}
+}
+
+func TestRenderEntrySetDefaultsToSeparateNavigation(t *testing.T) {
+	dict := RenderEntrySet(navigationSet(), DefaultOptions())
+	if dict.Word != "foo" || len(dict.Parts) != 1 || dict.Parts[0].Part != "noun" {
+		t.Fatalf("default separate card = %+v", dict)
+	}
+	if strings.Contains(dict.Parts[0].Part, "¹") || strings.Contains(dict.Parts[0].Means[0], "¹") {
+		t.Fatalf("separate card repeated its ordinal: %+v", dict.Parts)
+	}
+	if len(dict.RelatedWordParts) != 2 || dict.RelatedWordParts[0].Part != "See also" ||
+		dict.RelatedWordParts[1].Part != "Other entries" {
+		t.Fatalf("dictionary and sibling relations were mixed: %+v", dict.RelatedWordParts)
+	}
+	words := dict.RelatedWordParts[1].Words
+	if len(words) != 2 || words[0].Word != "foo²" || words[1].Word != "foo³" ||
+		len(words[0].Means) != 1 || words[0].Means[0] != "verb · second definition — 第二义" {
+		t.Fatalf("sibling navigation = %+v", words)
+	}
+}
+
+func TestRenderEntrySetExplicitSelectionUsesAliasAndBidirectionalSiblings(t *testing.T) {
+	for _, test := range []struct {
+		ordinal int
+		word    string
+		part    string
+		sibling []string
+	}{
+		{ordinal: 1, word: "foo¹", part: "noun", sibling: []string{"foo²", "foo³"}},
+		{ordinal: 2, word: "foo²", part: "verb", sibling: []string{"foo¹", "foo³"}},
+		{ordinal: 3, word: "foo³", part: "adjective", sibling: []string{"foo¹", "foo²"}},
+	} {
+		opts := DefaultOptions()
+		opts.RecordOrdinal = test.ordinal
+		dict := RenderEntrySet(navigationSet(), opts)
+		if dict.Word != test.word || len(dict.Parts) != 1 || dict.Parts[0].Part != test.part {
+			t.Fatalf("ordinal %d card = %+v", test.ordinal, dict)
+		}
+		group := dict.RelatedWordParts[len(dict.RelatedWordParts)-1]
+		if group.Part != "Other entries" || len(group.Words) != 2 {
+			t.Fatalf("ordinal %d groups = %+v", test.ordinal, dict.RelatedWordParts)
+		}
+		for index, want := range test.sibling {
+			if group.Words[index].Word != want || group.Words[index].Word == test.word {
+				t.Errorf("ordinal %d sibling %d = %+v, want %q", test.ordinal, index, group.Words[index], want)
+			}
+		}
+	}
+}
+
+func TestRecordPreviewFallbacksAndUnicodeTruncation(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry *entryir.Entry
+		max   int
+		want  string
+	}{
+		{name: "definition", entry: navigationEntry("noun", "definition", ""), max: 100, want: "noun · definition"},
+		{name: "definition translation", entry: navigationEntry("verb", "definition", "翻译"), max: 100, want: "verb · definition — 翻译"},
+		{name: "translation", entry: navigationEntry("", "", "只有翻译"), max: 100, want: "只有翻译"},
+		{name: "empty sense then section", entry: &entryir.Entry{Parts: []entryir.Part{{Senses: []entryir.Sense{{}}}}, Sections: []entryir.Section{{Title: "note", Body: "section body"}}}, max: 100, want: "section body"},
+		{name: "phrase", entry: &entryir.Entry{Phrases: []entryir.PhraseEntry{{Phrase: "take foo", Definition: "phrase definition"}}}, max: 100, want: "take foo — phrase definition"},
+		{name: "unicode truncate", entry: navigationEntry("", "中文字符测试", ""), max: 4, want: "中文字符…"},
+		{name: "none", entry: &entryir.Entry{Pronunciations: []entryir.Pronunciation{{IPA: "x"}}}, max: 100, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := recordPreview(test.entry, test.max); got != test.want {
+				t.Fatalf("recordPreview() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -209,8 +210,10 @@ func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
 		{Key: "flimber", HTML: syntheticMultiHTML("flimber", "verb", "ˈbeɪtə", "synthetic verb definition")},
 		{Key: "flimber", HTML: syntheticMultiHTML("flimber", "adjective", "ˈɡæmə", "synthetic adjective definition")},
 	})
+	combined := bobadapter.DefaultOptions()
+	combined.MultiRecordMode = bobadapter.MultiRecordCombined
 	result, err := svc.Lookup("flimber", service.LookupOptions{
-		Limit: 1, RenderBob: true, BobOptions: bobadapter.DefaultOptions(), Debug: true,
+		Limit: 1, RenderBob: true, BobOptions: combined, Debug: true,
 	})
 	if err != nil || len(result.Matches) != 1 {
 		t.Fatalf("Lookup: matches=%d err=%v", len(result.Matches), err)
@@ -252,6 +255,26 @@ func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
 	if err != nil || second.Matches[0].Records[0].Entry != match.Records[0].Entry ||
 		second.Matches[0].Records[2].Entry != match.Records[2].Entry {
 		t.Fatal("cache hit reparsed or lost the complete EntrySet")
+	}
+	for _, ordinal := range []int{2, 3, 1} {
+		selectedOpts := bobadapter.DefaultOptions()
+		selectedOpts.RecordOrdinal = ordinal
+		selected, selectErr := svc.Lookup("flimber", service.LookupOptions{
+			Limit: 1, RenderBob: true, BobOptions: selectedOpts, Debug: true,
+		})
+		if selectErr != nil || selected.Bob == nil || selected.Bob.Word != "flimber"+[]string{"", "¹", "²", "³"}[ordinal] {
+			t.Fatalf("select ordinal %d: bob=%+v err=%v", ordinal, selected.Bob, selectErr)
+		}
+		if selected.Matches[0].Records[0].Entry != match.Records[0].Entry ||
+			selected.Matches[0].Records[2].Entry != match.Records[2].Entry {
+			t.Fatalf("select ordinal %d reparsed the cached EntrySet", ordinal)
+		}
+	}
+	outOfRange := bobadapter.DefaultOptions()
+	outOfRange.RecordOrdinal = 4
+	_, err = svc.Lookup("flimber", service.LookupOptions{Limit: 1, RenderBob: true, BobOptions: outOfRange, Debug: true})
+	if !errors.Is(err, service.ErrRecordNotFound) {
+		t.Fatalf("out-of-range error = %v, want ErrRecordNotFound", err)
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
@@ -332,5 +355,28 @@ func TestServiceMultiRecordCaseResolutionDoesNotMixSpellings(t *testing.T) {
 				t.Errorf("Lookup(%q) mixed spelling groups: %+v", tc.query, match.Records)
 			}
 		}
+		selectedOpts := bobadapter.DefaultOptions()
+		selectedOpts.RecordOrdinal = 2
+		selected, err := svc.Lookup(tc.query, service.LookupOptions{Limit: 1, RenderBob: true, BobOptions: selectedOpts})
+		if err != nil || selected.Bob == nil || !strings.HasPrefix(selected.Bob.Parts[0].Means[0], "1. "+tc.prefix) {
+			t.Errorf("Lookup(%q) selector crossed case group: bob=%+v err=%v", tc.query, selected.Bob, err)
+		}
+	}
+}
+
+func TestServiceRecordSelectionKeepsUnicodeCanonicalLookup(t *testing.T) {
+	svc := newSyntheticCaseService(t, []testmdx.Entry{
+		{Key: "Café", HTML: syntheticCaseHTML("Café", "NFC first")},
+		{Key: "Café", HTML: syntheticCaseHTML("Café", "NFC second")},
+	})
+	opts := bobadapter.DefaultOptions()
+	opts.RecordOrdinal = 2
+	result, err := svc.Lookup("Cafe\u0301", service.LookupOptions{Limit: 1, RenderBob: true, BobOptions: opts})
+	if err != nil || result.Bob == nil {
+		t.Fatalf("NFD selector base lookup: result=%+v err=%v", result, err)
+	}
+	if result.Query != "Café" || result.Bob.Word != "Café²" ||
+		result.Matches[0].Records[1].Entry.Source.MatchedKey != "Café" {
+		t.Fatalf("NFD selection changed canonical facts: %+v", result)
 	}
 }

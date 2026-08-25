@@ -1,6 +1,6 @@
 # MDict for Bob
 
-Current product version: **0.2.0** · local API: **v2**.
+Current product version: **0.2.1** · local API: **v2**.
 
 English | [简体中文](README_CN.md)
 
@@ -123,6 +123,17 @@ English-Chinese dictionaries index only English headwords; their Chinese
 translations are not reverse-search keys. For Chinese-to-English lookup,
 install an MDX whose headword index contains Chinese entries.
 
+## Multiple records for one headword
+
+Some MDict files store several independent records under the same headword.
+The default **Separate** mode shows the first complete record and adds clickable
+siblings under `Other entries`, for example `wound²` and `wound³`. You can also
+type `wound²`, `wound^2` or `wound^{2}` directly; `wound¹` returns to the first
+record. A trailing superscript integer is reserved for this navigation syntax.
+
+Choose **Combined** in the plugin settings to keep all records in one card,
+labelled with `¹`, `²`, `³`, and so on.
+
 Examples are grouped directly by their displayed sense, such as
 `Examples · verb 1` and `Examples · verb 2`. See also references are exposed
 through Bob's structured `relatedWordParts` representation when possible;
@@ -134,6 +145,7 @@ phrases and other explanatory sections remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
+| Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
 | Max examples per sense | `3` | Limit examples independently for each sense or subsense. |

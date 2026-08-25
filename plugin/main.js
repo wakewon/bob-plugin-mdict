@@ -72,6 +72,55 @@ function parsePositiveInt(raw, fallback) {
     return parsed;
 }
 
+var SUPERSCRIPT_DIGITS = {
+    '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+    '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9'
+};
+
+// parseRecordSelector recognizes only the reserved trailing navigation forms.
+// The returned base is intentionally not lowercased or normalized: the server
+// remains the sole owner of exact-key Unicode/case semantics.
+function parseRecordSelector(raw) {
+    var text = String(raw || '').trim();
+    if (text === '') {
+        return null;
+    }
+
+    var end = text.length;
+    var start = end;
+    var digits = '';
+    while (start > 0 && SUPERSCRIPT_DIGITS[text.charAt(start - 1)] !== undefined) {
+        start--;
+        digits = SUPERSCRIPT_DIGITS[text.charAt(start)] + digits;
+    }
+    if (digits !== '') {
+        return validRecordSelector(text.substring(0, start), digits);
+    }
+
+    var match = text.match(/^(.*)\^\{([0-9]+)\}$/);
+    if (!match) {
+        match = text.match(/^(.*)\^([0-9]+)$/);
+    }
+    if (!match) {
+        return null;
+    }
+    return validRecordSelector(match[1], match[2]);
+}
+
+function validRecordSelector(base, digits) {
+    base = String(base || '').trim();
+    var ordinal = Number(digits);
+    if (base === '' || !isFinite(ordinal) || Math.floor(ordinal) !== ordinal ||
+        ordinal < 1 || ordinal > 9007199254740991) {
+        return null;
+    }
+    return { base: base, recordOrdinal: ordinal };
+}
+
+function configuredMultiRecordMode() {
+    return getOption('multiRecordMode', 'separate') === 'combined' ? 'combined' : 'separate';
+}
+
 /**
  * describeTransportError 把连接失败翻译成用户能照着做的提示。
  * “服务没装”和“服务没跑”对用户来说是完全不同的两件事。
@@ -140,6 +189,13 @@ function serviceErrorFor(statusCode, body, serviceURL) {
             troubleshootingLink: TROUBLESHOOTING_LINK
         };
     }
+    if (code === 'recordNotFound') {
+        return {
+            type: 'notFound',
+            message: body && body.message ? body.message : '没有这个词条记录',
+            addition: hint
+        };
+    }
     if (statusCode === 404) {
         return { type: 'notFound', message: '词典中没有收录这个词' };
     }
@@ -160,9 +216,10 @@ function serviceErrorFor(statusCode, body, serviceURL) {
  * format 为 "bob" 时服务会直接返回渲染好的 toDict，
  * 这样插件不需要理解词典的内部结构。
  */
-function buildRequestBody(text) {
+function buildRequestBody(text, recordOrdinal) {
     var body = {
         query: text,
+        multiRecordMode: configuredMultiRecordMode(),
         format: 'bob',
         mode: 'exact',
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
@@ -173,6 +230,9 @@ function buildRequestBody(text) {
     var dictionaryID = configuredDictionaryID();
     if (dictionaryID !== '') {
         body.dictionaries = [dictionaryID];
+    }
+    if (recordOrdinal > 0) {
+        body.recordOrdinal = recordOrdinal;
     }
     return body;
 }
@@ -241,6 +301,13 @@ function translate(query, completion) {
         return;
     }
 
+    var selector = parseRecordSelector(originalText);
+    var recordOrdinal = 0;
+    if (selector) {
+        lookupText = selector.base;
+        recordOrdinal = selector.recordOrdinal;
+    }
+
     if (lookupText === '') {
         query.onCompletion({ error: { type: 'param', message: '没有可查询的内容' } });
         return;
@@ -250,7 +317,7 @@ function translate(query, completion) {
         method: 'POST',
         url: serviceURL + '/v2/lookup',
         header: { 'Content-Type': 'application/json' },
-        body: buildRequestBody(lookupText),
+        body: buildRequestBody(lookupText, recordOrdinal),
         timeout: 15,
         cancelSignal: query.cancelSignal,
         handler: function (resp) {

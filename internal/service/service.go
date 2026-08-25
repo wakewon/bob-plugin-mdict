@@ -212,7 +212,22 @@ var ErrNoDictionaries = errors.New("no dictionaries available")
 var (
 	ErrDictionaryNotFound    = errors.New("dictionary ID not found")
 	ErrDictionaryUnavailable = errors.New("dictionary unavailable")
+	ErrRecordNotFound        = errors.New("record ordinal not found")
 )
+
+// RecordNotFoundError distinguishes an out-of-range presentation selector
+// from a missing base headword.
+type RecordNotFoundError struct {
+	Query     string
+	Requested int
+	Available int
+}
+
+func (e *RecordNotFoundError) Error() string {
+	return fmt.Sprintf("record %d not found for %q (%d available)", e.Requested, e.Query, e.Available)
+}
+
+func (e *RecordNotFoundError) Unwrap() error { return ErrRecordNotFound }
 
 // LookupOptions configures a lookup.
 type LookupOptions struct {
@@ -275,7 +290,15 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 		// Bob presents one result card per configured service instance. Even
 		// when an API client asks the server for several matches, the Bob view is
 		// deliberately rendered from the first match only.
-		result.Bob = bobadapter.RenderEntrySet(result.Matches[0].entrySet(), opts.BobOptions)
+		set := result.Matches[0].entrySet()
+		if ordinal := opts.BobOptions.RecordOrdinal; ordinal > len(set.Records) {
+			return nil, &RecordNotFoundError{
+				Query:     set.Headword,
+				Requested: ordinal,
+				Available: len(set.Records),
+			}
+		}
+		result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
 	}
 	return result, nil
 }

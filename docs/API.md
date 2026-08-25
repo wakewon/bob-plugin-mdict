@@ -15,7 +15,7 @@ an older plugin.
 ```json
 {
   "service": "bob-mdict",
-  "serviceVersion": "0.2.0",
+  "serviceVersion": "0.2.1",
   "buildCommit": "abcdef1",
   "apiVersion": "v2",
   "platform": "darwin",
@@ -84,6 +84,8 @@ a reason in `diagnostics`; the others stay usable.
   "maxExamples": 3,
   "includeExamples": true,
   "includeExtras": true,
+  "multiRecordMode": "separate",
+  "recordOrdinal": 2,
   "debug": false
 }
 ```
@@ -97,12 +99,16 @@ a reason in `diagnostics`; the others stay usable.
 | `limit` | Stop after this many dictionaries answer. |
 | `maxExamples` | Cap parsed and displayed examples independently per sense or subsense. |
 | `includeExamples` / `includeExtras` | Trim the rendered `toDict`. |
+| `multiRecordMode` | Bob rendering only. `separate` shows one record with sibling navigation; `combined` renders the complete EntrySet with ordinal labels. Omitted defaults to `separate`. |
+| `recordOrdinal` | Bob rendering only. One-based ordinal in the visible EntrySet after resolved-byte dedupe and parser-empty filtering—not a raw MDX record index. Zero/omitted selects record 1 in separate mode and the complete set in combined mode. A positive value explicitly selects one record. |
 | `debug` | Attach parser provenance notes to each entry. |
 
 Responses: `200` with matches; a normal headword miss is `404` with an empty
 match list. An invalid explicit ID returns `404 dictionaryNotFound`; an existing
 but unhealthy ID returns `503 dictionaryUnavailable`; both include a `/list`
 hint. An empty registry returns `503 noDictionaries` with the directory.
+An ordinal beyond the visible EntrySet returns `404 recordNotFound`; it never
+falls back to record 1 or reports the selector-shaped alias as a missing word.
 
 Each match carries a dictionary-neutral `headword` and `records[]`. Every
 record has a consecutive `recordOrdinal` plus an independently parsed `entry`:
@@ -124,8 +130,10 @@ record has a consecutive `recordOrdinal` plus an independently parsed `entry`:
 Duplicate expansion happens only after one exact spelling has been selected.
 Resolved byte-identical records are removed, parser-empty records are omitted,
 and the remaining records keep MDX source order. `format: "bob"` adds a
-top-level `bob` object that is a complete single card; record ordinals appear
-only when more than one semantic record remains.
+top-level `bob` object. In separate mode it is one ordinary record plus an
+`Other entries` related-word group; an explicit selection uses a presentation
+alias such as `lead²` while the IR headword and `source.matchedKey` remain
+`lead`. Combined mode preserves the complete ordinal-labelled card.
 
 Exact headword spelling is always preferred. Case-insensitive matching is used
 only as a fallback when no exact key exists; NFC and NFD spellings share the

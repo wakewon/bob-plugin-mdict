@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
-    .replace('__BOB_MDICT_PLUGIN_VERSION__', '0.2.0-test')
+    .replace('__BOB_MDICT_PLUGIN_VERSION__', '0.2.1-test')
     .replace('__BOB_MDICT_PLUGIN_COMMIT__', 'test123');
 
 function load(options, respond) {
@@ -158,7 +158,7 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     const loaded = load({ dictionaryID: 'expired-id' }, request => {
         if (request.url.endsWith('/v2/status')) {
             request.handler(response(200, {
-                service: 'bob-mdict', apiVersion: 'v2', serviceVersion: '0.2.0', buildCommit: 'service1', healthyDictionaryCount: 1
+                service: 'bob-mdict', apiVersion: 'v2', serviceVersion: '0.2.1', buildCommit: 'service1', healthyDictionaryCount: 1
             }));
             return;
         }
@@ -168,8 +168,8 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     assert.equal(completion.result, false);
     assert.match(completion.error.message, /expired-id/);
     assert.match(completion.error.addition, /\/list/);
-    assert.match(loaded.logs[0], /MDict plugin 0\.2\.0-test \(test123\)/);
-    assert.match(loaded.logs[0], /bob-mdict 0\.2\.0 \(service1\), API v2/);
+    assert.match(loaded.logs[0], /MDict plugin 0\.2\.1-test \(test123\)/);
+    assert.match(loaded.logs[0], /bob-mdict 0\.2\.1 \(service1\), API v2/);
 });
 
 test('lookup maps invalid ID service errors to actionable guidance', () => {
@@ -179,4 +179,81 @@ test('lookup maps invalid ID service errors to actionable guidance', () => {
     });
     loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
     assert.match(completion.error.addition, /\/list/);
+});
+
+test('record selectors use originalText and send a canonical v2 request', () => {
+    const cases = [
+        ['foo¹', 'foo', 1],
+        ['foo²', 'foo', 2],
+        ['foo¹²', 'foo', 12],
+        ['foo^1', 'foo', 1],
+        ['foo^2', 'foo', 2],
+        ['foo^12', 'foo', 12],
+        ['foo^{1}', 'foo', 1],
+        ['foo^{2}', 'foo', 2],
+        ['foo^{12}', 'foo', 12],
+        ['China²', 'China', 2],
+        ['china²', 'china', 2],
+        ['Cafe\u0301²', 'Cafe\u0301', 2]
+    ];
+    for (const [originalText, base, ordinal] of cases) {
+        const loaded = load({}, request => {
+            assert.equal(request.body.query, base);
+            assert.equal(request.body.recordOrdinal, ordinal);
+            assert.equal(request.body.multiRecordMode, 'separate');
+            request.handler(response(200, { bob: { word: base, parts: [] } }));
+        });
+        loaded.context.translate(bobQuery({
+            text: originalText === 'foo²' ? 'foo2' : originalText,
+            originalText
+        }, () => {}));
+        assert.equal(loaded.requests.length, 1);
+    }
+});
+
+test('malformed selectors and ordinary digit or caret headwords stay ordinary', () => {
+    const values = ['foo2', 'C++', 'x^y', 'H2O', 'foo^', 'foo^{}', 'foo^{x}', 'foo⁰', 'foo^0'];
+    for (const value of values) {
+        const loaded = load({}, request => {
+            assert.equal(request.body.query, value);
+            assert.equal('recordOrdinal' in request.body, false);
+            request.handler(response(404, {}));
+        });
+        loaded.context.translate(bobQuery({ text: value, originalText: value }, () => {}));
+        assert.equal(loaded.requests.length, 1);
+    }
+
+    const missingOriginal = load({}, request => {
+        assert.equal(request.body.query, 'foo²');
+        assert.equal('recordOrdinal' in request.body, false);
+        request.handler(response(404, {}));
+    });
+    missingOriginal.context.translate(bobQuery({ text: 'foo²' }, () => {}));
+});
+
+test('combined preference is explicit while separate remains the default', () => {
+    for (const [options, want] of [[{}, 'separate'], [{ multiRecordMode: 'combined' }, 'combined']]) {
+        const loaded = load(options, request => {
+            assert.equal(request.body.multiRecordMode, want);
+            request.handler(response(200, { bob: { word: 'foo', parts: [] } }));
+        });
+        loaded.context.translate(bobQuery({ text: 'foo', originalText: 'foo' }, () => {}));
+    }
+});
+
+test('recordNotFound is not confused with a missing selector-shaped headword', () => {
+    let completion;
+    const loaded = load({}, request => {
+        assert.equal(request.body.query, 'foo');
+        assert.equal(request.body.recordOrdinal, 3);
+        request.handler(response(404, {
+            error: 'recordNotFound',
+            message: '“foo” 只有 2 个可用词条记录。',
+            hint: '请选择第 1 到第 2 条记录。'
+        }));
+    });
+    loaded.context.translate(bobQuery({ text: 'foo3', originalText: 'foo³' }, value => { completion = value; }));
+    assert.equal(completion.error.type, 'notFound');
+    assert.match(completion.error.message, /只有 2 个/);
+    assert.match(completion.error.addition, /第 1 到第 2 条/);
 });

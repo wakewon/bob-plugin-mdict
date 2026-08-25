@@ -200,6 +200,11 @@ type LookupRequest struct {
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
 	IncludeExtras   *bool `json:"includeExtras,omitempty"`
+	// MultiRecordMode controls Bob presentation only: "separate" selects one
+	// semantic record with sibling navigation; "combined" renders all records.
+	MultiRecordMode string `json:"multiRecordMode,omitempty"`
+	// RecordOrdinal is one-based over the visible, deduplicated EntrySet.
+	RecordOrdinal int `json:"recordOrdinal,omitempty"`
 }
 
 func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +215,16 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Query) == "" {
 		writeError(w, http.StatusBadRequest, "badRequest", "query is required", "")
+		return
+	}
+	if req.RecordOrdinal < 0 {
+		writeError(w, http.StatusBadRequest, "badRequest", "recordOrdinal must be zero or a positive integer", "")
+		return
+	}
+	if req.MultiRecordMode != "" &&
+		!strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordSeparate)) &&
+		!strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordCombined)) {
+		writeError(w, http.StatusBadRequest, "badRequest", "multiRecordMode must be separate or combined", "")
 		return
 	}
 
@@ -228,6 +243,12 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	if req.IncludeExtras != nil {
 		bobOpts.IncludeExtras = *req.IncludeExtras
 	}
+	if strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordCombined)) {
+		bobOpts.MultiRecordMode = bobadapter.MultiRecordCombined
+	} else {
+		bobOpts.MultiRecordMode = bobadapter.MultiRecordSeparate
+	}
+	bobOpts.RecordOrdinal = req.RecordOrdinal
 
 	result, err := s.svc.Lookup(req.Query, service.LookupOptions{
 		DictionaryIDs: req.Dictionaries,
@@ -255,6 +276,15 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "dictionaryUnavailable", err.Error(),
 				"Query /list in Bob to see diagnostics, or choose another dictionary ID.")
 			return
+		}
+		if errors.Is(err, service.ErrRecordNotFound) {
+			var detail *service.RecordNotFoundError
+			if errors.As(err, &detail) {
+				writeError(w, http.StatusNotFound, "recordNotFound",
+					fmt.Sprintf("“%s” 只有 %d 个可用词条记录。", detail.Query, detail.Available),
+					fmt.Sprintf("请选择第 1 到第 %d 条记录。", detail.Available))
+				return
+			}
 		}
 		writeError(w, http.StatusBadRequest, "badRequest", err.Error(), "")
 		return
