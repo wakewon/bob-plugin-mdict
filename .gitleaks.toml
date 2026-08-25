@@ -1,0 +1,13 @@
+title = "bob-plugin-mdict secret scanning"
+minVersion = "8.30.0"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic Base64 path-traversal token; not a credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''(^|/)internal/httpapi/server_test\.go$''']
+regexes = ['''Li4vLi4vZXRjL3Bhc3N[3]ZA''']

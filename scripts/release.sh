@@ -23,7 +23,7 @@ USAGE
 
 doctor() {
     local failed=0
-    for name in git gh ssh go node jq zip unzip tar shasum curl brew lipo; do
+    for name in git gh ssh go node jq zip unzip tar shasum curl brew lipo gitleaks; do
         if command -v "$name" >/dev/null 2>&1; then
             printf 'ok  %-8s %s\n' "$name" "$(command -v "$name")"
         else
@@ -108,9 +108,11 @@ bootstrap() {
         local public_key
         public_key=$(awk '{print $1 " " $2 " " $3}' "$temp/deploy-key.pub")
         gh api --method POST "repos/$tap/keys" -f title="$title" -f key="$public_key" -F read_only=false >/dev/null
-        mkdir -p "$temp/ssh"
-        ssh-keyscan -t rsa,ecdsa,ed25519 github.com > "$temp/ssh/known_hosts" 2>/dev/null
-        GIT_SSH_COMMAND="ssh -i $temp/deploy-key -o IdentitiesOnly=yes -o UserKnownHostsFile=$temp/ssh/known_hosts" \
+        [ -f "$REPO_ROOT/scripts/github-known-hosts" ] || {
+            echo 'error: missing repository-controlled GitHub host keys' >&2
+            return 1
+        }
+        GIT_SSH_COMMAND="ssh -F /dev/null -i $temp/deploy-key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$REPO_ROOT/scripts/github-known-hosts -o GlobalKnownHostsFile=/dev/null" \
             git ls-remote git@github.com:wakewon/homebrew-tap.git HEAD >/dev/null
     fi
 
@@ -175,6 +177,9 @@ check() {
     go test ./... -race -count=1
     node --test plugin/main.test.js
     scripts/security-check.sh
+    scripts/verify-workflow-security.sh
+    scripts/extract-release-notes.test.sh
+    scripts/gitleaks-scan.sh history .
     build
     printf 'strict release check passed\n'
 }

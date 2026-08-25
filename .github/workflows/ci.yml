@@ -14,9 +14,11 @@ jobs:
     name: Test and lint
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -53,6 +55,18 @@ jobs:
       - name: Confirm no dictionary data is tracked
         run: ./scripts/security-check.sh
 
+      - name: Verify workflow least-privilege contract
+        run: ./scripts/verify-workflow-security.sh
+
+      - name: Test deterministic release-notes extraction
+        run: ./scripts/extract-release-notes.test.sh
+
+      - name: Install Gitleaks
+        run: brew install gitleaks
+
+      - name: Scan working tree secrets with redaction
+        run: ./scripts/gitleaks-scan.sh working-tree .
+
       - name: Validate appcast source metadata
         run: ./scripts/validate-appcast.sh
 
@@ -60,9 +74,11 @@ jobs:
     name: Build and package
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -81,7 +97,7 @@ jobs:
           ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --list-dictionaries
           ./release/bob-mdict-darwin-arm64 --dictionary-dir "$RUNNER_TEMP/dicts" --rescan
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-artifacts
           path: |

@@ -12,9 +12,9 @@ development
   → review/commit/push main
   → main CI success
   → annotated tag
-  → tag workflow builds official artifacts
+  → read-only validate-build job creates official candidate artifacts once
   → verified draft GitHub Release
-  → public immutable Release
+  → public GitHub-enforced immutable Release
   → appcast metadata commit on main
   → Homebrew tap formula commit
   → remote verification
@@ -52,8 +52,9 @@ continues to use API v2 until the wire contract has a genuine breaking change.
   Dirty builds are labelled `<commit>-dirty`.
 - `build` cleans ignored `release/`, builds every artifact, and verifies that
   tracked working-tree state is exactly unchanged.
-- `check` is the strict clean-main, origin equality, tests, race, security,
-  real-dictionary-when-present, installer, Homebrew, HTTP, and build gate.
+- `check` is the strict clean-main, origin equality, tests, race, deterministic
+  security guard, workflow policy, full-history Gitleaks, installer, Homebrew,
+  HTTP, and build gate.
 - `prepare` is the only command allowed to modify tracked product-version
   metadata. It never tags.
 - `publish` reruns `check`, requires successful CI for the exact HEAD, creates
@@ -62,12 +63,23 @@ continues to use API v2 until the wire contract has a genuine breaking change.
 - `status` reports version/API, branch/tree, local/remote commits, tag, CI,
   Release, appcast, installed runtime, and tap state without secrets.
 
-## First bootstrap and permission model
+## Credential and permission model
 
-The release workflow uses GitHub's repository token only for the main
-repository, with workflow permission `contents: write`. It creates Releases and
-pushes the post-release appcast commit. No issues, pull requests, packages,
-OIDC, security-event, or Actions write permission is requested.
+The workflow denies permissions by default and splits release duties so build
+and test processes never receive a repository write credential:
+
+| Job | Repository permission | Credential exposure |
+| --- | --- | --- |
+| `validate-build` | `contents: read` | no `GH_TOKEN`, no deploy key; checkout credentials are not persisted |
+| `publish-release` | `contents: write` | `GH_TOKEN` only in the Release mutation step |
+| `update-appcast` | `contents: write` | `GH_TOKEN` only in the bounded Git push step |
+| `publish-homebrew` | `contents: read` | tap deploy key only in the formula-push step; no main-repository write token |
+| `verify-distribution` | `contents: read` | no write credential and no secret |
+
+Ordinary CI also uses `contents: read`, never receives release secrets, and
+sets `persist-credentials: false` on every checkout. The release build job does
+the same. GitHub publication jobs never rebuild the product; they consume the
+single candidate transferred by GitHub Actions artifacts.
 
 Homebrew publication uses the Actions secret:
 
@@ -84,6 +96,12 @@ use. A missing half of the key/secret pair is not guessed or recovered; use:
 ```bash
 ./scripts/release.sh bootstrap --rotate
 ```
+
+Bootstrap and Actions SSH commands use `scripts/github-known-hosts`,
+`StrictHostKeyChecking=yes`, `IdentitiesOnly=yes`, and an isolated SSH config.
+The committed RSA, ECDSA, and Ed25519 host keys come from GitHub's official SSH
+fingerprint documentation and Meta API. Neither bootstrap nor the workflow
+reads or modifies a user's `~/.ssh/known_hosts`.
 
 ## Preflight, tag, and official build
 
@@ -102,12 +120,16 @@ Wait for CI success for that exact commit. Then:
 ./scripts/release.sh publish
 ```
 
-The tag workflow validates `vX.Y.Z == VERSION`, runs full tests, and is the only
-official artifact producer. It creates a draft Release, uploads and verifies
-the complete asset set, publishes it, verifies remote checksums, updates
-appcast from a fresh main checkout with bounded non-force retries, publishes
-the formula through the dedicated deploy key, and performs a clean Homebrew
-install test.
+The tag workflow validates `vX.Y.Z == VERSION`. Its read-only `validate-build`
+job runs full tests and is the only official artifact producer. Publication
+jobs consume those exact bytes, create and verify a draft Release, publish it,
+update appcast with a bounded non-force push, publish the formula using only the
+tap deploy key, and perform a clean Homebrew install test.
+
+`scripts/extract-release-notes.sh` deterministically extracts only the current
+`## [X.Y.Z]` CHANGELOG section. Release creation never submits the entire
+CHANGELOG, and extraction tests cover current, synthetic future, missing, and
+adjacent-version cases.
 
 `SHA256SUMS` lists only public assets and not itself. `RELEASE_MANIFEST.json`
 contains version, API, exact build commit, tag, filenames, and SHA-256 values;
@@ -146,5 +168,41 @@ version/API/build identity, and runs `--check` with an empty dictionary folder.
 - If tap authentication is incomplete, rotate only the dedicated deploy key;
   do not create a broad PAT.
 
-Published artifacts are immutable. Rollback means publishing a corrected new
-version, not silently replacing bytes under an existing tag.
+Recovery dispatch accepts only a semver-formatted existing tag whose commit and
+`VERSION` match. It refuses to create a Release. When the Release is already
+public it downloads and verifies those public bytes; newly rebuilt verification
+bytes are never uploaded over them.
+
+## Supply-chain checks
+
+`scripts/security-check.sh` is the fast deterministic guard for dictionary
+data, private-key markers, GitHub token prefixes, and AWS access-key prefixes.
+Gitleaks 8.30 or newer supplies generic detection. Ordinary CI scans the
+tracked/non-ignored working tree; `release.sh check` and `validate-build` scan
+the complete Git history with `--redact`. The single allowlist is constrained
+to one generic-api-key rule, one test file, and one synthetic path-traversal
+fixture. Release operators must also scan the complete `homebrew-tap` history.
+
+Only official `actions/*` Actions are used. Each `uses:` reference is pinned to
+a full, GitHub-verified commit SHA with its semantic release in a comment:
+
+| Action | Version | Commit |
+| --- | --- | --- |
+| `actions/checkout` | `v7.0.1` | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-go` | `v7.0.0` | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` |
+| `actions/upload-artifact` | `v7.0.1` | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
+| `actions/download-artifact` | `v8.0.1` | `3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c` |
+
+Before updating a pin, resolve the desired official release tag through the
+`actions/<name>` GitHub repository/API, confirm the full commit and verified
+signature, update the semantic-version comment, then run
+`scripts/verify-workflow-security.sh` and `actionlint`.
+
+## Release immutability
+
+Repository-level GitHub-enforced immutable releases were enabled on
+2026-08-25. GitHub applies this setting only to releases published afterward:
+their tags and assets are platform-locked when a verified draft is published.
+The earlier `v1.0.0` API record remains `immutable: false`; it follows the
+project policy that its public tag and assets are never deleted, moved, or
+replaced. Rollback always means publishing a corrected new version.
