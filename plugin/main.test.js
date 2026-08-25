@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
-    .replace('__BOB_MDICT_PLUGIN_VERSION__', '0.1.2-test')
+    .replace('__BOB_MDICT_PLUGIN_VERSION__', '0.2.0-test')
     .replace('__BOB_MDICT_PLUGIN_COMMIT__', 'test123');
 
 function load(options, respond) {
@@ -158,7 +158,7 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     const loaded = load({ dictionaryID: 'expired-id' }, request => {
         if (request.url.endsWith('/v2/status')) {
             request.handler(response(200, {
-                service: 'bob-mdict', apiVersion: 'v2', serviceVersion: '0.1.2', buildCommit: 'service1', healthyDictionaryCount: 1
+                service: 'bob-mdict', apiVersion: 'v2', serviceVersion: '0.2.0', buildCommit: 'service1', healthyDictionaryCount: 1
             }));
             return;
         }
@@ -168,8 +168,8 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     assert.equal(completion.result, false);
     assert.match(completion.error.message, /expired-id/);
     assert.match(completion.error.addition, /\/list/);
-    assert.match(loaded.logs[0], /MDict plugin 0\.1\.2-test \(test123\)/);
-    assert.match(loaded.logs[0], /bob-mdict 0\.1\.2 \(service1\), API v2/);
+    assert.match(loaded.logs[0], /MDict plugin 0\.2\.0-test \(test123\)/);
+    assert.match(loaded.logs[0], /bob-mdict 0\.2\.0 \(service1\), API v2/);
 });
 
 test('lookup maps invalid ID service errors to actionable guidance', () => {

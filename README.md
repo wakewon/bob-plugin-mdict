@@ -1,5 +1,7 @@
 # MDict for Bob
 
+Current product version: **0.2.0** · local API: **v2**.
+
 English | [简体中文](README_CN.md)
 
 Look up your own local MDict dictionaries in [Bob](https://bobtranslate.com/),

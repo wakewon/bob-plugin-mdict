@@ -15,7 +15,7 @@ an older plugin.
 ```json
 {
   "service": "bob-mdict",
-  "serviceVersion": "0.1.2",
+  "serviceVersion": "0.2.0",
   "buildCommit": "abcdef1",
   "apiVersion": "v2",
   "platform": "darwin",

@@ -1,5 +1,7 @@
 # MDict for Bob
 
+当前产品版本：**0.2.0** · 本地 API：**v2**。
+
 [English](README.md) | 简体中文
 
 在 [Bob](https://bobtranslate.com/) 中查询你自己的本地 MDict 词典。查询、
