@@ -43,24 +43,17 @@ func dictionaryDir(t *testing.T) string {
 	if testing.Short() {
 		t.Skip("skipping corpus-scale integration test in short mode")
 	}
-	if dir := os.Getenv("BOB_MDICT_TEST_DICTIONARIES"); dir != "" {
-		if _, err := os.Stat(dir); err != nil {
-			t.Fatalf("BOB_MDICT_TEST_DICTIONARIES is set to %q but it does not exist", dir)
-		}
-		if !containsMDX(dir) {
-			t.Skipf("%q contains no .mdx files", dir)
-		}
-		return dir
+	dir := os.Getenv("BOB_MDICT_TEST_DICTIONARIES")
+	if dir == "" {
+		t.Skip("real dictionary corpus is opt-in; set BOB_MDICT_TEST_DICTIONARIES to run integration tests")
 	}
-	_, thisFile, _, _ := runtime.Caller(0)
-	fallback := filepath.Join(filepath.Dir(thisFile), "..", "..", "local_assets", "dictionaries")
-	// A directory that exists but holds no dictionaries is the same situation
-	// as no directory at all: skip rather than fail, so a fresh checkout and CI
-	// behave identically.
-	if !containsMDX(fallback) {
-		t.Skip("no real dictionaries available; set BOB_MDICT_TEST_DICTIONARIES to run integration tests")
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("BOB_MDICT_TEST_DICTIONARIES is set to %q but it does not exist", dir)
 	}
-	return fallback
+	if !containsMDX(dir) {
+		t.Skipf("%q contains no .mdx files", dir)
+	}
+	return dir
 }
 
 // containsMDX reports whether a directory tree holds at least one .mdx file.

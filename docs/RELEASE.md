@@ -206,3 +206,22 @@ their tags and assets are platform-locked when a verified draft is published.
 The earlier `v1.0.0` API record remains `immutable: false`; it follows the
 project policy that its public tag and assets are never deleted, moved, or
 replaced. Rollback always means publishing a corrected new version.
+
+## Testing policy
+
+The normal release gate uses repository-contained deterministic tests:
+
+```bash
+go test ./... -count=1
+go test ./... -short -race -count=1
+```
+
+Testing with a private real dictionary corpus is explicitly opt-in through the `BOB_MDICT_TEST_DICTIONARIES` environment variable. It is intended for compatibility research, corpus validation, and manual acceptance, not as an automatic release preflight.
+
+The presence of `local_assets/dictionaries` must not change the behavior or duration of the release gate.
+
+## Appcast metadata handoff
+
+- `published_at` is read in the already-authorized Release step.
+- Appcast preparation itself remains credential-free and does not make anonymous GitHub API calls.
+- Only the later bounded Git push receives repository write credentials.

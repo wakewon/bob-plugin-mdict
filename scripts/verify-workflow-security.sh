@@ -119,4 +119,17 @@ expected=$(printf '%s\n' \
     'SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s' | sort)
 [ "$fingerprints" = "$expected" ] || fail "repository GitHub host keys do not match official fingerprints"
 
+
+if printf '%s\n' "$appcast_block" | grep -q 'api.github.com/repos'; then
+    fail "appcast preparation must not make anonymous REST API calls"
+fi
+
+if ! grep -q 'go test \./\.\.\. -short -race -count=1' "$REPO_ROOT/scripts/release.sh"; then
+    fail "release.sh must use deterministic -short race gate"
+fi
+
+if ! grep -q 'go test \./\.\.\. -short -race -count=1' "$RELEASE"; then
+    fail "Release workflow must use deterministic -short race gate"
+fi
+
 printf 'workflow least-privilege and supply-chain contract passed\n'

@@ -174,7 +174,7 @@ check() {
     go mod tidy
     git diff --exit-code -- go.mod go.sum
     go test ./... -count=1
-    go test ./... -race -count=1
+    go test ./... -short -race -count=1
     node --test plugin/main.test.js
     scripts/security-check.sh
     scripts/verify-workflow-security.sh

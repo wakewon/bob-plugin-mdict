@@ -80,7 +80,7 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
           go test ./... -count=1
-          go test ./... -race -count=1
+          go test ./... -short -race -count=1
           node --test plugin/main.test.js
           ./scripts/security-check.sh
           ../infrastructure/scripts/verify-workflow-security.sh
@@ -137,6 +137,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+    outputs:
+      published_at: ${{ steps.release.outputs.published_at }}
     steps:
       - name: Receive official candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -162,6 +164,7 @@ jobs:
           test -s metadata/release-notes.md
 
       - name: Publish or safely resume GitHub Release
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs['validate-build'].outputs.version }}
@@ -211,6 +214,10 @@ jobs:
           if [ "$mode" = create ]; then
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false
           fi
+          published_at=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq '.publishedAt')
+          test -n "$published_at"
+          test "$published_at" != "null"
+          printf 'published_at=%s\n' "$published_at" >> "$GITHUB_OUTPUT"
 
   update-appcast:
     name: Update appcast metadata
@@ -226,6 +233,7 @@ jobs:
           VERSION: ${{ needs['validate-build'].outputs.version }}
           RELEASE_TAG: ${{ needs['validate-build'].outputs.release_tag }}
           BUILD_COMMIT: ${{ needs['validate-build'].outputs.build_commit }}
+          PUBLISHED_AT: ${{ needs.publish-release.outputs.published_at }}
         run: |
           release_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
           public="$RUNNER_TEMP/public-release"
@@ -235,9 +243,16 @@ jobs:
           plugin_sha=$(shasum -a 256 "$public/MDict-v$VERSION.bobplugin" | awk '{print $1}')
           expected_sha=$(awk '$2=="MDict-v'"$VERSION"'.bobplugin" {print $1}' "$public/SHA256SUMS")
           test -n "$expected_sha" && test "$plugin_sha" = "$expected_sha"
-          published_at=$(curl -fL --retry 5 \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" | jq -r '.published_at')
-          timestamp=$(($(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$published_at" '+%s') * 1000))
+
+          test -n "$PUBLISHED_AT"
+          test "$PUBLISHED_AT" != "null"
+          timestamp=$(jq -nr --arg published_at "$PUBLISHED_AT" '$published_at | fromdateiso8601 * 1000 | floor')
+          case "$timestamp" in
+            ''|*[!0-9]*)
+              echo "error: invalid Release published_at: $PUBLISHED_AT" >&2
+              exit 1
+              ;;
+          esac
 
           GIT_TERMINAL_PROMPT=0 git clone --quiet --branch main \
             "https://github.com/$GITHUB_REPOSITORY.git" "$RUNNER_TEMP/appcast-main"
