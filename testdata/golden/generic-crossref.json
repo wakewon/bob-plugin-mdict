@@ -1,0 +1,27 @@
+{
+  "headword": "quorble",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "definition": "A knot used by ropemakers to join two lines.",
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        }
+      ],
+      "confidence": 0.44999999999999996,
+      "rule": "generic:senseHints"
+    }
+  ],
+  "crossReferences": [
+    "wexal",
+    "frennet"
+  ]
+}

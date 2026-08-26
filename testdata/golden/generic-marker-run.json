@@ -1,0 +1,36 @@
+{
+  "headword": "wexal",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "to fasten a rope around a post",
+          "confidence": 0.65,
+          "rule": "generic:markerRun"
+        },
+        {
+          "number": "2",
+          "definition": "to secure something temporarily",
+          "confidence": 0.65,
+          "rule": "generic:markerRun"
+        },
+        {
+          "number": "3",
+          "definition": "to bind two loose things together",
+          "confidence": 0.65,
+          "rule": "generic:markerRun"
+        }
+      ],
+      "confidence": 0.35,
+      "rule": "generic:markerRun"
+    }
+  ]
+}

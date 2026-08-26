@@ -30,7 +30,7 @@ func TestClassifySemanticLabel(t *testing.T) {
 		"See also": LabelCrossReference, "Cross-reference": LabelCrossReference,
 		"Related": LabelRelated, "PHRASE": LabelPhrase, "Idiom": LabelIdiom,
 		"Phrasal verb": LabelPhrasalVerb, "Derivatives": LabelDerivative,
-		"Synonym / Antonym section": LabelSynonyms, "noun": "", "PARTICLE-X": "",
+		"Synonym / Antonym section": LabelSynonyms, "OPPOSITES": LabelAntonyms, "noun": "", "PARTICLE-X": "",
 	}
 	for input, want := range cases {
 		if got := ClassifySemanticLabel(input); got != want {
@@ -50,10 +50,25 @@ func TestLooksLikeIPA(t *testing.T) {
 		"abandon", "to leave someone", "",
 		// A long sentence containing one IPA-ish character is prose.
 		"the symbol ə is called schwa and appears in many unstressed syllables",
+		// The IPA close front rounded vowel is also the twenty-fifth letter of
+		// the English alphabet. Reading it as evidence turned every ordinary
+		// word ending in one into a transcription, and with it every heading,
+		// label and section title in a corpus of a hundred dictionaries.
+		"necessary", "1.1 Subjectivity", "especially BrE", "Word Frequency",
+		// The same story in French and Danish orthography.
+		"façade", "encyclopædia", "Fußgängerübergang",
 	}
 	for _, value := range negative {
 		if LooksLikeIPA(value) {
 			t.Errorf("LooksLikeIPA(%q) = true, want false", value)
+		}
+	}
+
+	// A transcription written only in letters that ordinary orthography also
+	// uses is still recognisable when the dictionary delimits it as one.
+	for _, value := range []string{"/føt/", "[çyː]"} {
+		if !LooksLikeIPA(value) {
+			t.Errorf("LooksLikeIPA(%q) = false, want true", value)
 		}
 	}
 }

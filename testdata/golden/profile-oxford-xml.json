@@ -1,0 +1,73 @@
+{
+  "headword": "wexal",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "oxford-xml-learner"
+  },
+  "pronunciations": [
+    {
+      "ipaRegion": "uk",
+      "ipa": "ˈwɛksl",
+      "audioRegion": "uk",
+      "audio": {
+        "resourceRef": "snd://synthetic/wexal_gb_1.spx",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v2/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:pron-g-blk"
+    },
+    {
+      "ipaRegion": "us",
+      "ipa": "ˈwɛksəl",
+      "audioRegion": "us",
+      "audio": {
+        "resourceRef": "snd://synthetic/wexal_us_1.spx",
+        "token": "TOKEN",
+        "url": "http://127.0.0.1:15321/v2/resource/TOKEN",
+        "mimeType": "audio/mpeg"
+      },
+      "confidence": 0.95,
+      "rule": "profile:pron-g-blk"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "noun",
+      "senses": [
+        {
+          "definition": "a small hook used to fasten a sail",
+          "translation": "系帆小钩",
+          "labels": [
+            "informal"
+          ],
+          "examples": [
+            {
+              "text": "tie the rope to the wexal",
+              "translation": "把绳子系在小钩上"
+            }
+          ],
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        },
+        {
+          "definition": "the act of fastening such a hook",
+          "translation": "系钩",
+          "confidence": 0.9,
+          "rule": "profile:sense"
+        }
+      ],
+      "confidence": 0.95,
+      "rule": "profile:sn-g"
+    }
+  ],
+  "idioms": [
+    {
+      "phrase": "on the wexal",
+      "definition": "ready to be used at once"
+    }
+  ]
+}

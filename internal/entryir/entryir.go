@@ -37,6 +37,43 @@ type Audio struct {
 	MIMEType string `json:"mimeType"`
 }
 
+// Image is an illustration that exists inside the selected dictionary's MDD.
+// Like Audio, it carries only an opaque loopback resource URL; dictionary and
+// filesystem identity never cross the service boundary.
+type Image struct {
+	ResourceRef string `json:"resourceRef"`
+	Token       string `json:"token"`
+	URL         string `json:"url"`
+	MIMEType    string `json:"mimeType"`
+	Alt         string `json:"alt,omitempty"`
+}
+
+// RichBlockKind is the deliberately small vocabulary used inside free-form
+// prose. Core dictionary semantics remain typed fields; these blocks only
+// preserve presentation content whose order matters.
+type RichBlockKind string
+
+const (
+	RichText     RichBlockKind = "text"
+	RichHeading  RichBlockKind = "heading"
+	RichListItem RichBlockKind = "listItem"
+	RichImage    RichBlockKind = "image"
+	RichTable    RichBlockKind = "table"
+)
+
+// RichBlock preserves ordered text, image, and conventional table content.
+// Exactly one of Text, Image, or Rows/Header is populated according to Kind.
+type RichBlock struct {
+	Kind  RichBlockKind `json:"kind"`
+	Text  string        `json:"text,omitempty"`
+	Image *Image        `json:"image,omitempty"`
+	Rows  [][]string    `json:"rows,omitempty"`
+	// Header is the table's own header row, present only when the source
+	// marked one with <th> cells. Absent means the source declared no header,
+	// which is a different fact from having an empty one.
+	Header []string `json:"header,omitempty"`
+}
+
 // Pronunciation preserves transcription and recording provenance separately.
 // A shared IPA can therefore coexist with distinct UK and US recordings, and
 // an unlabelled recording never inherits the IPA's region by accident.
@@ -103,8 +140,9 @@ type PhraseEntry struct {
 // Anything the parser is not confident about lands here rather than being
 // mis-filed as a definition.
 type Section struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
+	Title  string      `json:"title"`
+	Body   string      `json:"body"`
+	Blocks []RichBlock `json:"blocks,omitempty"`
 }
 
 // Source records where an entry came from.

@@ -1,6 +1,6 @@
 # MDict for Bob
 
-Current product version: **1.0.0** · local API: **v2**.
+Current product version: **1.1.0** · local API: **v2**.
 
 English | [简体中文](README_CN.md)
 
@@ -29,6 +29,8 @@ this project never generates or uses TTS as a fallback.
 ```text
 Bob plugin → http://127.0.0.1:15321 → MDX/MDD → semantic parser
                                               → EntrySet IR → Bob toDict
+                                                            → Plain Text
+                                                            → Markdown
 ```
 
 `bob-mdict` is a native Go service that owns the indexes, parsing and MDD
@@ -142,10 +144,40 @@ this navigation syntax.
 Choose **Combined** in the plugin settings to keep all records in one card,
 labelled with `¹`, `²`, `³`, and so on.
 
+**Markdown** presentation answers the same setting with what Markdown has.
+Combined renders every record in order, each under a `Record n of total`
+heading and divided from the next by a `---` thematic break. Separate renders
+one record and closes with an `Other entries` list of the other records'
+selectors. A typed record selector still selects exactly that record in either
+mode.
+
+Bob documents no Markdown lookup action, so those selectors — and cross
+references and related entries — are written as copyable query text in a code
+span rather than as links that would not work:
+
+```markdown
+## Other entries
+
+- `wound²`
+- `wound³`
+```
+
+This is presentation only. The navigation target stays in the parsed entry, so
+if Bob later publishes a real Markdown lookup mechanism, only this rendering
+changes.
+
+**Plain Text** is rendered directly from the same EntrySet, using headings,
+paragraphs, indentation and blank lines rather than Markdown syntax. Combined
+mode uses a textual record separator; Separate mode lists copyable sibling
+selectors. A Dictionary card request automatically uses Plain Text only when
+the selected record is an untyped free-form fallback with no useful senses,
+phrases, forms or navigation. Long structured entries remain Bob cards.
+
 Examples are grouped directly by their displayed sense, such as
-`Examples · verb 1` and `Examples · verb 2`. See also references are exposed
+`Examples · v. 1` and `Examples · v. 2`. See also references are exposed
 through Bob's structured `relatedWordParts` representation when possible;
-phrases and other explanatory sections remain additions.
+phrases, idioms, phrasal verbs and collocations receive independent compact Bob
+parts, while prose notes remain additions.
 
 ## Plugin settings
 
@@ -153,8 +185,10 @@ phrases and other explanatory sections remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
+| Presentation | Dictionary card | Choose Dictionary card, Plain Text or Markdown. Plain/Markdown documents—and automatic free-form fallback—are returned as one `toParagraphs` element, Bob's documented array-of-strings contract. Bob does not currently document Markdown rendering; the option guarantees a standards-compliant document, not formatted drawing by Bob. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
+| Show grammar | on | Show detailed grammatical qualifiers. Does not hide POS, labels, or patterns. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
 | Max examples per sense | `3` | Limit examples independently for each sense or subsense. |
 
@@ -169,7 +203,28 @@ bob-mdict --check
 bob-mdict --list-dictionaries
 bob-mdict --rescan
 bob-mdict --debug-lookup WORD
+bob-mdict --diagnose NAME      # one dictionary: structure and parser coverage
+bob-mdict --diagnose-all       # every dictionary in the directory
+bob-mdict --validate NAME --validate-out DIR   # end-to-end review snapshots
+bob-mdict --validate-all --validate-out DIR
 ```
+
+`--debug-lookup` answers "what did the parser make of this word?"; `--diagnose`
+answers "how well is this dictionary understood at all?" — which parser was
+chosen and on what evidence, what markup conventions it uses, and how much
+semantic structure a sample of its own records yields. Both report structure
+and counts, never dictionary text. See
+[docs/PARSER.md](docs/PARSER.md#diagnosing-an-unknown-dictionary).
+
+`--validate` answers the question after that: is the structure a fair reading
+of the record, and does it survive the rest of the pipeline? It runs the real
+service and the real Bob adapter over records the dictionary actually
+contains, measures how much of each record the parse accounts for and how much
+it repeats, checks the invariants between parser, service and the
+Bob/Plain/Markdown renderers, and writes a ranked set of Markdown review
+files. Unlike the diagnostics, those files quote real entries, so they are
+written only where you point them and belong somewhere private. See
+[docs/PARSER.md](docs/PARSER.md#validating-what-the-parser-produced).
 
 The local HTTP API is documented in [docs/API.md](docs/API.md).
 
@@ -256,7 +311,7 @@ The project is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE) and
 gofmt -w .
 go vet ./...
 go test ./...
-go test -race ./...
+go test -short -race ./...
 node --test plugin/main.test.js
 ./scripts/release.sh doctor
 ./scripts/release.sh dev
@@ -268,6 +323,15 @@ that tracked source is unchanged. The development command labels dirty builds
 explicitly, safely updates the standalone LaunchAgent, and refuses to replace a
 Homebrew- or otherwise-managed daemon. Release operations are documented in
 [docs/RELEASE.md](docs/RELEASE.md).
+
+`go test ./...` runs everything, including the real-dictionary integration
+tests. The race suite uses `-short`, which skips those: they are corpus-scale by
+nature — a fresh service parsed over your whole library, once per test — and
+under the race detector a large library puts the package beyond any sensible
+timeout. What race detection actually needs is contention, and that comes from
+the synthetic fixtures in `internal/service/concurrency_test.go`, which drive
+concurrent lookups, a rescan racing lookups in flight, and concurrent resource
+resolution. `-short -race` covers every package in seconds.
 
 Real-dictionary integration tests never write entry content into tracked
 snapshots. Point them at a lawful local library:

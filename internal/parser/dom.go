@@ -1,8 +1,11 @@
 package parser
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 )
@@ -58,6 +61,9 @@ func hiddenByStyle(node *html.Node) bool {
 type TextOptions struct {
 	// Skip matches nodes whose subtree is excluded entirely.
 	Skip Selector
+	// SkipNodes excludes specific subtrees by identity, for callers that have
+	// already decided which nodes to leave out rather than how to select them.
+	SkipNodes map[*html.Node]struct{}
 	// SkipHidden drops nodes hidden with inline styles.
 	SkipHidden bool
 	// Separator is inserted between block-level elements.
@@ -85,7 +91,7 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 	}
 	switch node.Type {
 	case html.TextNode:
-		builder.WriteString(node.Data)
+		writeBoundaryAware(builder, node.Data)
 		return
 	case html.ElementNode:
 		if node.Data == "script" || node.Data == "style" || node.Data == "head" {
@@ -96,6 +102,9 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 				return
 			}
 			if !opts.Skip.IsEmpty() && opts.Skip.Matches(node) {
+				return
+			}
+			if _, skipped := opts.SkipNodes[node]; skipped {
 				return
 			}
 		}
@@ -111,6 +120,49 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 	if node.Type == html.ElementNode && blockTags[node.Data] {
 		builder.WriteString(" ")
 	}
+}
+
+// writeBoundaryAware joins text from adjacent DOM nodes without producing
+// artifacts such as "goodorthe". It adds a boundary only when separate nodes
+// would otherwise merge word-like scripts. Punctuation remains attached and
+// adjacent CJK text remains naturally unspaced.
+func writeBoundaryAware(builder *strings.Builder, text string) {
+	if text == "" {
+		return
+	}
+	if builder.Len() > 0 && !startsWithSpace(text) {
+		left, _ := utf8.DecodeLastRuneInString(builder.String())
+		right, _ := utf8.DecodeRuneInString(text)
+		if needsTextBoundary(left, right) && !isInlineSuffix(text) {
+			builder.WriteByte(' ')
+		}
+	}
+	builder.WriteString(text)
+}
+
+func isInlineSuffix(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed == "s" || strings.HasPrefix(trimmed, "s ") || strings.HasPrefix(trimmed, "s.") ||
+		trimmed == "'s" || trimmed == "’s" || strings.HasPrefix(trimmed, "'s ") || strings.HasPrefix(trimmed, "’s ")
+}
+
+func startsWithSpace(text string) bool {
+	r, _ := utf8.DecodeRuneInString(text)
+	return unicode.IsSpace(r)
+}
+
+func needsTextBoundary(left, right rune) bool {
+	if unicode.IsSpace(left) || unicode.IsSpace(right) || unicode.IsPunct(left) || unicode.IsPunct(right) ||
+		unicode.IsSymbol(left) || unicode.IsSymbol(right) {
+		return false
+	}
+	leftCJK := unicode.In(left, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+	rightCJK := unicode.In(right, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+	if leftCJK && rightCJK {
+		return false
+	}
+	return (unicode.IsLetter(left) || unicode.IsDigit(left)) &&
+		(unicode.IsLetter(right) || unicode.IsDigit(right))
 }
 
 // Walk visits every element node in document order. Returning false from the
@@ -238,14 +290,72 @@ func DescriptorText(node *html.Node) string {
 		}
 		appendNode(ancestor)
 	}
-	// Immediate siblings often carry the only "NAmE"/"BrE" marker.
+	// A block that prints its own "BrE" or "NAmE" label is stating the region
+	// outright, and that statement outranks anything nearby.
+	own := Text(node, TextOptions{SkipHidden: true})
+	if len([]rune(own)) <= maxRegionLabelRunes {
+		builder.WriteString(" ")
+		builder.WriteString(own)
+	}
 	if node.PrevSibling != nil {
 		appendNode(node.PrevSibling)
-		builder.WriteString(" ")
-		builder.WriteString(Text(node.PrevSibling, TextOptions{}))
 	}
 	if node.NextSibling != nil {
 		appendNode(node.NextSibling)
 	}
-	return strings.ToLower(builder.String())
+	descriptor := strings.ToLower(builder.String())
+	// Only when the node says nothing about itself is a neighbour's text worth
+	// reading. Borrowing it unconditionally is how the American half of a
+	// pronunciation block inherits the British label printed just above it.
+	if node.PrevSibling != nil && !hasRegionMarker(descriptor) {
+		descriptor += " " + strings.ToLower(Text(node.PrevSibling, TextOptions{}))
+	}
+	return descriptor
+}
+
+// maxRegionLabelRunes keeps a whole entry's prose out of the region evidence
+// when the "node" turns out to be a large container.
+const maxRegionLabelRunes = 120
+
+// VisibleText is the normalized text a reader would see in a raw record.
+//
+// It exists for diagnostics that need a denominator: how much of the record
+// did the parse account for? Producing it here rather than in the caller keeps
+// one definition of "visible" — scripts, styles and document head removed,
+// inline-hidden nodes skipped — shared with what the parser itself reads.
+func VisibleText(raw []byte) string {
+	doc, err := html.Parse(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	RemoveMatching(doc, ParseSelector("script, style, head, link"))
+	return Normalize(Text(doc, TextOptions{SkipHidden: true}))
+}
+
+// ScopedVisibleText is the visible text a profile actually puts in scope.
+//
+// It is the fair denominator for asking how much of a record a parse
+// accounted for. A profile's `root` narrows a record that holds several
+// regional editions of one entry to the edition being presented, and its
+// `ignore` list names fold buttons and speaker icons as chrome. Neither is
+// content the parser failed to keep, so neither belongs in the total it is
+// measured against. With no profile this is exactly VisibleText.
+func ScopedVisibleText(raw []byte, profile *Profile) string {
+	doc, err := html.Parse(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	RemoveMatching(doc, ParseSelector("script, style, head, link"))
+	if profile != nil {
+		profile.Compile()
+		if compiled := profile.compiled; compiled != nil {
+			if !compiled.root.IsEmpty() {
+				if matches := QueryAll(doc, compiled.root); len(matches) > 0 {
+					doc = matches[0]
+				}
+			}
+			RemoveMatching(doc, compiled.ignore)
+		}
+	}
+	return Normalize(Text(doc, TextOptions{SkipHidden: true}))
 }

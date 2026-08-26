@@ -121,6 +121,14 @@ function configuredMultiRecordMode() {
     return getOption('multiRecordMode', 'separate') === 'combined' ? 'combined' : 'separate';
 }
 
+function configuredPresentationMode() {
+    var mode = getOption('presentationMode', 'dict');
+    if (mode === 'plain' || mode === 'markdown') {
+        return mode;
+    }
+    return 'dict';
+}
+
 /**
  * describeTransportError 把连接失败翻译成用户能照着做的提示。
  * “服务没装”和“服务没跑”对用户来说是完全不同的两件事。
@@ -213,18 +221,19 @@ function serviceErrorFor(statusCode, body, serviceURL) {
 /**
  * buildRequestBody 组装查询请求。
  *
- * format 为 "bob" 时服务会直接返回渲染好的 toDict，
- * 这样插件不需要理解词典的内部结构。
+ * 服务直接返回对应的呈现结果；插件不解释 EntrySet，也不解析 Markdown。
  */
 function buildRequestBody(text, recordOrdinal) {
+    var presentation = configuredPresentationMode();
     var body = {
         query: text,
         multiRecordMode: configuredMultiRecordMode(),
-        format: 'bob',
+        format: presentation === 'dict' ? 'bob' : presentation,
         mode: 'exact',
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
         includeExamples: getOption('showExamples', 'enable') === 'enable',
         includeExtras: getOption('showExtras', 'enable') === 'enable',
+        includeGrammar: getOption('showGrammar', 'enable') === 'enable',
         limit: 1
     };
     var dictionaryID = configuredDictionaryID();
@@ -333,19 +342,37 @@ function translate(query, completion) {
                 query.onCompletion({ error: serviceErrorFor(statusCode, body, serviceURL) });
                 return;
             }
-            if (!body || !body.bob || !body.bob.word) {
+            var presentation = configuredPresentationMode();
+            var effective = body && body.effectiveFormat ? body.effectiveFormat :
+                (presentation === 'dict' ? 'bob' : presentation);
+            var hasPresentation = body && (
+                (effective === 'bob' && body.bob && body.bob.word) ||
+                (effective === 'plain' && body.plain) ||
+                (effective === 'markdown' && body.markdown)
+            );
+            if (!hasPresentation) {
                 query.onCompletion({ error: { type: 'notFound', message: '词典中没有收录这个词' } });
                 return;
             }
 
+            var result = {
+                from: query.detectFrom,
+                to: query.detectTo
+            };
+            if (effective === 'plain') {
+                result.toParagraphs = [body.plain];
+            } else if (effective === 'markdown') {
+                // Bob's documented plugin contract types toParagraphs as an array of
+                // strings, so the service-rendered document travels as one element
+                // rather than as a bare string. Keeping the whole document together
+                // preserves its formatting as a single unit, and is the shape a future
+                // Bob Markdown renderer would consume without changing this plugin.
+                result.toParagraphs = [body.markdown];
+            } else {
+                result.toDict = body.bob;
+            }
             query.onCompletion({
-                result: {
-                    from: query.detectFrom,
-                    to: query.detectTo,
-                    // 普通查词只返回 toDict。Bob 1.6+ 明确允许这样做；
-                    // 额外的段落会让词头在结果底部重复出现。
-                    toDict: body.bob
-                }
+                result: result
             });
         }
     });

@@ -1,6 +1,6 @@
 # MDict for Bob
 
-当前产品版本：**1.0.0** · 本地 API：**v2**。
+当前产品版本：**1.1.0** · 本地 API：**v2**。
 
 [English](README.md) | 简体中文
 
@@ -136,6 +136,24 @@ MDX 文件名不会改变 ID；更换词典版本通常会改变 ID。早期开�
 在插件设置中选择“合并显示”后，所有记录会继续在同一词典卡中用 `¹`、`²`、
 `³` 等标记完整展示。
 
+Markdown 显示用 Markdown 自己的手段表达同一个设置。“合并显示”按原顺序渲染
+全部记录，每条使用 `Record n of total` 标题，相邻记录之间插入 `---` 分隔线。
+“分条浏览”只渲染一条记录，并在结尾用 `Other entries` 列出其它记录的选择符。
+两种模式下，手工输入记录选择符仍只显示所选记录。
+
+Bob 目前没有公开 Markdown 的查词跳转接口，因此这些选择符——以及交叉引用和
+相关词条——写成可直接复制的行内代码，而不是无法工作的链接：
+
+```markdown
+## Other entries
+
+- `wound²`
+- `wound³`
+```
+
+这只是呈现方式。跳转目标本身仍保存在解析结果里；如果 Bob 今后提供真正的
+Markdown 查词机制，只需替换这一处呈现。
+
 例句会直接按展示释义分块，例如 `Examples · verb 1`、
 `Examples · verb 2`。See also 交叉引用会在适用时使用 Bob 的结构化
 `relatedWordParts` 表达；短语和其它带解释的扩展内容仍使用 additions。
@@ -146,8 +164,10 @@ MDX 文件名不会改变 ID；更换词典版本通常会改变 ID。早期开�
 |---|---|---|
 | 本地服务地址 | `http://127.0.0.1:15321` | 只有服务改过端口时才需修改。 |
 | 词典 ID（可选） | 留空 | 留空使用首个命中；填写后固定一本。用 `/list` 查看 ID。 |
+| 显示方式 | 词典卡片 | 保留现有 Bob 原生词典卡，或向服务请求 Markdown。整份文档作为 `toParagraphs` 数组的唯一一个元素返回，符合 Bob 文档中的字符串数组约定。Bob 目前并未在文档中说明会把这段内容渲染为 Markdown；本选项保证的是一份符合规范的 Markdown 文档，而不是 Bob 会把它排版显示。 |
 | 重复词条显示方式 | 分条浏览 | 完整显示一条并提供可点击的 `Other entries`；“合并显示”会在同一卡片展示全部带序号记录。 |
 | 显示例句 | 显示 | 显示例句及双语翻译。 |
+| 显示语法限定说明 | 显示 | 控制是否显示详细的语法限定说明。这不会隐藏词性、释义标签、主题标签或模式。 |
 | 显示扩展内容 | 显示 | 显示短语、习语、短语动词、结构化交叉引用、词形和说明。 |
 | 每个释义最多例句数 | `3` | 分别限制每个释义或子释义显示的例句数。 |
 
@@ -162,7 +182,22 @@ bob-mdict --check                # 安装、词典和音频解码检查
 bob-mdict --list-dictionaries    # 名称、ID、词条数和解析 Profile
 bob-mdict --rescan               # 重新发现并建立索引
 bob-mdict --debug-lookup WORD    # 输出结构化 EntrySet IR，供开发调试
+bob-mdict --diagnose NAME        # 单本词典的结构与解析覆盖诊断
+bob-mdict --diagnose-all         # 对目录中全部词典批量诊断
+bob-mdict --validate NAME --validate-out DIR   # 端到端校验并生成人工复核快照
+bob-mdict --validate-all --validate-out DIR
 ```
+
+`--debug-lookup` 回答“解析器把这个词解析成了什么”；`--diagnose` 回答“这本词典
+到底被理解到什么程度”——选中了哪个解析器、依据是什么、它使用哪些 DOM 约定，以及
+从它自己的代表性词条中恢复出多少语义结构。两者都只输出结构与统计，不输出词典正文。
+详见 [docs/PARSER.md](docs/PARSER.md#diagnosing-an-unknown-dictionary)。
+
+`--validate` 回答再下一个问题：解析出的结构是否忠实于原始记录，又能否完整地走完
+后端链路。它用真实的 service 与 Bob adapter 处理词典自身的记录，度量每条记录被解析
+覆盖了多少、重复了多少，校验 parser、service、adapter 与 Markdown 渲染器之间
+的一致性约束，并按优先级生成一组 Markdown 复核文件。与诊断不同，这些文件会引用真实
+词条，因此只会写入你指定的目录，且应保存在私有位置。
 
 本地 HTTP API 见 [docs/API.md](docs/API.md)。
 

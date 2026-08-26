@@ -1,0 +1,36 @@
+{
+  "headword": "plimber",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "definition": "A tool used for smoothing wet clay.",
+          "translation": "抹泥工具",
+          "examples": [
+            {
+              "text": "She reached for the plimber.",
+              "translation": "她伸手去拿抹泥工具。"
+            }
+          ],
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        },
+        {
+          "definition": "The act of smoothing something by hand.",
+          "translation": "手工抹平",
+          "confidence": 0.75,
+          "rule": "generic:senseHints"
+        }
+      ],
+      "confidence": 0.44999999999999996,
+      "rule": "generic:senseHints"
+    }
+  ]
+}

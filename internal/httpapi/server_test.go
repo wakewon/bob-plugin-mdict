@@ -210,8 +210,170 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 		records[0].RecordOrdinal != 1 || records[1].RecordOrdinal != 2 {
 		t.Fatalf("records=%+v err=%v", records, err)
 	}
-	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ noun" || payload.Bob.Parts[1].Part != "² verb" {
+	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ n." || payload.Bob.Parts[1].Part != "² v." {
 		t.Fatalf("Bob parts=%+v", payload.Bob.Parts)
+	}
+}
+
+func TestV2LookupMarkdownIsAdditiveUserOutput(t *testing.T) {
+	root := t.TempDir()
+	markup := `<article><h1>flimber</h1><div class="sense"><span class="pos">noun</span>` +
+		`<span class="grammar">[synthetic grammar]</span>` +
+		`<span class="definition">synthetic definition</span>` +
+		`<span class="example">first synthetic example</span><span class="example">second synthetic example</span></div></article>`
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{{Key: "flimber", HTML: markup}}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(
+		`{"query":"flimber","format":"markdown","includeExamples":false,"includeExtras":false,"maxExamples":1}`)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Matches  []json.RawMessage `json:"matches"`
+		Markdown string            `json:"markdown"`
+		Bob      json.RawMessage   `json:"bob"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Matches) != 1 || payload.Markdown == "" || len(payload.Bob) != 0 {
+		t.Fatalf("markdown response lost IR or added Bob: %s", recorder.Body.String())
+	}
+	if !strings.Contains(payload.Markdown, "synthetic grammar") {
+		t.Errorf("omitted includeGrammar should preserve default true, but grammar is missing:\n%s", payload.Markdown)
+	}
+	for _, forbidden := range []string{"synthetic example", "generic:", "confidence", "validation"} {
+		if strings.Contains(payload.Markdown, forbidden) {
+			t.Errorf("user Markdown contains %q:\n%s", forbidden, payload.Markdown)
+		}
+	}
+}
+
+func TestV2LookupPlainAndAutomaticBobFallbackAreAdditive(t *testing.T) {
+	root := t.TempDir()
+	markup := `<article><p>first synthetic paragraph</p><p>second synthetic paragraph</p></article>`
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{{Key: "flimber", HTML: markup}}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	lookup := func(format string) struct {
+		Matches         []json.RawMessage `json:"matches"`
+		Plain           string            `json:"plain"`
+		Bob             json.RawMessage   `json:"bob"`
+		EffectiveFormat string            `json:"effectiveFormat"`
+	} {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(
+			`{"query":"flimber","format":"`+format+`","limit":1}`)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", format, recorder.Code, recorder.Body.String())
+		}
+		var payload struct {
+			Matches         []json.RawMessage `json:"matches"`
+			Plain           string            `json:"plain"`
+			Bob             json.RawMessage   `json:"bob"`
+			EffectiveFormat string            `json:"effectiveFormat"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	explicit := lookup("plain")
+	if explicit.EffectiveFormat != "plain" || explicit.Plain == "" || len(explicit.Matches) != 1 || len(explicit.Bob) != 0 {
+		t.Fatalf("explicit Plain response = %+v", explicit)
+	}
+	if !strings.Contains(explicit.Plain, "first synthetic paragraph\n\nsecond synthetic paragraph") {
+		t.Fatalf("Plain did not preserve paragraph blocks:\n%s", explicit.Plain)
+	}
+
+	fallback := lookup("bob")
+	if fallback.EffectiveFormat != "plain" || fallback.Plain != explicit.Plain || len(fallback.Bob) != 0 {
+		t.Fatalf("Bob fallback response = %+v", fallback)
+	}
+}
+
+// multiRecordMode means the same thing in both presentations. What differs is
+// only how each one can draw it: Bob has clickable related words, Markdown has
+// a thematic break and copyable query text.
+func TestV2LookupMarkdownHonoursMultiRecordMode(t *testing.T) {
+	root := t.TempDir()
+	markup := func(pos, definition string) string {
+		return `<article><h1>flimber</h1><div class="sense"><span class="pos">` + pos +
+			`</span><span class="definition">` + definition + `</span></div></article>`
+	}
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{
+		{Key: "flimber", HTML: markup("noun", "synthetic noun definition")},
+		{Key: "flimber", HTML: markup("verb", "synthetic verb definition")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	markdownFor := func(body string) string {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(body)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		var payload struct {
+			Markdown string `json:"markdown"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload.Markdown
+	}
+
+	combined := markdownFor(`{"query":"flimber","format":"markdown","multiRecordMode":"combined"}`)
+	if !strings.Contains(combined, "synthetic noun definition") || !strings.Contains(combined, "synthetic verb definition") {
+		t.Errorf("combined Markdown dropped a record:\n%s", combined)
+	}
+	if got := strings.Count(combined, "\n---\n"); got != 1 {
+		t.Errorf("two records need exactly one divider, got %d:\n%s", got, combined)
+	}
+
+	separate := markdownFor(`{"query":"flimber","format":"markdown","multiRecordMode":"separate"}`)
+	if !strings.Contains(separate, "synthetic noun definition") || strings.Contains(separate, "synthetic verb definition") {
+		t.Errorf("separate Markdown should show record 1 only:\n%s", separate)
+	}
+	if !strings.Contains(separate, "## Other entries") || !strings.Contains(separate, "- `flimber\u00b2`") {
+		t.Errorf("separate Markdown must offer the sibling record as copyable text:\n%s", separate)
+	}
+	if strings.Contains(separate, "](") {
+		t.Errorf("Bob has no Markdown lookup contract, so nothing may become a link:\n%s", separate)
+	}
+
+	selected := markdownFor(`{"query":"flimber","format":"markdown","multiRecordMode":"separate","recordOrdinal":2}`)
+	if !strings.Contains(selected, "synthetic verb definition") || strings.Contains(selected, "synthetic noun definition") {
+		t.Errorf("record selector 2 should show record 2 only:\n%s", selected)
+	}
+	if !strings.Contains(selected, "- `flimber\u00b9`") {
+		t.Errorf("the selected record should point back at its sibling:\n%s", selected)
+	}
+
+	// An out-of-range selector is a 404 in Markdown exactly as in the Bob card.
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
+		strings.NewReader(`{"query":"flimber","format":"markdown","recordOrdinal":9}`)))
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "recordNotFound") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestV2LookupRejectsUnknownFormat(t *testing.T) {
+	handler := newTestServer(t)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(`{"query":"hello","format":"html"}`)))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "ir, bob, plain, or markdown") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -304,7 +466,7 @@ func TestV2LookupSeparatesAndSelectsVisibleRecordOrdinals(t *testing.T) {
 	}
 	bob = payload["bob"].(map[string]any)
 	parts := bob["parts"].([]any)
-	if bob["word"] != "foo²" || len(parts) != 1 || parts[0].(map[string]any)["part"] != "verb" {
+	if bob["word"] != "foo²" || len(parts) != 1 || parts[0].(map[string]any)["part"] != "v." {
 		t.Fatalf("explicit second bob=%+v", bob)
 	}
 	groups = bob["relatedWordParts"].([]any)

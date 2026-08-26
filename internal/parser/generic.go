@@ -13,8 +13,10 @@ import (
 // publisher spells them differently ("Sense", "dsense", "n-g", "sense-block").
 var senseClassHints = []string{"sense", "meaning", "def-g", "n-g", "trg", "dsense", "defblock", "def-block"}
 
-// definitionClassHints mark the definition text inside a sense.
-var definitionClassHints = []string{"def", "ind", "means", "explain", "d-g"}
+// definitionClassHints mark the definition text inside a sense. "expla" covers
+// both "explain" and "explanation", which are different words with the same
+// job and no common substring longer than five characters.
+var definitionClassHints = []string{"def", "ind", "means", "expla", "d-g"}
 
 // exampleClassHints mark example sentences.
 var exampleClassHints = []string{"example", "exa", "eg", "x-g", "sent", "cit", "quote"}
@@ -22,8 +24,54 @@ var exampleClassHints = []string{"example", "exa", "eg", "x-g", "sent", "cit", "
 // labelClassHints mark register and domain labels.
 var labelClassHints = []string{"label", "register", "lbl", "gram-label"}
 
+// grammarClassHints mark compact argument/usage qualifiers that publishers
+// place beside a POS heading rather than inside each sense. Keep the evidence
+// class-based: bracketed prose by itself is too common to infer grammar from.
+var grammarClassHints = []string{"gram", "grammar"}
+
+// headwordClassHints mark the element holding the entry's own headword. They
+// are matched as whole class tokens, not fragments: "hw" is two characters and
+// would otherwise match half the class names in existence.
+var headwordClassHints = []string{
+	"hw", "headword", "orth", "entry_title", "entry_name", "entryhead",
+	"entry-title", "entry-name", "keyword", "hword", "hwd",
+}
+
+// crossRefClassHints mark a block of pointers to other entries. They are
+// matched as whole class tokens: nearly every word in some dictionaries is an
+// entry:// link, so the link alone proves nothing — what marks a genuine
+// cross-reference is the dictionary saying so.
+var crossRefClassHints = []string{
+	"xref", "xr", "crossref", "crossreference", "cross-ref", "cross-reference",
+	"seealso", "see-also", "see_also",
+}
+
+// maxGenericCrossReferences caps a list that would otherwise grow to the size
+// of the entry in a dictionary that links every word it prints.
+const maxGenericCrossReferences = 20
+
+// maxCrossReferenceBlocks is what separates a "see also" section from a link
+// style. One Japanese-Chinese dictionary classes all 288 of its inline word
+// links `crosslink`; a real cross-reference block occurs once or twice, and
+// detaching hundreds of them would strip the entry of its own text.
+const maxCrossReferenceBlocks = 6
+
 // posClassHints mark part-of-speech labels.
 var posClassHints = []string{"pos", "ps", "gramgrp", "type-gram", "wordclass", "st"}
+
+// classTokenMatches reports whether one of the node's whole class tokens is
+// exactly one of the supplied names.
+func classTokenMatches(node *html.Node, names []string) bool {
+	classes := ClassSet(node)
+	for _, name := range names {
+		for class := range classes {
+			if strings.EqualFold(class, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // classMatchesHint reports whether any of the node's classes, or its id,
 // contains one of the supplied fragments.
@@ -47,27 +95,57 @@ func classMatchesHint(node *html.Node, hints []string) bool {
 // structure can be recovered, the content is reported as an untyped section so
 // the reader still sees it while nothing is mislabelled as a definition.
 func (s *parseState) parsePartsGeneric() {
+	if s.parseGenericSenseBlocks() {
+		return
+	}
+	// Class names failed. Visible numbering is the other evidence dictionaries
+	// agree on, and unlike class vocabulary it survives obfuscated markup and
+	// records with no class attribute at all.
+	if s.parseGenericEnumeratedSenses() {
+		return
+	}
+	// Last: a repeated boundary element, for dictionaries that neither wrap a
+	// sense nor number it.
+	if s.parseGenericGroupedSenses() {
+		return
+	}
+	s.genericFallbackSection()
+}
+
+// parseGenericSenseBlocks recovers senses from class-name evidence, reporting
+// whether it produced any.
+func (s *parseState) parseGenericSenseBlocks() bool {
 	senseNodes := s.genericSenseNodes()
 	if len(senseNodes) == 0 {
-		s.genericFallbackSection()
-		return
+		return false
 	}
 
 	// Group senses under the nearest preceding part-of-speech label.
 	type group struct {
-		pos    string
-		senses []entryir.Sense
+		pos     string
+		grammar string
+		senses  []entryir.Sense
 	}
 	var groups []group
 	current := -1
 
+	// A sense located by its class name loses its examples the same way a
+	// numbered one does when the dictionary keeps them as siblings rather than
+	// children — so the same boundary rule applies, whatever the evidence that
+	// found the sense in the first place.
+	runs := s.siblingRuns(senseNodes)
+
 	for _, node := range senseNodes {
 		pos := s.genericPOSFor(node)
-		if current < 0 || (pos != "" && pos != groups[current].pos) {
-			groups = append(groups, group{pos: pos})
+		grammar := s.genericGrammarFor(node)
+		pos = posWithGrammar(pos, grammar)
+		if current < 0 || (pos != "" && pos != groups[current].pos) ||
+			(grammar != "" && grammar != groups[current].grammar) {
+			groups = append(groups, group{pos: pos, grammar: grammar})
 			current = len(groups) - 1
 		}
 		sense := s.genericSense(node)
+		s.appendSiblingExamples(&sense, runs[node])
 		if sense.Definition == "" && len(sense.Examples) == 0 {
 			continue
 		}
@@ -80,13 +158,67 @@ func (s *parseState) parsePartsGeneric() {
 		}
 		s.appendPart(entryir.Part{
 			POS:        item.pos,
+			Grammar:    item.grammar,
 			Senses:     item.senses,
 			Confidence: confidenceForPOS(item.pos) - 0.15,
 			Rule:       "generic:senseHints",
 		})
 	}
-	if len(s.entry.Parts) == 0 {
-		s.genericFallbackSection()
+	return len(s.entry.Parts) > 0
+}
+
+// genericGrammarFor searches the same local/preceding scope used for POS, but
+// only accepts nodes whose class explicitly identifies grammatical material.
+// This covers templates such as Merriam-Webster's `.labels .gram` without
+// treating arbitrary bracketed notes as grammar.
+func (s *parseState) genericGrammarFor(node *html.Node) string {
+	if grammar := scanForGrammar(node); grammar != "" {
+		return grammar
+	}
+	for current := node; current != nil; current = current.Parent {
+		for sibling := current.PrevSibling; sibling != nil; sibling = sibling.PrevSibling {
+			if sibling.Type != html.ElementNode {
+				continue
+			}
+			if grammar := scanForGrammar(sibling); grammar != "" {
+				return grammar
+			}
+		}
+	}
+	return ""
+}
+
+func scanForGrammar(node *html.Node) string {
+	found := ""
+	Walk(node, func(child *html.Node) bool {
+		if found != "" {
+			return false
+		}
+		if !classMatchesHint(child, grammarClassHints) {
+			return true
+		}
+		text := Normalize(Text(child, TextOptions{SkipHidden: true}))
+		if text != "" && len([]rune(text)) <= 80 && CanonicalPOS(text) == "" {
+			found = text
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func posWithGrammar(pos, grammar string) string {
+	if pos != "verb" {
+		return pos
+	}
+	normalized := strings.ToLower(Normalize(grammar))
+	switch {
+	case strings.Contains(normalized, "+ object"), strings.Contains(normalized, "transitive"):
+		return "transitive verb"
+	case strings.Contains(normalized, "- object"), strings.Contains(normalized, "intransitive"):
+		return "intransitive verb"
+	default:
+		return pos
 	}
 }
 
@@ -98,6 +230,9 @@ func (s *parseState) genericSenseNodes() []*html.Node {
 			return true
 		}
 		if !classMatchesHint(node, senseClassHints) {
+			return true
+		}
+		if s.textIsAllLinks(node) {
 			return true
 		}
 		// Ignore wrappers that merely contain the real sense blocks.
@@ -129,6 +264,25 @@ func containsSenseChild(node *html.Node) bool {
 	return nested
 }
 
+// looksLikePOSLabel reports whether a node is a plausible part-of-speech
+// label, from its class name or from being a leaf that holds nothing else.
+//
+// The class-name half only works for dictionaries that name their classes
+// meaningfully. The leaf half is what covers the rest: an element whose entire
+// content is "noun", "vt." or "形容词" is a label, whatever it is called —
+// the same evidence-over-convention argument that lets IPA be detected from
+// its characters.
+func looksLikePOSLabel(node *html.Node) bool {
+	if classMatchesHint(node, posClassHints) {
+		return true
+	}
+	if !isTextLeaf(node) {
+		return false
+	}
+	text := Normalize(Text(node, TextOptions{SkipHidden: true}))
+	return text != "" && len([]rune(text)) <= 24
+}
+
 // genericPOSFor searches a sense block and the elements preceding it for a
 // recognisable part-of-speech label.
 func (s *parseState) genericPOSFor(node *html.Node) string {
@@ -137,7 +291,7 @@ func (s *parseState) genericPOSFor(node *html.Node) string {
 		if inside != "" {
 			return false
 		}
-		if classMatchesHint(child, posClassHints) {
+		if looksLikePOSLabel(child) {
 			if pos := CanonicalPOS(Text(child, TextOptions{SkipHidden: true})); pos != "" {
 				inside = pos
 				return false
@@ -170,7 +324,7 @@ func (s *parseState) scanForPOS(node *html.Node) string {
 		if found != "" {
 			return false
 		}
-		if !classMatchesHint(child, posClassHints) {
+		if !looksLikePOSLabel(child) {
 			return true
 		}
 		if pos := CanonicalPOS(Text(child, TextOptions{SkipHidden: true})); pos != "" {
@@ -191,6 +345,11 @@ func (s *parseState) scanForPOS(node *html.Node) string {
 func (s *parseState) genericSense(node *html.Node) entryir.Sense {
 	sense := entryir.Sense{Confidence: 0.65, Rule: "generic:senseHints"}
 
+	// A labelled nested list keeps the label's semantic role. Unlabelled lists
+	// remain examples for compatibility, but a publisher explicitly calling a
+	// list collocations, synonyms, usage, and so on outranks that fallback.
+	s.classifyNestedLists(node)
+
 	// Examples first, then detached, so the definition is not polluted by them.
 	var exampleNodes []*html.Node
 	Walk(node, func(child *html.Node) bool {
@@ -203,6 +362,7 @@ func (s *parseState) genericSense(node *html.Node) entryir.Sense {
 		}
 		return true
 	})
+	exampleNodes = append(exampleNodes, listItemExamples(node)...)
 	for _, exNode := range exampleNodes {
 		text, translation := s.splitTranslation(exNode)
 		if text != "" && len(sense.Examples) < s.opts.MaxExamplesPerSense {
@@ -262,6 +422,114 @@ func (s *parseState) genericSense(node *html.Node) entryir.Sense {
 	return sense
 }
 
+func (s *parseState) classifyNestedLists(node *html.Node) {
+	for _, list := range QueryAll(node, ParseSelector("ul, ol")) {
+		role := semanticRoleForList(list)
+		if role == "" || role == LabelExamples {
+			continue
+		}
+		var values []string
+		for _, item := range QueryAll(list, ParseSelector("li")) {
+			if text := Normalize(s.textOf(item)); text != "" {
+				values = append(values, text)
+			}
+		}
+		if len(values) == 0 {
+			continue
+		}
+		s.storeSemanticValues(role, values)
+		if list.Parent != nil {
+			list.Parent.RemoveChild(list)
+		}
+	}
+}
+
+func semanticRoleForList(list *html.Node) SemanticLabel {
+	var evidence []string
+	for _, node := range append([]*html.Node{list}, Ancestors(list)...) {
+		if node == nil {
+			continue
+		}
+		evidence = append(evidence, Attr(node, "class"), Attr(node, "id"), Attr(node, "title"), Attr(node, "aria-label"))
+		for sibling := list.PrevSibling; sibling != nil; sibling = sibling.PrevSibling {
+			if sibling.Type != html.ElementNode {
+				continue
+			}
+			if text := Normalize(Text(sibling, TextOptions{SkipHidden: true})); len([]rune(text)) <= 60 {
+				evidence = append(evidence, text)
+			}
+			break
+		}
+		if len(evidence) >= 12 {
+			break
+		}
+	}
+	for _, value := range evidence {
+		for _, token := range append([]string{value}, strings.Fields(value)...) {
+			if role := ClassifySemanticLabel(token); role != "" {
+				return role
+			}
+		}
+	}
+	return ""
+}
+
+func (s *parseState) storeSemanticValues(role SemanticLabel, values []string) {
+	joined := strings.Join(values, "; ")
+	switch role {
+	case LabelCollocations:
+		s.entry.Collocations = append(s.entry.Collocations, values...)
+	case LabelSynonyms:
+		s.entry.Synonyms = append(s.entry.Synonyms, values...)
+	case LabelAntonyms:
+		s.entry.Antonyms = append(s.entry.Antonyms, values...)
+	case LabelCrossReference:
+		s.entry.CrossReferences = append(s.entry.CrossReferences, values...)
+	case LabelRelated:
+		s.entry.Related = append(s.entry.Related, values...)
+	case LabelUsage:
+		s.entry.UsageNotes = append(s.entry.UsageNotes, entryir.Section{Title: "Usage", Body: joined})
+	case LabelGrammar:
+		s.entry.GrammarNotes = append(s.entry.GrammarNotes, entryir.Section{Title: "Grammar", Body: joined})
+	case LabelPhrase, LabelIdiom, LabelPhrasalVerb, LabelDerivative:
+		for _, value := range values {
+			lemma, body := splitFirstClause(value)
+			switch role {
+			case LabelPhrase:
+				s.entry.Phrases = appendPhrase(s.entry.Phrases, lemma, body)
+			case LabelIdiom:
+				s.entry.Idioms = appendPhrase(s.entry.Idioms, lemma, body)
+			case LabelPhrasalVerb:
+				s.entry.PhrasalVerbs = appendPhrase(s.entry.PhrasalVerbs, lemma, body)
+			case LabelDerivative:
+				s.entry.Derivatives = appendPhrase(s.entry.Derivatives, lemma, body)
+			}
+		}
+	default:
+		s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: "Note", Body: joined})
+	}
+}
+
+// listItemExamples treats a list nested inside a sense as that sense's
+// examples or citations.
+//
+// A sense that contains a <ul> or <ol> is not describing its meaning in a
+// bulleted list; every dictionary in the corpus that nests one uses it for
+// citations, corpus sentences or sub-items. Lifting them out is what stops a
+// sense definition from swallowing the rest of the record — the single most
+// common way a structured parse turns into an unreadable one.
+func listItemExamples(node *html.Node) []*html.Node {
+	var out []*html.Node
+	for _, list := range QueryAll(node, ParseSelector("ul, ol")) {
+		items := QueryAll(list, ParseSelector("li"))
+		if len(items) == 0 {
+			continue
+		}
+		out = append(out, items...)
+	}
+	return out
+}
+
 // leadingNumber splits "1. to leave someone" into "1" and the rest.
 func leadingNumber(text string) (string, string) {
 	trimmed := strings.TrimSpace(text)
@@ -282,18 +550,76 @@ func leadingNumber(text string) (string, string) {
 	return trimmed[:digits], rest
 }
 
+// FallbackSectionTitle labels the untyped section the generic parser emits
+// when no structure could be recovered. Diagnostics identify a fallback parse
+// by this title rather than by guessing from sense counts.
+const FallbackSectionTitle = "Entry"
+
 // genericFallbackSection preserves an entry whose structure could not be
 // recovered, labelled honestly rather than presented as parsed definitions.
 func (s *parseState) genericFallbackSection() {
-	text := Normalize(Text(s.doc, TextOptions{SkipHidden: true}))
-	if text == "" {
+	if s.genericSectionFrom(s.doc) {
+		s.note("no structure recognised; emitted raw entry text as a section")
+	}
+}
+
+// fallbackSectionLimit is how much unstructured text is worth showing. Past
+// this, a popup is not a reading environment.
+const fallbackSectionLimit = 4000
+
+// genericSectionFrom emits a node's text as untyped content.
+func (s *parseState) genericSectionFrom(node *html.Node) bool {
+	text := Normalize(Text(node, TextOptions{SkipHidden: true}))
+	blocks := s.richBlocks(node)
+	if text == "" && len(blocks) == 0 {
+		return false
+	}
+	if runes := []rune(text); len(runes) > fallbackSectionLimit {
+		text = string(runes[:fallbackSectionLimit]) + " …"
+	}
+	s.entry.Sections = append(s.entry.Sections, entryir.Section{
+		Title:  FallbackSectionTitle,
+		Body:   text,
+		Blocks: blocks,
+	})
+	return true
+}
+
+// parseGenericCrossReferences lifts "see also" pointers out of an entry with
+// no profile, and detaches them so they are not read as part of a definition.
+func (s *parseState) parseGenericCrossReferences() {
+	if s.profile != nil {
 		return
 	}
-	const limit = 4000
-	if len([]rune(text)) > limit {
-		runes := []rune(text)
-		text = string(runes[:limit]) + " …"
+	var found []*html.Node
+	Walk(s.doc, func(node *html.Node) bool {
+		if node == s.doc {
+			return true
+		}
+		// An <a> is a link, not a section. The block that holds the links is
+		// what names itself a cross-reference.
+		if node.Data == "a" || !classTokenMatches(node, crossRefClassHints) {
+			return true
+		}
+		found = append(found, node)
+		return false
+	})
+	if len(found) > maxCrossReferenceBlocks {
+		return
 	}
-	s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: "Entry", Body: text})
-	s.note("no structure recognised; emitted raw entry text as a section")
+	for _, node := range found {
+		text := stripLeadingMarker(s.textOf(node))
+		for _, item := range splitList(text) {
+			if len([]rune(item)) > 60 || len(s.entry.CrossReferences) >= maxGenericCrossReferences {
+				continue
+			}
+			s.entry.CrossReferences = append(s.entry.CrossReferences, item)
+		}
+		if node.Parent != nil {
+			node.Parent.RemoveChild(node)
+		}
+	}
+	if len(found) > 0 {
+		s.note("generic: %d cross-reference blocks", len(found))
+	}
 }

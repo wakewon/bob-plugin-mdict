@@ -7,17 +7,21 @@ Bob
  │  selected text
  ▼
 plugin/main.js                 thin: selector → base query + recordOrdinal
- │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"}
+ │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"|"plain"|"markdown"}
  ▼
 bob-mdict  (127.0.0.1 only)
  │
  ├── registry      recursive discovery, stable IDs, per-dictionary health
  ├── mdict         MDX/MDD access, duplicate-aware lookup, redirects, resources
  ├── profiles      declarative per-dictionary selectors, fingerprint-matched
+ ├── diagnose      representative sampling, profile evidence, structure reports
  ├── parser        one resolved MDX record + profile overrides → one Entry IR
  ├── entryir       EntrySet aggregate preserving semantic record boundaries
  ├── presentation  cached EntrySet → combined or selected record
  ├── bobadapter    selected view → one Bob toDict (+ sibling navigation)
+ ├── textrender    EntrySet → user Plain Text (sibling of bobadapter)
+ ├── mdrender      EntrySet → user/diagnostic Markdown (sibling of bobadapter)
+ ├── validate      development only: real backend over real records, ranked
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
 ```
 
@@ -45,6 +49,86 @@ changes reaching back into the MDX layer. It is also why the sense hierarchy
 survives: the IR keeps source numbers and nested subsenses, while the adapter
 generates display numbers afresh inside each POS at the very last step.
 
+Bob has no nested Part schema, so `bobadapter` recursively emits every sense
+and subsense as its own top-level Part, carrying compact POS and moving Part/
+Sense grammar into the meaning text. Plain Text and Markdown retain the IR's
+real nesting. A requested Bob card uses Plain Text only when the selected view
+contains no typed structure or navigation and consists solely of free-form
+`Entry`/headword sections or weak untyped generic marker blocks; the service reports this additive API-v2 decision as
+`effectiveFormat:"plain"`.
+
+### Three adapters, no conversion path
+
+`internal/textrender` and `internal/mdrender` render the same EntrySet as Plain
+Text and Markdown. They are *siblings* of the Bob adapter, not layers on top of
+it:
+
+```text
+EntrySet → bobadapter → Bob toDict
+EntrySet → textrender → Plain Text
+EntrySet → mdrender   → Markdown
+```
+
+None can see another adapter, and none reads entry HTML. A second semantic path
+— MDX HTML straight to Markdown — would drift from the parser the moment either
+changed, and would have to relearn everything the parser already knows.
+
+Diagnostic rendering stays deterministic and may include provenance while
+omitting per-process resource URLs. User rendering contains only dictionary
+content and enables resolved loopback audio/image links where the format can
+express them. The plugin requests Plain or Markdown and returns the complete
+document as one `toParagraphs` element — Bob's documented array-of-strings
+shape. It never reparses EntrySet, Markdown or dictionary HTML.
+
+Bob does not currently document Markdown rendering of `toParagraphs`. What this
+path provides is a standards-compliant Markdown document from the canonical IR;
+whether Bob eventually draws it as formatted text is Bob's decision, and this
+project does not depend on an undocumented API to claim that it will.
+
+#### Record boundaries in each presentation
+
+`multiRecordMode` is one concept — show one record, or show them all — expressed
+by each surface with its own capabilities:
+
+| | Bob `toDict` | Plain Text | Markdown |
+|---|---|---|---|
+| combined | one card, records labelled `¹ ² ³` | `Record n of total` plus a textual separator | `Record n of total` headings, divided by `---` |
+| separate | one record plus an `Other entries` related-word group | one record plus copyable selectors | one record plus copyable selectors |
+| navigation | Bob's own clickable related words | labelled ordinary text | copyable query text in a code span |
+
+The divider matters in Markdown for the same reason ordinal labels matter in
+Bob: once several records carry headings of their own, a heading is no longer a
+boundary. A thematic break is the strongest separation Markdown has.
+
+#### Navigation targets
+
+Bob publishes a lookup action for related words in `toDict`. It publishes none
+for Markdown content. Rather than invent a private URL scheme Bob would not
+honour, or emit an external link that would take the reader out of the
+dictionary, `mdrender` writes navigation targets as copyable query text inside a
+code span — sibling record selectors, cross-references, and related entries.
+
+This is a presentation decision and lives entirely in `mdrender`. The target is
+already a typed field in the IR, so a Bob-native Markdown lookup mechanism would
+replace one function here and would touch neither the parser nor the IR nor the
+API version. Semantic vocabulary lists — synonyms, antonyms, collocations, word
+family — are deliberately *not* code-spanned, so a code span keeps meaning "this
+is somewhere you can go".
+
+Free-form sections may carry a deliberately small ordered rich vocabulary:
+paragraph text, explicit headings, list items, resolved MDD images and
+conventional tables. This preserves document boundaries and positions without
+turning the Entry IR into a browser DOM.
+
+A repeated illustration is dropped only when the two occurrences are adjacent,
+which is what a publisher's two switchable language views of one figure look
+like once CSS is unavailable. Two occurrences with content between them are both
+kept: a visible duplicate is a much smaller error than a deleted illustration.
+
+A table records its own `<th>` header row separately from its body rows when the
+source declares one. Markdown has exactly one header row and no way to omit it,
+so a table that declares none keeps its first row in that position.
+
 ## Parsing: generic first, profiles as reinforcement
 
 Every dictionary invents its own HTML. Four real dictionaries produced four
@@ -66,9 +150,43 @@ subset, compiled once. It raises confidence and fixes structures the heuristics
 would miss — but it never removes the generic fallback, so an unknown dictionary
 is still usable on the day it is installed.
 
-A dictionary is fingerprinted once, by probing a few common words and testing
-structural selectors against the result. Titles are a weak hint only; repacks
-rename themselves constantly.
+A dictionary is fingerprinted once at rescan, from a handful of representative
+records, by testing structural selectors against them. Titles are a weak hint
+only; repacks rename themselves constantly.
+
+### Sense evidence, in order
+
+The generic parser tries four kinds of evidence and stops at the first that
+produces something, because they are in descending order of how much the
+dictionary is telling you:
+
+1. **Class names.** `sense`, `def-g`, `n-g`, `trg` and their relatives. Only
+   works when the publisher named its classes for humans.
+2. **Visible numbering.** `1.`, `①`, `(a)`, `II` — either at the start of a
+   block's text or in an element of its own. A survey of a hundred real
+   dictionaries found this to be the one convention that survives everything:
+   several titles ship machine-generated class names, sixteen carry no class
+   attribute at all, and no class vocabulary is shared by more than a handful
+   of unrelated publishers. Numbering is in all of them.
+3. **`<ol>` and `<dl>`.** HTML already says what an ordered list and a
+   definition list mean.
+4. **A repeated boundary element.** A definition-classed span that occurs once
+   per meaning, with the examples that follow it belonging to it.
+
+Numbering is only believed when it forms a sequence: at least two markers of
+one kind, ascending, starting at the beginning, restarting only where a new
+part of speech would restart it, and yielding pieces small enough to be
+meanings rather than whole articles. A lone "1." is far more often a homograph
+superscript than a sense.
+
+### Bilingual entries without a profile
+
+Which half of a bilingual entry is the gloss follows from the headword: in a
+dictionary keyed by English words the CJK text is the translation, and in one
+keyed by Chinese the English is. Nothing in the parser needs to know which
+languages are involved — only that two scripts are present and which of them
+the entry is keyed by. A profile's `translation` selector, when there is one,
+always wins.
 
 ### What the parser refuses to do
 
@@ -88,7 +206,11 @@ rename themselves constantly.
 The single worst failure mode in a dictionary plugin is attaching one recording
 to both the UK and US buttons. Region is therefore decided per candidate, from
 all the evidence around it — class names, ids, titles, hrefs, the audio
-filename, and the neighbouring text. `IPARegion` and `AudioRegion` are separate
+filename, and the neighbouring text — but a block that prints its own `BrE` or
+`NAmE` label is stating the region outright, and a neighbour's text is read only
+when the block says nothing about itself. Borrowing it unconditionally is how
+the American half of a pronunciation pair inherits the British label printed
+just above it. `IPARegion` and `AudioRegion` are separate
 IR facts, so a shared transcription can coexist with two regional recordings
 and an unlabelled clip never inherits the IPA's region. Profiles can state the
 region outright, and a rule may declare that it contributes a transcription but
@@ -104,6 +226,86 @@ schema limitation, not a dictionary or parser fact.
 Audio is offered only when the reference actually resolves in the user's MDD,
 and only when a Speex asset can actually be decoded on this machine. There is
 no synthesis path anywhere in the codebase.
+
+## Diagnostics
+
+`--debug-lookup` answers a question about one word. `internal/diagnose` answers
+the question that comes before it: is this dictionary understood at all?
+
+It picks a handful of representative records by **striding the key index and
+scoring the results structurally** — record size, distinct tags, distinct class
+vocabulary, repeated sibling structures, cross-references, pronunciation
+references. Deterministic, so before/after comparisons mean something, and
+language-independent, because a probe list of English words fingerprints only
+the languages it was written for. The service uses the same sampling to choose
+a parser at rescan, so there is one code path rather than two that drift.
+
+The reports carry tag names, class names, attribute names, reference schemes,
+counts, rates and warning codes — never dictionary text. That is what makes
+them safe to keep, quote and check into a report.
+
+Coverage numbers are **not accuracy**. Nothing has been compared against a
+human reading of the entry; a field being present says the parser produced
+something of that kind, not that what it produced is right. A small set of
+conservative signals (`rich-html-no-definitions`, `oversized-definition`,
+`implausible-sense-count`, `bilingual-without-translations`, …) marks
+dictionaries worth a human look. Every one of them has a legitimate
+explanation for some dictionary; they are observations, not verdicts.
+
+`--parser generic|<id>|auto` forces a parser for comparison runs. It is a
+debugging aid with no persisted state: the product always resolves a parser
+from the current MDX and the current rules, which is what lets an existing
+dictionary pick up a future parser improvement without anyone re-recording a
+mapping for it.
+
+## Validation
+
+`internal/validate` answers the question after *that*: structure the parser
+produced may still be a misreading, and structure it produced correctly may
+still be lost on the way to a client.
+
+It runs the shipping implementation end to end — the same sampling as profile
+detection, the same `service.Lookup`, the same Bob adapter — over records the
+dictionaries really contain, and it measures three things the coverage numbers
+cannot see:
+
+- **Content retention.** How much of the record's text the parse accounts for,
+  compared token for token. A structured parse that keeps a twentieth of the
+  record has found a table of contents, not a sense list.
+- **Duplication.** How much output text exists beyond what the record contains.
+  The same passage emitted under two fields shows up here and nowhere else.
+- **Largest-field dominance.** Whether one extracted field is most of the
+  record, which is what whole-record swallowing looks like from outside.
+
+Retention is measured against the record *as the profile scopes it*: a `root`
+that narrows a record to the edition being presented, and an `ignore` list that
+names speaker icons as chrome, are deliberate decisions, not content the parser
+dropped.
+
+Alongside the metrics it checks invariants between the layers — the EntrySet is
+keyed by the key the MDX matched, visible record ordinals are consecutive,
+duplicate records stay distinguishable, the Bob word derives from the lookup key
+rather than from a parser guess, sense order survives, every semantic field
+survives into both presentations, and no token appears in the Markdown that is
+absent from the IR. That last one is what makes "the Markdown is derived from
+the IR" a checked fact rather than an intention.
+
+Nothing in the served request path imports the package, and the daemon never
+starts it.
+
+### Priority, because a corpus is not a product
+
+A hundred dictionaries are not equally important to this project. Validation
+weights its sampling and its review queue by what the dictionaries are:
+Chinese on either side first, English monolingual second, English paired with
+another language third, other lexicons fourth, and article-style reference
+works last. The classification is made from scripts in the sampled records —
+Han characters with no kana and no hangul are Chinese, wherever the title
+claims otherwise — corroborated but never decided by the title.
+
+That ordering only affects how much attention a dictionary gets. No parsing
+behaviour depends on it, which is why a rough classification is acceptable: the
+cost of getting one wrong is that a person reads it in the wrong order.
 
 ## Bob result boundary
 

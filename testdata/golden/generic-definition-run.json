@@ -1,0 +1,40 @@
+{
+  "headword": "ゲルト",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "虚构的长度单位。",
+          "examples": [
+            {
+              "text": "ゲルトを量る。 量一量格尔特。"
+            }
+          ],
+          "confidence": 0.75,
+          "rule": "generic:definitionRun"
+        },
+        {
+          "number": "2",
+          "definition": "引申指微不足道的数量。",
+          "examples": [
+            {
+              "text": "ゲルトほどの差。 微乎其微的差别。"
+            }
+          ],
+          "confidence": 0.75,
+          "rule": "generic:definitionRun"
+        }
+      ],
+      "confidence": 0.35,
+      "rule": "generic:definitionRun"
+    }
+  ]
+}

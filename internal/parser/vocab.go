@@ -2,6 +2,7 @@ package parser
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -91,6 +92,10 @@ const (
 	LabelDerivative     SemanticLabel = "derivative"
 	LabelSynonyms       SemanticLabel = "synonyms"
 	LabelAntonyms       SemanticLabel = "antonyms"
+	LabelExamples       SemanticLabel = "examples"
+	LabelCollocations   SemanticLabel = "collocations"
+	LabelUsage          SemanticLabel = "usage"
+	LabelGrammar        SemanticLabel = "grammar"
 )
 
 var semanticLabels = map[string]SemanticLabel{
@@ -108,6 +113,30 @@ var semanticLabels = map[string]SemanticLabel{
 	"synonym": LabelSynonyms, "synonyms": LabelSynonyms,
 	"synonymantonym": LabelSynonyms, "synonymsantonyms": LabelSynonyms,
 	"antonym": LabelAntonyms, "antonyms": LabelAntonyms,
+	"opposite": LabelAntonyms, "opposites": LabelAntonyms,
+	"example": LabelExamples, "examples": LabelExamples, "examplesentences": LabelExamples,
+	"collocation": LabelCollocations, "collocations": LabelCollocations, "wordcombinations": LabelCollocations,
+	"usage": LabelUsage, "usagenote": LabelUsage, "usagenotes": LabelUsage, "用法": LabelUsage,
+	"grammar": LabelGrammar, "grammarnote": LabelGrammar, "grammarnotes": LabelGrammar, "语法": LabelGrammar,
+}
+
+// CanonicalPOSVocabulary returns every canonical label this parser can emit.
+// Presentation adapters use it in exhaustive tests so adding a parser POS
+// cannot silently leave a user surface with an unreviewed long label.
+func CanonicalPOSVocabulary() []string {
+	seen := make(map[string]struct{}, len(posCanonical)+len(codePrefixes))
+	for _, value := range posCanonical {
+		seen[value] = struct{}{}
+	}
+	for _, value := range codePrefixes {
+		seen[value] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for value := range seen {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var semanticLabelCleanRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
@@ -115,7 +144,9 @@ var semanticLabelCleanRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 // ClassifySemanticLabel returns a section role for a non-POS heading.
 func ClassifySemanticLabel(raw string) SemanticLabel {
 	key := strings.ToLower(semanticLabelCleanRe.ReplaceAllString(Normalize(raw), ""))
-	key = strings.TrimSuffix(key, "section")
+	for _, suffix := range []string{"section", "list", "block", "panel", "box", "group"} {
+		key = strings.TrimSuffix(key, suffix)
+	}
 	return semanticLabels[key]
 }
 
@@ -182,11 +213,28 @@ func CanonicalForm(raw string) string {
 // ipaRe detects IPA by the presence of characters that essentially only occur
 // in phonetic transcription. Relying on character evidence rather than a class
 // name is what lets unknown dictionaries still produce pronunciations.
-var ipaRe = regexp.MustCompile(`[ˈˌːɪʊəɜɔɒæʌθðʃʒŋɑɐɛɡʁʔɾɹçɲʎœøyɯɤʉɨʲʰ]`)
+// strongIPARe matches characters that occur in phonetic transcription and
+// essentially nowhere else, so one of them is evidence on its own.
+var strongIPARe = regexp.MustCompile(`[ˈˌːɪʊəɜɔɒʌθðʃʒŋɑɐɛɡʁʔɾɹɲʎɯɤʉɨʲʰ]`)
+
+// weakIPARe matches characters the IPA shares with ordinary orthography.
+//
+// They cannot decide on their own. "y" is the close front rounded vowel and
+// also the twenty-fifth letter of the English alphabet, which was enough to
+// make the generic parser read "necessary" as a transcription — and with it
+// every heading, label and section title in the corpus that happens to end in
+// one. "ç" and "æ" are the same story in French and Danish.
+var weakIPARe = regexp.MustCompile(`[yæœøç]`)
+
+// delimitedRe matches a transcription written between the slashes or brackets
+// dictionaries use for one. That delimiting is itself a claim, and it is what
+// lets a transcription made only of ordinary letters still be recognised.
+var delimitedRe = regexp.MustCompile(`^[/\[]\s*\S.*\S\s*[/\]]$`)
 
 // LooksLikeIPA reports whether text is plausibly a phonetic transcription.
 func LooksLikeIPA(raw string) bool {
-	text := strings.Trim(Normalize(raw), "/[]() ")
+	normalized := Normalize(raw)
+	text := strings.Trim(normalized, "/[]() ")
 	if text == "" {
 		return false
 	}
@@ -194,7 +242,8 @@ func LooksLikeIPA(raw string) bool {
 	if len(runes) > 60 {
 		return false
 	}
-	if !ipaRe.MatchString(text) {
+	if !strongIPARe.MatchString(text) &&
+		!(delimitedRe.MatchString(normalized) && weakIPARe.MatchString(text)) {
 		return false
 	}
 	// Reject prose that merely contains one IPA-ish character.
@@ -241,6 +290,21 @@ func compileMarkers(markers []string) []*regexp.Regexp {
 		out = append(out, wordBoundaryMarker(marker))
 	}
 	return out
+}
+
+// hasRegionMarker reports whether text carries any variety marker at all.
+func hasRegionMarker(text string) bool {
+	for _, re := range ukMarkerRes {
+		if re.MatchString(text) {
+			return true
+		}
+	}
+	for _, re := range usMarkerRes {
+		if re.MatchString(text) {
+			return true
+		}
+	}
+	return false
 }
 
 // DetectRegion classifies a pronunciation from all the evidence around it:

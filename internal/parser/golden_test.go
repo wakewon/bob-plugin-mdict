@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -42,9 +43,26 @@ func profileForFixture(name string) *parser.Profile {
 		return profiles.ByID("collins-cobuild-overhaul")
 	case strings.HasPrefix(name, "profile-ode"):
 		return profiles.ByID("ode-living-online")
+	case strings.HasPrefix(name, "profile-oxford-xml"):
+		return profiles.ByID("oxford-xml-learner")
 	default:
 		return nil
 	}
+}
+
+// lookupKeyRe reads the MDX key a fixture stands for.
+//
+// The service always parses a record under the key it was found by, and the
+// parser uses that key to sanity-check a headword it recovers from the markup.
+// A fixture therefore has to state its key too, or it would be testing the
+// parser under conditions that never occur.
+var lookupKeyRe = regexp.MustCompile(`(?i)<meta\s+name="lookup-key"\s+content="([^"]*)"`)
+
+func lookupKeyOf(raw []byte, fallback string) string {
+	if match := lookupKeyRe.FindSubmatch(raw); match != nil {
+		return string(match[1])
+	}
+	return fallback
 }
 
 func TestGolden(t *testing.T) {
@@ -64,7 +82,7 @@ func TestGolden(t *testing.T) {
 				t.Fatal(err)
 			}
 			entry, err := parser.Parse(raw, parser.Options{
-				Headword:            name,
+				Headword:            lookupKeyOf(raw, name),
 				Profile:             profileForFixture(name),
 				Audio:               fakeAudio{},
 				MaxExamplesPerSense: 4,

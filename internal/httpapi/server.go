@@ -14,7 +14,9 @@ import (
 
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
+	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
+	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/version"
 )
 
@@ -194,14 +196,17 @@ type LookupRequest struct {
 	// MaxExamples caps examples per sense.
 	MaxExamples int  `json:"maxExamples,omitempty"`
 	Debug       bool `json:"debug,omitempty"`
-	// Format is "ir" (default) or "bob". "bob" adds a rendered toDict so the
-	// plugin can pass it straight to Bob without interpreting the IR.
+	// Format is "ir" (default), "bob", "plain", or "markdown". Presentation formats add
+	// a rendered sibling field while preserving the canonical IR matches.
 	Format string `json:"format,omitempty"`
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
 	IncludeExtras   *bool `json:"includeExtras,omitempty"`
-	// MultiRecordMode controls Bob presentation only: "separate" selects one
-	// semantic record with sibling navigation; "combined" renders all records.
+	// IncludeGrammar lets the user hide detailed grammatical qualifiers from presentation.
+	IncludeGrammar *bool `json:"includeGrammar,omitempty"`
+	// MultiRecordMode controls presentation only, in both the Bob card and
+	// Plain/Markdown: "separate" selects one semantic record and offers sibling
+	// navigation; "combined" renders every record with explicit boundaries.
 	MultiRecordMode string `json:"multiRecordMode,omitempty"`
 	// RecordOrdinal is one-based over the visible, deduplicated EntrySet.
 	RecordOrdinal int `json:"recordOrdinal,omitempty"`
@@ -219,6 +224,14 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RecordOrdinal < 0 {
 		writeError(w, http.StatusBadRequest, "badRequest", "recordOrdinal must be zero or a positive integer", "")
+		return
+	}
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	if format == "" {
+		format = "ir"
+	}
+	if format != "ir" && format != "bob" && format != "plain" && format != "markdown" {
+		writeError(w, http.StatusBadRequest, "badRequest", "format must be ir, bob, plain, or markdown", "")
 		return
 	}
 	if req.MultiRecordMode != "" &&
@@ -243,21 +256,53 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	if req.IncludeExtras != nil {
 		bobOpts.IncludeExtras = *req.IncludeExtras
 	}
+	if req.IncludeGrammar != nil {
+		bobOpts.IncludeGrammar = *req.IncludeGrammar
+	}
 	if strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordCombined)) {
 		bobOpts.MultiRecordMode = bobadapter.MultiRecordCombined
 	} else {
 		bobOpts.MultiRecordMode = bobadapter.MultiRecordSeparate
 	}
 	bobOpts.RecordOrdinal = req.RecordOrdinal
+	// Markdown reads the same request fields as the Bob card. The two
+	// presentations differ in what they can draw, never in what the user asked
+	// for, so multiRecordMode is mapped rather than reinterpreted.
+	markdownOpts := mdrender.UserOptions()
+	markdownOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
+	markdownOpts.IncludeExamples = bobOpts.IncludeExamples
+	markdownOpts.IncludeExtras = bobOpts.IncludeExtras
+	markdownOpts.IncludeGrammar = bobOpts.IncludeGrammar
+	markdownOpts.RecordOrdinal = req.RecordOrdinal
+	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		markdownOpts.MultiRecordMode = mdrender.MultiRecordCombined
+	} else {
+		markdownOpts.MultiRecordMode = mdrender.MultiRecordSeparate
+	}
+	plainOpts := textrender.UserOptions()
+	plainOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
+	plainOpts.IncludeExamples = bobOpts.IncludeExamples
+	plainOpts.IncludeExtras = bobOpts.IncludeExtras
+	plainOpts.IncludeGrammar = bobOpts.IncludeGrammar
+	plainOpts.RecordOrdinal = req.RecordOrdinal
+	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		plainOpts.MultiRecordMode = textrender.MultiRecordCombined
+	} else {
+		plainOpts.MultiRecordMode = textrender.MultiRecordSeparate
+	}
 
 	result, err := s.svc.Lookup(req.Query, service.LookupOptions{
-		DictionaryIDs: req.Dictionaries,
-		Mode:          mode,
-		Limit:         req.Limit,
-		MaxExamples:   req.MaxExamples,
-		Debug:         req.Debug,
-		RenderBob:     strings.EqualFold(req.Format, "bob"),
-		BobOptions:    bobOpts,
+		DictionaryIDs:   req.Dictionaries,
+		Mode:            mode,
+		Limit:           req.Limit,
+		MaxExamples:     req.MaxExamples,
+		Debug:           req.Debug,
+		RenderBob:       format == "bob",
+		BobOptions:      bobOpts,
+		RenderMarkdown:  format == "markdown",
+		MarkdownOptions: markdownOpts,
+		RenderPlain:     format == "plain",
+		PlainOptions:    plainOpts,
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrNoDictionaries) {

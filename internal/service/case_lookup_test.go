@@ -299,7 +299,7 @@ func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
 		t.Fatalf("raw provenance was renumbered: %+v", match.Records)
 	}
 	if result.Bob == nil || len(result.Bob.Parts) != 3 ||
-		result.Bob.Parts[0].Part != "¹ noun" || result.Bob.Parts[1].Part != "² verb" || result.Bob.Parts[2].Part != "³ adjective" {
+		result.Bob.Parts[0].Part != "¹ n." || result.Bob.Parts[1].Part != "² v." || result.Bob.Parts[2].Part != "³ adj." {
 		t.Fatalf("multi-record Bob parts = %+v", result.Bob)
 	}
 	if len(result.Bob.Phonetics) != 3 || result.Bob.Phonetics[0].Value != "ˈælfə · 未标口音 · ¹" ||
@@ -310,7 +310,7 @@ func TestServiceLookupBuildsStableMultiRecordEntrySet(t *testing.T) {
 	for _, addition := range result.Bob.Additions {
 		names[addition.Name] = true
 	}
-	for _, name := range []string{"Examples · ¹ noun 1", "Examples · ² verb 1", "Examples · ³ adjective 1"} {
+	for _, name := range []string{"Examples · ¹ n. 1", "Examples · ² v. 1", "Examples · ³ adj. 1"} {
 		if !names[name] {
 			t.Errorf("missing %q in %+v", name, result.Bob.Additions)
 		}

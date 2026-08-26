@@ -1,0 +1,30 @@
+{
+  "headword": "frennet",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "parts": [
+    {
+      "pos": "noun",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "A shallow basket woven from split reeds.",
+          "confidence": 0.65,
+          "rule": "generic:definitionList"
+        },
+        {
+          "number": "2",
+          "definition": "The amount such a basket will hold.",
+          "confidence": 0.65,
+          "rule": "generic:definitionList"
+        }
+      ],
+      "confidence": 0.7,
+      "rule": "generic:definitionList"
+    }
+  ]
+}

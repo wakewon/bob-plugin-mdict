@@ -1,6 +1,6 @@
 {
   "identifier": "com.github.wakewon.mdict",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "translate",
   "name": "MDict",
   "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典 MDD 音频。",
@@ -33,6 +33,27 @@
       }
     },
     {
+      "identifier": "presentationMode",
+      "type": "menu",
+      "title": "显示方式",
+      "defaultValue": "dict",
+      "desc": "词典卡片优先使用 Bob 原生显示；自由排版词条会自动改用纯文本。纯文本和 Markdown 都由本地服务从同一结构化词条直接生成。Bob 当前未正式支持 Markdown 渲染。",
+      "menuValues": [
+        {
+          "title": "词典卡片",
+          "value": "dict"
+        },
+        {
+          "title": "纯文本",
+          "value": "plain"
+        },
+        {
+          "title": "Markdown",
+          "value": "markdown"
+        }
+      ]
+    },
+    {
       "identifier": "multiRecordMode",
       "type": "menu",
       "title": "重复词条显示方式",
@@ -54,6 +75,23 @@
       "type": "menu",
       "title": "显示例句",
       "defaultValue": "enable",
+      "menuValues": [
+        {
+          "title": "显示",
+          "value": "enable"
+        },
+        {
+          "title": "隐藏",
+          "value": "disable"
+        }
+      ]
+    },
+    {
+      "identifier": "showGrammar",
+      "type": "menu",
+      "title": "显示语法限定说明",
+      "defaultValue": "enable",
+      "desc": "控制是否显示详细的语法限定说明（如 [with object] 或 [used especially in negatives and comparatives]）。这不会隐藏词性、释义标签、主题标签、模式、用法说明或例句。",
       "menuValues": [
         {
           "title": "显示",

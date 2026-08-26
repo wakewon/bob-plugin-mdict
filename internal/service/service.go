@@ -3,7 +3,6 @@
 package service
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,15 +11,15 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/html"
-
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/config"
+	"github.com/wakewon/bob-plugin-mdict/internal/diagnose"
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
+	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/parser"
-	"github.com/wakewon/bob-plugin-mdict/internal/profiles"
 	"github.com/wakewon/bob-plugin-mdict/internal/resource"
+	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 )
 
 // Service coordinates every component behind the HTTP API.
@@ -34,9 +33,10 @@ type Service struct {
 	// baseURL is the loopback origin resource URLs are built from.
 	baseURL string
 
-	profileMu    sync.RWMutex
-	profileByDic map[string]*parser.Profile
-	profileDone  map[string]bool
+	profileMu      sync.RWMutex
+	profileByDic   map[string]*parser.Profile
+	profileDone    map[string]bool
+	parserOverride string
 
 	cacheMu sync.Mutex
 	cache   *entryCache
@@ -96,10 +96,6 @@ func (s *Service) Rescan() error {
 	return nil
 }
 
-// sampleWords are probed when fingerprinting a dictionary. They are chosen to
-// exist in essentially every English dictionary while being cheap to resolve.
-var sampleWords = []string{"abandon", "hello", "run", "water", "book", "the", "good"}
-
 // profileFor returns the parser profile for a dictionary, detecting it once.
 func (s *Service) profileFor(dict *mdict.Dictionary) *parser.Profile {
 	id := dict.ID()
@@ -120,31 +116,44 @@ func (s *Service) profileFor(dict *mdict.Dictionary) *parser.Profile {
 	return profile
 }
 
+// detectProfile fingerprints a dictionary from representative records.
+//
+// Sampling is language-independent — it strides the key index rather than
+// probing English words — and several records vote, so one coincidental match
+// cannot decide. Ambiguous or minority evidence resolves to generic, which is
+// always a working parser rather than a wrong one.
 func (s *Service) detectProfile(dict *mdict.Dictionary) *parser.Profile {
 	info := dict.Info()
 	if info.Health != mdict.HealthOK {
 		return nil
 	}
-	for _, word := range sampleWords {
-		set, err := dict.LookupAll(word)
-		if err != nil {
-			continue
-		}
-		for _, result := range set.Records {
-			if len(result.HTML) < 200 {
-				continue
-			}
-			doc, parseErr := html.Parse(bytes.NewReader(result.HTML))
-			if parseErr != nil {
-				continue
-			}
-			title := info.Title + " " + path.Base(dict.SourcePath())
-			if profile := profiles.Match(title, doc); profile != nil {
-				return profile
-			}
-		}
+	samples := diagnose.Samples(dict, diagnose.DetectionSampling)
+	title := info.Title + " " + path.Base(dict.SourcePath())
+	profile, _ := diagnose.SelectProfile(title, samples)
+	if override := strings.TrimSpace(s.parserOverride); override != "" {
+		profile, _ = diagnose.ApplyProfileOverride(profile, override)
 	}
-	return nil
+	return profile
+}
+
+// SetParserOverride forces every dictionary onto one parser, for development
+// comparisons between auto, generic and a named profile. It is a debugging aid
+// with no persisted state; the product always runs on automatic detection.
+func (s *Service) SetParserOverride(override string) {
+	s.profileMu.Lock()
+	s.parserOverride = override
+	s.profileByDic = make(map[string]*parser.Profile)
+	s.profileDone = make(map[string]bool)
+	s.profileMu.Unlock()
+}
+
+// ProfileEvidence re-runs detection for a dictionary and reports why the
+// profile was chosen. Diagnostics only.
+func (s *Service) ProfileEvidence(dict *mdict.Dictionary) diagnose.ProfileEvidence {
+	info := dict.Info()
+	samples := diagnose.Samples(dict, diagnose.DetectionSampling)
+	_, evidence := diagnose.SelectProfile(info.Title+" "+path.Base(dict.SourcePath()), samples)
+	return evidence
 }
 
 // ProfileID returns the profile identifier for a dictionary, or "generic".
@@ -191,7 +200,11 @@ func matchFromSet(dict *mdict.Dictionary, set *entryir.EntrySet, parseMillis flo
 	}
 }
 
-func (m *Match) entrySet() *entryir.EntrySet {
+// EntrySet rebuilds the canonical aggregate this match was rendered from.
+//
+// It is the contract every presentation layer reads: the Bob adapter, and any
+// other adapter, start here rather than from the wire shape of a Match.
+func (m *Match) EntrySet() *entryir.EntrySet {
 	if m == nil {
 		return nil
 	}
@@ -205,8 +218,19 @@ type Result struct {
 	// Bob is the ready-to-return toDict, present only when the caller asked
 	// for it. Keeping it optional means the IR stays the canonical contract
 	// and any other client can ignore Bob entirely.
-	Bob         *bobadapter.Dict `json:"bob,omitempty"`
-	Suggestions []string         `json:"suggestions,omitempty"`
+	Bob *bobadapter.Dict `json:"bob,omitempty"`
+	// Markdown is user-facing dictionary content, present only for
+	// format:"markdown". Diagnostic provenance is never enabled here.
+	Markdown string `json:"markdown,omitempty"`
+	// Plain is a complete user-facing plain-text document. It is returned for
+	// explicit plain requests and when a requested Bob card conservatively
+	// falls back because the IR contains only free-form sections or weak,
+	// untyped generic marker blocks.
+	Plain string `json:"plain,omitempty"`
+	// EffectiveFormat tells thin clients which presentation field is populated.
+	// It is additive to API v2, so clients that know only bob/markdown can ignore it.
+	EffectiveFormat string   `json:"effectiveFormat,omitempty"`
+	Suggestions     []string `json:"suggestions,omitempty"`
 }
 
 // ErrNoDictionaries means the user has not installed any dictionaries yet.
@@ -247,6 +271,12 @@ type LookupOptions struct {
 	RenderBob bool
 	// BobOptions configures that rendering.
 	BobOptions bobadapter.Options
+	// RenderMarkdown adds user Markdown rendered from the same EntrySet.
+	RenderMarkdown  bool
+	MarkdownOptions mdrender.Options
+	// RenderPlain adds plain text rendered directly from the canonical EntrySet.
+	RenderPlain  bool
+	PlainOptions textrender.Options
 }
 
 // Lookup resolves a query across the selected dictionaries.
@@ -291,21 +321,61 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 	if len(result.Matches) == 0 && opts.Mode == ModeSmart {
 		result.Suggestions = s.suggest(dicts, query, 8)
 	}
+	if (opts.RenderBob || opts.RenderMarkdown || opts.RenderPlain) && len(result.Matches) > 0 {
+		set := result.Matches[0].EntrySet()
+		ordinal := opts.BobOptions.RecordOrdinal
+		if opts.RenderMarkdown {
+			ordinal = opts.MarkdownOptions.RecordOrdinal
+		} else if opts.RenderPlain {
+			ordinal = opts.PlainOptions.RecordOrdinal
+		}
+		if ordinal > len(set.Records) {
+			return nil, &RecordNotFoundError{
+				Query: query, Requested: ordinal, Available: len(set.Records),
+			}
+		}
+	}
 	if opts.RenderBob && len(result.Matches) > 0 {
 		// Bob presents one result card per configured service instance. Even
 		// when an API client asks the server for several matches, the Bob view is
 		// deliberately rendered from the first match only.
-		set := result.Matches[0].entrySet()
-		if ordinal := opts.BobOptions.RecordOrdinal; ordinal > len(set.Records) {
-			return nil, &RecordNotFoundError{
-				Query:     query,
-				Requested: ordinal,
-				Available: len(set.Records),
+		set := result.Matches[0].EntrySet()
+		if bobadapter.ShouldUsePlainFallback(set, opts.BobOptions) {
+			plainOpts := opts.PlainOptions
+			if plainOpts.MaxExamplesPerSense <= 0 {
+				plainOpts = plainOptionsFromBob(opts.BobOptions)
 			}
+			result.Plain = textrender.RenderEntrySet(set, plainOpts)
+			result.EffectiveFormat = "plain"
+		} else {
+			result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
+			result.EffectiveFormat = "bob"
 		}
-		result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
+	}
+	if opts.RenderMarkdown && len(result.Matches) > 0 {
+		result.Markdown = mdrender.RenderEntrySet(result.Matches[0].EntrySet(), opts.MarkdownOptions)
+		result.EffectiveFormat = "markdown"
+	}
+	if opts.RenderPlain && len(result.Matches) > 0 {
+		result.Plain = textrender.RenderEntrySet(result.Matches[0].EntrySet(), opts.PlainOptions)
+		result.EffectiveFormat = "plain"
 	}
 	return result, nil
+}
+
+func plainOptionsFromBob(opts bobadapter.Options) textrender.Options {
+	plain := textrender.UserOptions()
+	plain.IncludeExamples = opts.IncludeExamples
+	plain.IncludeExtras = opts.IncludeExtras
+	plain.MaxExamplesPerSense = opts.MaxExamplesPerSense
+	plain.RecordOrdinal = opts.RecordOrdinal
+	plain.IncludeGrammar = opts.IncludeGrammar
+	if opts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		plain.MultiRecordMode = textrender.MultiRecordCombined
+	} else {
+		plain.MultiRecordMode = textrender.MultiRecordSeparate
+	}
+	return plain
 }
 
 func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOptions) (Match, bool) {
@@ -340,6 +410,7 @@ func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOpt
 			Headword:            lookupResult.MatchedKey,
 			Profile:             profile,
 			Audio:               s.audioResolver(dict),
+			Image:               s.imageResolver(dict),
 			MaxExamplesPerSense: opts.MaxExamples,
 			Debug:               opts.Debug,
 		})
@@ -376,6 +447,29 @@ func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOpt
 	s.cacheMu.Unlock()
 
 	return matchFromSet(dict, set, float64(elapsed.Microseconds())/1000), true
+}
+
+// imageResolver binds an inline illustration to the same dictionary-scoped,
+// opaque-token resource path used for audio. It never follows network URLs.
+func (s *Service) imageResolver(dict *mdict.Dictionary) parser.ImageResolver {
+	return parser.ImageResolverFunc(func(ref, alt string) *entryir.Image {
+		lower := strings.ToLower(strings.TrimSpace(ref))
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") ||
+			strings.HasPrefix(lower, "data:") || !mdict.IsImageRef(ref) || !dict.HasResource(ref) {
+			return nil
+		}
+		token, err := s.tokenizer.Mint(resource.Ref{DictionaryID: dict.ID(), ResourceRef: ref})
+		if err != nil {
+			return nil
+		}
+		return &entryir.Image{
+			ResourceRef: ref,
+			Token:       token,
+			URL:         s.baseURL + "/v2/resource/" + url.PathEscape(token),
+			MIMEType:    mdict.MIMEType(ref),
+			Alt:         alt,
+		}
+	})
 }
 
 func (s *Service) suggest(dicts []*mdict.Dictionary, query string, limit int) []string {

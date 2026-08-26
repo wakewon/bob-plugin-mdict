@@ -1,10 +1,97 @@
 # Changelog
 
 All notable product changes are recorded here. Product versions and the local
-HTTP API version are independent; MDict for Bob 1.0.0 continues to use API v2.
+HTTP API version are independent; MDict for Bob 1.1.0 continues to use API v2.
 
-## [Unreleased]
+## [1.1.0] - 2026-08-26
 
+
+- Present a dictionary entry as Plain Text as an alternative to the Bob dictionary card and Markdown. A requested Bob card automatically falls back to Plain Text when the selected view consists solely of free-form entry blocks without typed structure, preserving paragraph, list, and heading boundaries.
+- Add `showGrammar` plugin option to hide detailed grammatical qualifiers from presentation without hiding parts of speech, labels, or patterns.
+- Compact Bob POS presentation: keep grammar out of Bob's narrow POS column, and recursively flatten senses and subsenses into independent top-level Bob Parts, because Bob has no nested Part schema. Plain Text and Markdown retain the IR's real hierarchical nesting.
+- Generic parsing now conservatively recognizes meaningful secondary semantic headings (such as PHRASES, IDIOMS, PHRASAL VERBS, COLLOCATIONS, USAGE, GRAMMAR, SEE ALSO, RELATED) without claiming every heading is lexical structure.
+- Add `oxford-collocations` family profile for the tested Oxford Collocations Dictionary / 牛津英语搭配词典 template.
+
+- Present a dictionary entry as Markdown as an alternative to the Bob
+  dictionary card, rendered by the service from the same canonical EntrySet the
+  card is rendered from. The plugin returns the document as a single
+  `toParagraphs` element, which is Bob's documented array-of-strings contract;
+  Bob does not currently document Markdown rendering of that content, and this
+  release claims no such behaviour.
+- Give `重复词条显示方式` meaning in Markdown as well as in the dictionary card.
+  Combined renders every record in source order, divided by a `---` thematic
+  break; separate renders one record and lists the other records' selectors.
+- Render dictionary navigation targets — sibling record selectors, cross
+  references, related entries — as copyable query text rather than as links,
+  because Bob publishes no Markdown lookup-action contract. The target stays in
+  the IR, so a future Bob mechanism replaces the presentation and nothing else.
+- Show an inline MDD illustration at its original position in the prose, over
+  an opaque loopback resource URL. External, `data:` and filesystem image
+  references remain refused.
+- Deduplicate a repeated illustration only when the two occurrences are
+  adjacent, which is what a publisher's two language views of one figure look
+  like once CSS is gone. An illustration the dictionary places twice with
+  content between the two is no longer deleted.
+- Use a table's own `<th>` cells as its Markdown header instead of promoting
+  whichever row came first.
+- Test the service under concurrency at all. Bob's requests each arrive on their
+  own goroutine and a rescan can land among them, but no test had ever run two
+  goroutines at once, so the race detector was inspecting single-threaded code.
+  Synthetic fixtures now drive concurrent lookups, a rescan racing lookups in
+  flight, and concurrent resource resolution; removing the cache mutex makes
+  them report 140 races, so they have teeth. The race suite runs `-short` and
+  finishes in seconds instead of exceeding an hour on a large local library.
+
+- Attach the material between one sense and the next to the sense that opens
+  it. Many dictionaries keep the definition in one element and its examples in
+  the elements after it, where no sense contains them and nothing read them.
+  Examples now come out of 44 of 96 surveyed dictionaries rather than 27.
+- Separate a bilingual gloss fused into a definition's own text, where there is
+  no element boundary to lift it out of. Translations now come out of 26 of 96
+  surveyed dictionaries rather than 15, and the signal for a bilingual entry
+  with no translation fell from 15 dictionaries to 4.
+- Stop reading ordinary words as phonetic transcription. The IPA character set
+  included `y`, which is both the close front rounded vowel and the
+  twenty-fifth letter of the English alphabet, so every heading and label
+  ending in one was reported as IPA.
+- Decline a numbered list that is a table of contents rather than a sense list:
+  blocks made entirely of link text, and numbering that accounts for almost
+  none of the record.
+- Decline a "sense list" whose members contain one another, which is what
+  unclosed tags parse into, and which emitted the whole entry once per sense.
+- Keep a sense that has exactly one subsense instead of discarding it into its
+  parent's definition, and keep a block too large to be a meaning as untyped
+  content instead of presenting it as a definition.
+- Check a headword claimed by a `headword` or `entry_title` class against the
+  key the record was found under, so a page banner reading "Definition of
+  'below'" is no longer the entry's name.
+- Fall back to script evidence when a profile's translation selector matches
+  nothing in a record, which is what a repack of a profiled dictionary looks
+  like once it has renamed that one class.
+- Add `--validate` and `--validate-all`: an end-to-end review of what the
+  parser produced, measured through the real service and the real Bob adapter
+  and written out as ranked Markdown snapshots. Mean content retention across 96 healthy dictionaries (from a 99-dictionary survey) reached approximately 84% over 1,132 validation records, with zero semantic-field preservation failures across the three renderers.
+- Render the canonical EntrySet as Markdown in `internal/mdrender`, a sibling
+  of the Bob adapter rather than a second conversion path. It backs both the
+  `format:"markdown"` presentation above and the validation review snapshots.
+- Recover senses from visible numbering, ordered and definition lists, and
+  repeated definition blocks when a dictionary's class names say nothing. A survey of 99 unknown MDX dictionaries yielded greatly improved structural recovery.
+- Extract bilingual glosses without a profile, from the scripts in play and the
+  script the headword is written in.
+- Detect an entry's own headword from headword-class evidence, and decline a
+  heading that has nothing to do with the key the record was found under.
+- Read a pronunciation block's own `BrE`/`NAmE` label in preference to a
+  neighbour's, so the American half of a pair no longer inherits the British
+  label printed above it.
+- Fingerprint dictionaries from representative records strided across the key
+  index instead of a fixed list of English probe words, so non-English
+  dictionaries are recognised at all, and require several records to agree
+  before a profile is applied.
+- Add `oxford-xml-learner`, a reusable family profile for Oxford learner's
+  builds that ship publisher XML element names rather than CSS classes.
+- Add `--diagnose`, `--diagnose-all` and `--parser` for inspecting how well an
+  unknown dictionary is understood. Reports carry structure and counts only,
+  never dictionary text.
 - Harden release credentials with isolated least-privilege jobs, non-persistent
   checkout authentication, commit-pinned official Actions, pinned GitHub SSH
   host keys, history-aware secret scanning, and deterministic release notes.
@@ -30,5 +117,5 @@ First stable release.
   official tag-built artifacts, never-replaced Release assets, Bob appcast
   updates, and a repository-scoped Homebrew tap publication path.
 
-[Unreleased]: https://github.com/wakewon/bob-plugin-mdict/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/wakewon/bob-plugin-mdict/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/wakewon/bob-plugin-mdict/releases/tag/v1.0.0

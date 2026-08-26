@@ -1,0 +1,51 @@
+{
+  "headword": "glimmet",
+  "source": {
+    "dictionaryId": "",
+    "dictionaryTitle": "",
+    "matchedKey": "",
+    "profile": "generic"
+  },
+  "pronunciations": [
+    {
+      "ipaRegion": "other",
+      "ipa": "ˈɡlɪmɪt",
+      "confidence": 0.55,
+      "rule": "generic:evidence"
+    }
+  ],
+  "parts": [
+    {
+      "pos": "noun",
+      "senses": [
+        {
+          "number": "1",
+          "definition": "A small brass fitting used to join two pipes.",
+          "examples": [
+            {
+              "text": "The fitter tightened the glimmet with one turn."
+            }
+          ],
+          "subsenses": [
+            {
+              "number": "1.1",
+              "definition": "The joint made by such a fitting.",
+              "confidence": 0.65,
+              "rule": "generic:markerBlocks"
+            }
+          ],
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        },
+        {
+          "number": "2",
+          "definition": "A brief flicker of light seen at dusk.",
+          "confidence": 0.65,
+          "rule": "generic:markerBlocks"
+        }
+      ],
+      "confidence": 0.7,
+      "rule": "generic:markerBlocks"
+    }
+  ]
+}

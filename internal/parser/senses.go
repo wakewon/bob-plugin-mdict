@@ -10,6 +10,9 @@ import (
 
 // parseParts fills Entry.Parts, grouping senses under their part of speech.
 func (s *parseState) parseParts() {
+	if s.profile != nil && s.profile.id == "oxford-collocations" {
+		s.parseOxfordCollocations()
+	}
 	if s.profile != nil && !s.profile.sense.IsEmpty() {
 		s.parsePartsFromProfile()
 	}
@@ -67,6 +70,15 @@ func (s *parseState) parsePartsFromProfile() {
 		var senses []entryir.Sense
 		seen := make(map[string]struct{})
 		for _, node := range senseNodes {
+			// Some profiled dictionaries reuse their sense wrapper for an
+			// illustration-only block. Keep the resolved image as ordered rich
+			// presentation content instead of inventing an empty definition.
+			if blocks := imageBlocks(s.richBlocks(node)); len(blocks) > 0 {
+				s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: "Illustration", Blocks: blocks})
+				if Normalize(s.textOf(node)) == "" {
+					continue
+				}
+			}
 			sense := s.senseFromNode(node)
 			if sense.Definition == "" && sense.Translation == "" && len(sense.Examples) == 0 && len(sense.Subsenses) == 0 {
 				continue
@@ -111,6 +123,13 @@ func (s *parseState) parseSensesGroupedByOwnPOS() bool {
 	handled := false
 
 	for _, node := range senseNodes {
+		if blocks := imageBlocks(s.richBlocks(node)); len(blocks) > 0 {
+			s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: "Illustration", Blocks: blocks})
+			if Normalize(s.textOf(node)) == "" {
+				handled = true
+				continue
+			}
+		}
 		rawLabel := s.rawPOSLabel(node)
 		if role := ClassifySemanticLabel(rawLabel); role != "" {
 			handled = true
@@ -161,6 +180,16 @@ func (s *parseState) parseSensesGroupedByOwnPOS() bool {
 		})
 	}
 	return handled || len(s.entry.Parts) > 0
+}
+
+func imageBlocks(blocks []entryir.RichBlock) []entryir.RichBlock {
+	var out []entryir.RichBlock
+	for _, block := range blocks {
+		if block.Kind == entryir.RichImage && block.Image != nil {
+			out = append(out, block)
+		}
+	}
+	return out
 }
 
 // posOf resolves the part of speech for a block, preferring the profile
@@ -250,6 +279,20 @@ func (s *parseState) storeSemanticSense(node *html.Node, role SemanticLabel) {
 		s.entry.Synonyms = append(s.entry.Synonyms, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
 	case LabelAntonyms:
 		s.entry.Antonyms = append(s.entry.Antonyms, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
+	case LabelCollocations:
+		s.entry.Collocations = append(s.entry.Collocations, splitList(stripLeadingMarker(firstNonEmpty(body, lemma)))...)
+	case LabelUsage:
+		if body != "" {
+			s.entry.UsageNotes = append(s.entry.UsageNotes, entryir.Section{Title: "Usage", Body: body})
+		}
+	case LabelGrammar:
+		if body != "" {
+			s.entry.GrammarNotes = append(s.entry.GrammarNotes, entryir.Section{Title: "Grammar", Body: body})
+		}
+	case LabelExamples:
+		if body != "" {
+			s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: "Examples", Body: body})
+		}
 	}
 }
 
@@ -421,13 +464,19 @@ func (s *parseState) firstText(node *html.Node, sel Selector) string {
 	return ""
 }
 
-// markerPrefixes are the labels dictionaries prepend to cross-reference lists.
-var markerPrefixes = []string{"SYN", "OPP", "ANT", "SYNONYM", "ANTONYM", "→", "see", "同", "反"}
+// markerPrefixes are the labels dictionaries prepend to a cross-reference list.
+// Longer forms come first so "see also" is not left as a dangling "also".
+var markerPrefixes = []string{
+	"SYNONYMS", "ANTONYMS", "SYNONYM", "ANTONYM", "see also", "compare",
+	"SYN", "OPP", "ANT", "cf.", "cf", "→", "⇒", "see", "参见", "参照", "同", "反",
+}
 
+// stripLeadingMarker removes those labels, matching without regard to case
+// because dictionaries capitalise them however their typography demanded.
 func stripLeadingMarker(text string) string {
 	trimmed := Normalize(text)
 	for _, marker := range markerPrefixes {
-		if strings.HasPrefix(trimmed, marker) {
+		if len(trimmed) >= len(marker) && strings.EqualFold(trimmed[:len(marker)], marker) {
 			trimmed = strings.TrimSpace(trimmed[len(marker):])
 		}
 	}

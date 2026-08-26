@@ -69,18 +69,23 @@ func (s *parseState) applySectionItems(section *html.Node, rule compiledSection)
 	}
 
 	for _, item := range items {
-		s.storeSection(rule, item.lemma, strings.Trim(strings.Join(item.body, " "), " :：-—·"))
+		s.storeSection(rule, item.lemma, strings.Trim(strings.Join(item.body, " "), " :：-—·"), nil)
 	}
 }
 
 func (s *parseState) applySectionRule(node *html.Node, rule compiledSection) {
 	RemoveMatching(node, rule.stripTitle)
+	richRoot := node
 
 	lemma := cleanLemma(s.firstText(node, rule.lemma))
 	body := ""
 	if !rule.body.IsEmpty() {
 		var parts []string
-		for _, bodyNode := range QueryAll(node, rule.body) {
+		bodyNodes := QueryAll(node, rule.body)
+		if len(bodyNodes) == 1 {
+			richRoot = bodyNodes[0]
+		}
+		for _, bodyNode := range bodyNodes {
 			if text := Normalize(s.textOf(bodyNode)); text != "" {
 				parts = append(parts, text)
 			}
@@ -96,11 +101,11 @@ func (s *parseState) applySectionRule(node *html.Node, rule compiledSection) {
 	}
 	body = strings.Trim(body, " :：-—·")
 
-	s.storeSection(rule, lemma, body)
+	s.storeSection(rule, lemma, body, s.richBlocks(richRoot))
 }
 
 // storeSection files an extracted section into the right IR field.
-func (s *parseState) storeSection(rule compiledSection, lemma, body string) {
+func (s *parseState) storeSection(rule compiledSection, lemma, body string, blocks []entryir.RichBlock) {
 	if lemma == "" && body == "" {
 		return
 	}
@@ -131,17 +136,17 @@ func (s *parseState) storeSection(rule compiledSection, lemma, body string) {
 		}
 	case SectionUsage:
 		if body != "" {
-			s.entry.UsageNotes = append(s.entry.UsageNotes, entryir.Section{Title: firstNonEmpty(lemma, title), Body: body})
+			s.entry.UsageNotes = append(s.entry.UsageNotes, entryir.Section{Title: firstNonEmpty(lemma, title), Body: body, Blocks: blocks})
 		}
 	case SectionGrammar:
 		if body != "" {
-			s.entry.GrammarNotes = append(s.entry.GrammarNotes, entryir.Section{Title: firstNonEmpty(lemma, title), Body: body})
+			s.entry.GrammarNotes = append(s.entry.GrammarNotes, entryir.Section{Title: firstNonEmpty(lemma, title), Body: body, Blocks: blocks})
 		}
 	default:
 		// Anything the profile could not classify is preserved verbatim rather
 		// than being guessed into a typed field.
 		if body != "" {
-			s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: firstNonEmpty(lemma, title), Body: body})
+			s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: firstNonEmpty(lemma, title), Body: body, Blocks: blocks})
 		}
 	}
 }

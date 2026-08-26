@@ -1,5 +1,5 @@
 {
-  "headword": "generic-unknown-classes",
+  "headword": "morvent",
   "source": {
     "dictionaryId": "",
     "dictionaryTitle": "",
@@ -9,7 +9,21 @@
   "sections": [
     {
       "title": "Entry",
-      "body": "morvent Something that has no recognisable structure at all. Another line of unstructured content."
+      "body": "morvent Something that has no recognisable structure at all. Another line of unstructured content.",
+      "blocks": [
+        {
+          "kind": "text",
+          "text": "morvent"
+        },
+        {
+          "kind": "text",
+          "text": "Something that has no recognisable structure at all."
+        },
+        {
+          "kind": "text",
+          "text": "Another line of unstructured content."
+        }
+      ]
     }
   ]
 }
