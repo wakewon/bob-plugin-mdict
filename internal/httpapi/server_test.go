@@ -215,6 +215,48 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 	}
 }
 
+func TestV2LookupMarkdownIsAdditiveUserOutput(t *testing.T) {
+	root := t.TempDir()
+	markup := `<article><h1>flimber</h1><div class="sense"><span class="pos">noun</span>` +
+		`<span class="definition">synthetic definition</span>` +
+		`<span class="example">first synthetic example</span><span class="example">second synthetic example</span></div></article>`
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{{Key: "flimber", HTML: markup}}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(
+		`{"query":"flimber","format":"markdown","includeExamples":false,"includeExtras":false,"maxExamples":1}`)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Matches  []json.RawMessage `json:"matches"`
+		Markdown string            `json:"markdown"`
+		Bob      json.RawMessage   `json:"bob"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Matches) != 1 || payload.Markdown == "" || len(payload.Bob) != 0 {
+		t.Fatalf("markdown response lost IR or added Bob: %s", recorder.Body.String())
+	}
+	for _, forbidden := range []string{"synthetic example", "generic:", "confidence", "validation"} {
+		if strings.Contains(payload.Markdown, forbidden) {
+			t.Errorf("user Markdown contains %q:\n%s", forbidden, payload.Markdown)
+		}
+	}
+}
+
+func TestV2LookupRejectsUnknownFormat(t *testing.T) {
+	handler := newTestServer(t)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(`{"query":"hello","format":"html"}`)))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "ir, bob, or markdown") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestV2LookupExposesInputAndActualLookupKeySeparately(t *testing.T) {
 	root := t.TempDir()
 	markup := `<article><h1>china1</h1><div class="sense"><span class="pos">noun</span>` +

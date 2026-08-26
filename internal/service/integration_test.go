@@ -3,6 +3,10 @@ package service_test
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -15,6 +19,8 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/config"
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
+	"github.com/wakewon/bob-plugin-mdict/internal/httpapi"
+	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
 )
 
@@ -380,6 +386,81 @@ func TestRealAudioResolvesFromMDD(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no audio was resolved from any dictionary")
+	}
+}
+
+// TestRealImagesResolveFromMDD verifies the complete user path against only
+// the known complete local dictionaries. CI has no licensed files and skips.
+func TestRealImagesResolveFromMDD(t *testing.T) {
+	svc := newService(t)
+	handler := httpapi.New(svc, slog.Default()).Handler()
+	tests := []struct {
+		title string
+		word  string
+	}{
+		{"Collins COBUILD overhaul", "American chameleon"},
+		{"LDOCE5++ En-Cn V2.15", "LDOCE4 Page A1"},
+		{"牛津高阶英汉双解词典(第8版)", "apple"},
+	}
+	checked := 0
+	for _, tc := range tests {
+		var id string
+		for _, dict := range svc.Registry().All() {
+			if strings.Contains(dict.Info().Title, tc.title) && dict.Info().HasMDD {
+				id = dict.ID()
+				break
+			}
+		}
+		if id == "" {
+			continue
+		}
+		opts := mdrender.UserOptions()
+		result, err := svc.Lookup(tc.word, service.LookupOptions{
+			DictionaryIDs: []string{id}, Mode: service.ModeExact,
+			RenderMarkdown: true, MarkdownOptions: opts,
+		})
+		if err != nil || len(result.Matches) == 0 {
+			t.Errorf("%s/%s lookup: %v", tc.title, tc.word, err)
+			continue
+		}
+		var images []*entryir.Image
+		for _, record := range result.Matches[0].Records {
+			for _, sections := range [][]entryir.Section{record.Entry.Sections, record.Entry.UsageNotes, record.Entry.GrammarNotes} {
+				for _, section := range sections {
+					for _, block := range section.Blocks {
+						if block.Image != nil {
+							images = append(images, block.Image)
+						}
+					}
+				}
+			}
+		}
+		if len(images) == 0 {
+			t.Errorf("%s/%s produced no resolved inline image", tc.title, tc.word)
+			continue
+		}
+		image := images[0]
+		if !strings.Contains(result.Markdown, "![") || !strings.Contains(result.Markdown, image.URL) {
+			t.Errorf("%s/%s Markdown omitted image URL", tc.title, tc.word)
+		}
+		parsed, err := url.Parse(image.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, parsed.RequestURI(), nil)
+		request.RemoteAddr = "127.0.0.1:54321"
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK || !strings.HasPrefix(recorder.Header().Get("Content-Type"), "image/") || recorder.Body.Len() < 256 {
+			t.Errorf("%s/%s resource response: status=%d type=%q bytes=%d",
+				tc.title, tc.word, recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.Len())
+			continue
+		}
+		checked++
+		t.Logf("%s/%s: %s, %d bytes", tc.title, tc.word, recorder.Header().Get("Content-Type"), recorder.Body.Len())
+	}
+	if checked == 0 {
+		t.Fatal("no complete real dictionary image was validated")
 	}
 }
 

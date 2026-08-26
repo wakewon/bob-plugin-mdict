@@ -7,7 +7,7 @@ Bob
  │  selected text
  ▼
 plugin/main.js                 thin: selector → base query + recordOrdinal
- │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"}
+ │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"|"markdown"}
  ▼
 bob-mdict  (127.0.0.1 only)
  │
@@ -19,7 +19,7 @@ bob-mdict  (127.0.0.1 only)
  ├── entryir       EntrySet aggregate preserving semantic record boundaries
  ├── presentation  cached EntrySet → combined or selected record
  ├── bobadapter    selected view → one Bob toDict (+ sibling navigation)
- ├── mdrender      EntrySet → Markdown (experimental sibling of bobadapter)
+ ├── mdrender      EntrySet → user/diagnostic Markdown (sibling of bobadapter)
  ├── validate      development only: real backend over real records, ranked
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
 ```
@@ -62,16 +62,15 @@ Neither can see the other, and neither reads entry HTML. A second semantic path
 — MDX HTML straight to Markdown — would drift from the parser the moment either
 changed, and would have to relearn everything the parser already knows.
 
-Today the Markdown renderer is a development surface: a deterministic, diffable
-picture of exactly what the parser recovered, which is what makes reviewing a
-thousand real records possible without launching Bob. If Bob ever displays
-Markdown, the same renderer becomes a presentation adapter and nothing below it
-moves. Until then it is explicitly experimental and is not part of API v2.
+Diagnostic rendering stays deterministic and may include provenance while
+omitting per-process resource URLs. User rendering contains only dictionary
+content and enables resolved loopback audio/image links. The plugin requests
+this user rendering with `format:"markdown"` and assigns it directly to
+`toParagraphs`; it never reparses Markdown or dictionary HTML.
 
-Determinism is a requirement rather than a nicety, and it costs one design
-decision: a resolved recording's URL carries a per-process resource token, so
-the renderer reports that a recording exists rather than linking to it unless
-asked. Otherwise every entry would compare as changed on every run.
+Free-form sections may carry a deliberately small ordered rich vocabulary:
+text, resolved MDD image, and conventional table. This preserves positions such
+as text → image → text → table without turning the Entry IR into a browser DOM.
 
 ## Parsing: generic first, profiles as reinforcement
 

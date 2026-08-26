@@ -93,14 +93,14 @@ a reason in `diagnostics`; the others stay usable.
 | Field | Meaning |
 |---|---|
 | `query` | Required. |
-| `format` | `ir` (default) returns the duplicate-aware EntrySet IR. `bob` adds one `toDict` rendered from the first dictionary match. Multiple dictionaries are never aggregated into one Bob card. |
+| `format` | `ir` (default) returns the duplicate-aware EntrySet IR. `bob` additionally returns one top-level `bob` `toDict`. `markdown` additionally returns top-level user-facing `markdown`. Both presentations use the first dictionary match; the IR remains in `matches`. |
 | `mode` | `exact` (default) prefers an exactly cased headword, then tries Unicode-normalized and case-insensitive fallback matches. `smart` also returns prefix suggestions on a miss. |
 | `dictionaries` | Restrict and order the search. Empty means all, in registry order. |
 | `limit` | Stop after this many dictionaries answer. |
 | `maxExamples` | Cap parsed and displayed examples independently per sense or subsense. |
-| `includeExamples` / `includeExtras` | Trim the rendered `toDict`. |
-| `multiRecordMode` | Bob rendering only. `separate` shows one record with sibling navigation; `combined` renders the complete EntrySet with ordinal labels. Omitted defaults to `separate`. |
-| `recordOrdinal` | Bob rendering only. One-based ordinal in the visible EntrySet after resolved-byte dedupe and parser-empty filtering—not a raw MDX record index. Zero/omitted selects record 1 in separate mode and the complete set in combined mode. A positive value explicitly selects one record. |
+| `includeExamples` / `includeExtras` | Trim both rendered presentation formats consistently. |
+| `multiRecordMode` | Bob rendering: `separate` shows one record with sibling navigation; `combined` renders the complete EntrySet with ordinal labels. Markdown keeps all record boundaries as `Record n of total` headings. |
+| `recordOrdinal` | One-based ordinal in the visible EntrySet after resolved-byte dedupe and parser-empty filtering—not a raw MDX record index. In Markdown it selects that record; zero/omitted renders every record. Bob behavior remains unchanged. |
 | `debug` | Attach parser provenance notes to each entry. |
 
 Responses: `200` with matches; a normal headword miss is `404` with an empty
@@ -152,6 +152,23 @@ alias such as `lead²` while `lookupKey` remains `lead`; parsed headwords and
 record provenance remain unchanged. Combined mode preserves the complete
 ordinal-labelled card and uses the same `lookupKey` for Bob `word`.
 
+`format: "markdown"` leaves the same `matches` array intact and adds a
+top-level Markdown string:
+
+```json
+{
+  "query": "lead",
+  "matches": [{"lookupKey": "lead", "records": []}],
+  "markdown": "# lead\n\n## Record 1 of 2\n\n...\n"
+}
+```
+
+This is ordinary user presentation: parser rules, confidence, validation
+warnings, and raw-source diagnostics are never included. Resolved MDD images
+use `![alt](http://127.0.0.1:.../v2/resource/<opaque-token>)`; unresolved or
+external image references emit no broken URL. Conventional tables are rendered
+as Markdown tables with escaped cells and padded uneven rows.
+
 Exact headword spelling is always preferred. Case-insensitive matching is used
 only as a fallback when no exact key exists; NFC and NFD spellings share the
 same canonical query identity without collapsing letter case.
@@ -175,7 +192,7 @@ Streams one MDD resource. Tokens come from a lookup response and are AES-GCM
 sealed with a per-process key.
 
 - `Content-Type` reflects the served bytes — Ogg-Speex is transcoded, so it is
-  reported as `audio/wav`.
+  reported as `audio/wav`; dictionary images retain their image MIME type.
 - `Accept-Ranges`, `ETag` and `Cache-Control: immutable` are set; Range requests
   return `206`.
 - Bad, forged, edited or expired tokens get `400`; unknown resources `404`; a

@@ -10,11 +10,9 @@
 // HTML — a second semantic path would drift from the parser the moment either
 // changed — and the parser needs no knowledge that Markdown exists.
 //
-// Today this is a development and validation surface: a deterministic, diffable
-// rendering of exactly what the parser recovered, used to review real records
-// without launching Bob. If Bob ever gains Markdown display, the same renderer
-// becomes a presentation adapter with no change to anything below it. Until
-// then it is explicitly experimental and is not part of the v2 API.
+// The renderer has two callers: deterministic diagnostics, which keep
+// per-process resource URLs out, and user presentation, which enables resolved
+// loopback audio/image links without enabling parser provenance.
 package mdrender
 
 import (
@@ -37,6 +35,12 @@ type Options struct {
 	// every run and destroy snapshot comparison. With it off, an available
 	// recording is still reported — just as a fact rather than as a link.
 	AudioLinks bool
+	// ImageLinks writes resolved inline MDD illustrations at their original
+	// prose position. It is disabled for deterministic diagnostic snapshots.
+	ImageLinks bool
+	// RecordOrdinal selects one visible record when a record selector was used.
+	// Zero renders every record with explicit boundaries.
+	RecordOrdinal int
 	// IncludeProvenance annotates each structure with the parser rule that
 	// produced it. Development only; it is what makes a snapshot answer "which
 	// heuristic did this?".
@@ -50,6 +54,16 @@ func DefaultOptions() Options {
 		IncludeExtras:       true,
 		MaxExamplesPerSense: 8,
 	}
+}
+
+// UserOptions returns complete, user-facing Markdown. It intentionally does
+// not enable IncludeProvenance: parser rules and confidence belong only in
+// diagnostic artifacts.
+func UserOptions() Options {
+	opts := DefaultOptions()
+	opts.AudioLinks = true
+	opts.ImageLinks = true
+	return opts
 }
 
 // RenderEntry renders one entry as a standalone document.
@@ -84,6 +98,10 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) string {
 	}
 	doc.heading(1, title)
 
+	records := set.Records
+	if opts.RecordOrdinal > 0 && opts.RecordOrdinal <= len(records) {
+		records = records[opts.RecordOrdinal-1 : opts.RecordOrdinal]
+	}
 	multi := len(set.Records) > 1
 	// Nesting each record under its own heading costs one level, so a
 	// single-record entry keeps its parts one step closer to the surface.
@@ -91,7 +109,7 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) string {
 	if multi {
 		base = 3
 	}
-	for index, record := range set.Records {
+	for index, record := range records {
 		if record.Entry == nil {
 			continue
 		}
@@ -176,14 +194,14 @@ func (d *document) renderEntry(entry *entryir.Entry, base int, lookupKey string)
 	d.renderList("Related", entry.Related, base)
 	d.renderList("Word family", entry.WordFamily, base)
 	for _, note := range entry.UsageNotes {
-		d.renderSection("Usage · "+note.Title, note.Body, base)
+		d.renderSection("Usage · "+note.Title, note, base)
 	}
 	for _, note := range entry.GrammarNotes {
-		d.renderSection("Grammar · "+note.Title, note.Body, base)
+		d.renderSection("Grammar · "+note.Title, note, base)
 	}
-	d.renderSection("Origin", entry.Etymology, base)
+	d.renderSection("Origin", entryir.Section{Body: entry.Etymology}, base)
 	for _, section := range entry.Sections {
-		d.renderSection(section.Title, section.Body, base)
+		d.renderSection(section.Title, section, base)
 	}
 }
 
@@ -371,16 +389,73 @@ func (d *document) renderList(title string, values []string, base int) {
 	d.block(lines)
 }
 
-func (d *document) renderSection(title, body string, base int) {
-	body = strings.TrimSpace(body)
-	if body == "" {
+func (d *document) renderSection(title string, section entryir.Section, base int) {
+	body := strings.TrimSpace(section.Body)
+	if body == "" && len(section.Blocks) == 0 {
 		return
 	}
 	if strings.TrimSpace(title) == "" {
 		title = "Note"
 	}
 	d.heading(base, title)
-	d.line(escape(body))
+	if len(section.Blocks) == 0 {
+		d.line(escape(body))
+		return
+	}
+	for _, block := range section.Blocks {
+		switch block.Kind {
+		case entryir.RichText:
+			if text := escape(block.Text); text != "" {
+				d.line(text)
+			}
+		case entryir.RichImage:
+			if d.opts.ImageLinks && block.Image != nil && strings.TrimSpace(block.Image.URL) != "" {
+				d.line("![" + escapeImageAlt(block.Image.Alt) + "](" + block.Image.URL + ")")
+			}
+		case entryir.RichTable:
+			d.renderTable(block.Rows)
+		}
+	}
+}
+
+func (d *document) renderTable(rows [][]string) {
+	columns := 0
+	for _, row := range rows {
+		if len(row) > columns {
+			columns = len(row)
+		}
+	}
+	if columns == 0 {
+		return
+	}
+	normalizeRow := func(row []string) string {
+		cells := make([]string, columns)
+		for i := 0; i < columns; i++ {
+			if i < len(row) {
+				cells[i] = escapeTableCell(row[i])
+			}
+		}
+		return "| " + strings.Join(cells, " | ") + " |"
+	}
+	var lines []string
+	lines = append(lines, normalizeRow(rows[0]))
+	delimiters := make([]string, columns)
+	for i := range delimiters {
+		delimiters[i] = "---"
+	}
+	lines = append(lines, "| "+strings.Join(delimiters, " | ")+" |")
+	for _, row := range rows[1:] {
+		lines = append(lines, normalizeRow(row))
+	}
+	d.block(lines)
+}
+
+func escapeTableCell(text string) string {
+	return strings.ReplaceAll(escape(text), "|", `\|`)
+}
+
+func escapeImageAlt(text string) string {
+	return strings.NewReplacer(`\`, `\\`, `[`, `\[`, `]`, `\]`, "\n", " ", "\r", " ").Replace(strings.TrimSpace(text))
 }
 
 func (d *document) block(lines []string) {

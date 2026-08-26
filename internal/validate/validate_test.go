@@ -235,6 +235,30 @@ func TestBackendParityHoldsOnOrdinaryDictionaries(t *testing.T) {
 	}
 }
 
+func TestValidationUsesRuntimeProfileAsAuthority(t *testing.T) {
+	var entries []testmdx.Entry
+	for i := 0; i < 24; i++ {
+		key := fmt.Sprintf("wexal%02d", i)
+		entries = append(entries, testmdx.Entry{Key: key, HTML: `<article class="ldoceEntry"><span class="Head"><span class="HWD">` + key +
+			`</span></span><div class="Sense"><span class="DEF">a small invented hook</span></div></article>`})
+	}
+	svc := newService(t, map[string][]testmdx.Entry{"profiled": entries})
+	svc.SetParserOverride("generic")
+	run := validate.Corpus(svc, validate.Options{})
+	dictionary := dictionaryNamed(t, run, "profiled")
+	if dictionary.Report.Profile.Selected != "ldoce5pp" {
+		t.Fatalf("fixture did not produce independent diagnostic evidence: %+v", dictionary.Report.Profile)
+	}
+	if dictionary.RuntimeProfile != "generic" {
+		t.Fatalf("runtime profile = %q, want forced generic", dictionary.RuntimeProfile)
+	}
+	for _, snapshot := range dictionary.Snapshots {
+		if snapshot.Parser != "generic" {
+			t.Fatalf("snapshot metrics claimed parser %q", snapshot.Parser)
+		}
+	}
+}
+
 // A run is only half useful without the previous one.
 func TestBaselineComparisonSeparatesImprovementFromRegression(t *testing.T) {
 	svc := newService(t, map[string][]testmdx.Entry{"en": monolingualEntries(24)})

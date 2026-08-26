@@ -91,6 +91,10 @@ const (
 	LabelDerivative     SemanticLabel = "derivative"
 	LabelSynonyms       SemanticLabel = "synonyms"
 	LabelAntonyms       SemanticLabel = "antonyms"
+	LabelExamples       SemanticLabel = "examples"
+	LabelCollocations   SemanticLabel = "collocations"
+	LabelUsage          SemanticLabel = "usage"
+	LabelGrammar        SemanticLabel = "grammar"
 )
 
 var semanticLabels = map[string]SemanticLabel{
@@ -108,6 +112,10 @@ var semanticLabels = map[string]SemanticLabel{
 	"synonym": LabelSynonyms, "synonyms": LabelSynonyms,
 	"synonymantonym": LabelSynonyms, "synonymsantonyms": LabelSynonyms,
 	"antonym": LabelAntonyms, "antonyms": LabelAntonyms,
+	"example": LabelExamples, "examples": LabelExamples, "examplesentences": LabelExamples,
+	"collocation": LabelCollocations, "collocations": LabelCollocations, "wordcombinations": LabelCollocations,
+	"usage": LabelUsage, "usagenote": LabelUsage, "usagenotes": LabelUsage, "用法": LabelUsage,
+	"grammar": LabelGrammar, "grammarnote": LabelGrammar, "grammarnotes": LabelGrammar, "语法": LabelGrammar,
 }
 
 var semanticLabelCleanRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
@@ -115,7 +123,9 @@ var semanticLabelCleanRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)
 // ClassifySemanticLabel returns a section role for a non-POS heading.
 func ClassifySemanticLabel(raw string) SemanticLabel {
 	key := strings.ToLower(semanticLabelCleanRe.ReplaceAllString(Normalize(raw), ""))
-	key = strings.TrimSuffix(key, "section")
+	for _, suffix := range []string{"section", "list", "block", "panel", "box", "group"} {
+		key = strings.TrimSuffix(key, suffix)
+	}
 	return semanticLabels[key]
 }
 

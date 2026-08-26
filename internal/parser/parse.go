@@ -25,6 +25,18 @@ type AudioResolverFunc func(ref string) *entryir.Audio
 // ResolveAudio implements AudioResolver.
 func (f AudioResolverFunc) ResolveAudio(ref string) *entryir.Audio { return f(ref) }
 
+// ImageResolver turns an inline image reference into a dictionary-bound MDD
+// resource. Missing MDD assets and non-dictionary URLs resolve to nil.
+type ImageResolver interface {
+	ResolveImage(ref, alt string) *entryir.Image
+}
+
+// ImageResolverFunc adapts a function to ImageResolver.
+type ImageResolverFunc func(ref, alt string) *entryir.Image
+
+// ResolveImage implements ImageResolver.
+func (f ImageResolverFunc) ResolveImage(ref, alt string) *entryir.Image { return f(ref, alt) }
+
 // Options configures one parse.
 type Options struct {
 	// Headword is the key that was looked up, used when the entry does not
@@ -34,6 +46,8 @@ type Options struct {
 	Profile *Profile
 	// Audio resolves pronunciation references. May be nil.
 	Audio AudioResolver
+	// Image resolves inline illustrations in free-form prose. May be nil.
+	Image ImageResolver
 	// MaxExamplesPerSense caps example output. Some dictionaries ship twenty
 	// corpus sentences per sense, which is unreadable in a popup.
 	MaxExamplesPerSense int

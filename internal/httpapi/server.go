@@ -14,6 +14,7 @@ import (
 
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
+	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
 	"github.com/wakewon/bob-plugin-mdict/internal/version"
 )
@@ -194,8 +195,8 @@ type LookupRequest struct {
 	// MaxExamples caps examples per sense.
 	MaxExamples int  `json:"maxExamples,omitempty"`
 	Debug       bool `json:"debug,omitempty"`
-	// Format is "ir" (default) or "bob". "bob" adds a rendered toDict so the
-	// plugin can pass it straight to Bob without interpreting the IR.
+	// Format is "ir" (default), "bob", or "markdown". Presentation formats add
+	// a rendered sibling field while preserving the canonical IR matches.
 	Format string `json:"format,omitempty"`
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
@@ -219,6 +220,14 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RecordOrdinal < 0 {
 		writeError(w, http.StatusBadRequest, "badRequest", "recordOrdinal must be zero or a positive integer", "")
+		return
+	}
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	if format == "" {
+		format = "ir"
+	}
+	if format != "ir" && format != "bob" && format != "markdown" {
+		writeError(w, http.StatusBadRequest, "badRequest", "format must be ir, bob, or markdown", "")
 		return
 	}
 	if req.MultiRecordMode != "" &&
@@ -249,15 +258,22 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		bobOpts.MultiRecordMode = bobadapter.MultiRecordSeparate
 	}
 	bobOpts.RecordOrdinal = req.RecordOrdinal
+	markdownOpts := mdrender.UserOptions()
+	markdownOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
+	markdownOpts.IncludeExamples = bobOpts.IncludeExamples
+	markdownOpts.IncludeExtras = bobOpts.IncludeExtras
+	markdownOpts.RecordOrdinal = req.RecordOrdinal
 
 	result, err := s.svc.Lookup(req.Query, service.LookupOptions{
-		DictionaryIDs: req.Dictionaries,
-		Mode:          mode,
-		Limit:         req.Limit,
-		MaxExamples:   req.MaxExamples,
-		Debug:         req.Debug,
-		RenderBob:     strings.EqualFold(req.Format, "bob"),
-		BobOptions:    bobOpts,
+		DictionaryIDs:   req.Dictionaries,
+		Mode:            mode,
+		Limit:           req.Limit,
+		MaxExamples:     req.MaxExamples,
+		Debug:           req.Debug,
+		RenderBob:       format == "bob",
+		BobOptions:      bobOpts,
+		RenderMarkdown:  format == "markdown",
+		MarkdownOptions: markdownOpts,
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrNoDictionaries) {

@@ -98,7 +98,7 @@ func finish(run *Run, opts Options) {
 			continue
 		}
 		run.Healthy++
-		parsers[dictionary.Report.Profile.Selected]++
+		parsers[dictionary.RuntimeProfile]++
 
 		tier := dictionary.Language.Tier
 		totals := byTier[tier]

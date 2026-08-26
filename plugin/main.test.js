@@ -60,6 +60,34 @@ test('blank ID uses first match and explicit ID restricts lookup', () => {
     }
 });
 
+test('Markdown presentation requests service Markdown and returns it directly', () => {
+    let completion;
+    const markdown = '# flimber\n\n## noun\n\n- **1** synthetic definition\n';
+    const loaded = load({
+        presentationMode: 'markdown', showExamples: 'disable', showExtras: 'disable', maxExamples: '2'
+    }, request => {
+        assert.equal(request.body.format, 'markdown');
+        assert.equal(request.body.includeExamples, false);
+        assert.equal(request.body.includeExtras, false);
+        assert.equal(request.body.maxExamples, 2);
+        request.handler(response(200, { markdown, matches: [{}] }));
+    });
+    loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
+    assert.equal(completion.result.toParagraphs, markdown);
+    assert.equal('toDict' in completion.result, false);
+});
+
+test('dictionary card remains the default presentation', () => {
+    let completion;
+    const loaded = load({}, request => {
+        assert.equal(request.body.format, 'bob');
+        request.handler(response(200, { bob: { word: 'flimber', parts: [] } }));
+    });
+    loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
+    assert.equal(completion.result.toDict.word, 'flimber');
+    assert.equal('toParagraphs' in completion.result, false);
+});
+
 test('Bob-preprocessed /list uses originalText and never performs a lookup', () => {
     for (const originalText of ['/list', '  /list  ']) {
         let completion;

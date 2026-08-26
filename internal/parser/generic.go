@@ -167,6 +167,9 @@ func (s *parseState) genericSenseNodes() []*html.Node {
 		if !classMatchesHint(node, senseClassHints) {
 			return true
 		}
+		if s.textIsAllLinks(node) {
+			return true
+		}
 		// Ignore wrappers that merely contain the real sense blocks.
 		if len(QueryAll(node, ParseSelector("*"))) > 0 && containsSenseChild(node) {
 			return true
@@ -277,6 +280,11 @@ func (s *parseState) scanForPOS(node *html.Node) string {
 func (s *parseState) genericSense(node *html.Node) entryir.Sense {
 	sense := entryir.Sense{Confidence: 0.65, Rule: "generic:senseHints"}
 
+	// A labelled nested list keeps the label's semantic role. Unlabelled lists
+	// remain examples for compatibility, but a publisher explicitly calling a
+	// list collocations, synonyms, usage, and so on outranks that fallback.
+	s.classifyNestedLists(node)
+
 	// Examples first, then detached, so the definition is not polluted by them.
 	var exampleNodes []*html.Node
 	Walk(node, func(child *html.Node) bool {
@@ -349,6 +357,94 @@ func (s *parseState) genericSense(node *html.Node) entryir.Sense {
 	return sense
 }
 
+func (s *parseState) classifyNestedLists(node *html.Node) {
+	for _, list := range QueryAll(node, ParseSelector("ul, ol")) {
+		role := semanticRoleForList(list)
+		if role == "" || role == LabelExamples {
+			continue
+		}
+		var values []string
+		for _, item := range QueryAll(list, ParseSelector("li")) {
+			if text := Normalize(s.textOf(item)); text != "" {
+				values = append(values, text)
+			}
+		}
+		if len(values) == 0 {
+			continue
+		}
+		s.storeSemanticValues(role, values)
+		if list.Parent != nil {
+			list.Parent.RemoveChild(list)
+		}
+	}
+}
+
+func semanticRoleForList(list *html.Node) SemanticLabel {
+	var evidence []string
+	for _, node := range append([]*html.Node{list}, Ancestors(list)...) {
+		if node == nil {
+			continue
+		}
+		evidence = append(evidence, Attr(node, "class"), Attr(node, "id"), Attr(node, "title"), Attr(node, "aria-label"))
+		for sibling := list.PrevSibling; sibling != nil; sibling = sibling.PrevSibling {
+			if sibling.Type != html.ElementNode {
+				continue
+			}
+			if text := Normalize(Text(sibling, TextOptions{SkipHidden: true})); len([]rune(text)) <= 60 {
+				evidence = append(evidence, text)
+			}
+			break
+		}
+		if len(evidence) >= 12 {
+			break
+		}
+	}
+	for _, value := range evidence {
+		for _, token := range append([]string{value}, strings.Fields(value)...) {
+			if role := ClassifySemanticLabel(token); role != "" {
+				return role
+			}
+		}
+	}
+	return ""
+}
+
+func (s *parseState) storeSemanticValues(role SemanticLabel, values []string) {
+	joined := strings.Join(values, "; ")
+	switch role {
+	case LabelCollocations:
+		s.entry.Collocations = append(s.entry.Collocations, values...)
+	case LabelSynonyms:
+		s.entry.Synonyms = append(s.entry.Synonyms, values...)
+	case LabelAntonyms:
+		s.entry.Antonyms = append(s.entry.Antonyms, values...)
+	case LabelCrossReference:
+		s.entry.CrossReferences = append(s.entry.CrossReferences, values...)
+	case LabelRelated:
+		s.entry.Related = append(s.entry.Related, values...)
+	case LabelUsage:
+		s.entry.UsageNotes = append(s.entry.UsageNotes, entryir.Section{Title: "Usage", Body: joined})
+	case LabelGrammar:
+		s.entry.GrammarNotes = append(s.entry.GrammarNotes, entryir.Section{Title: "Grammar", Body: joined})
+	case LabelPhrase, LabelIdiom, LabelPhrasalVerb, LabelDerivative:
+		for _, value := range values {
+			lemma, body := splitFirstClause(value)
+			switch role {
+			case LabelPhrase:
+				s.entry.Phrases = appendPhrase(s.entry.Phrases, lemma, body)
+			case LabelIdiom:
+				s.entry.Idioms = appendPhrase(s.entry.Idioms, lemma, body)
+			case LabelPhrasalVerb:
+				s.entry.PhrasalVerbs = appendPhrase(s.entry.PhrasalVerbs, lemma, body)
+			case LabelDerivative:
+				s.entry.Derivatives = appendPhrase(s.entry.Derivatives, lemma, body)
+			}
+		}
+	default:
+		s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: "Note", Body: joined})
+	}
+}
+
 // listItemExamples treats a list nested inside a sense as that sense's
 // examples or citations.
 //
@@ -409,13 +505,18 @@ const fallbackSectionLimit = 4000
 // genericSectionFrom emits a node's text as untyped content.
 func (s *parseState) genericSectionFrom(node *html.Node) bool {
 	text := Normalize(Text(node, TextOptions{SkipHidden: true}))
-	if text == "" {
+	blocks := s.richBlocks(node)
+	if text == "" && len(blocks) == 0 {
 		return false
 	}
 	if runes := []rune(text); len(runes) > fallbackSectionLimit {
 		text = string(runes[:fallbackSectionLimit]) + " …"
 	}
-	s.entry.Sections = append(s.entry.Sections, entryir.Section{Title: FallbackSectionTitle, Body: text})
+	s.entry.Sections = append(s.entry.Sections, entryir.Section{
+		Title:  FallbackSectionTitle,
+		Body:   text,
+		Blocks: blocks,
+	})
 	return true
 }
 

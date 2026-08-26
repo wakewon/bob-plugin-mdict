@@ -57,6 +57,36 @@ func TestNumberedTableOfContentsIsNotASenseList(t *testing.T) {
 	}
 }
 
+func TestOrderedLinkMenuIsNotASenseList(t *testing.T) {
+	entry := parse(t, "wexal", `<article><ol class="sense-menu">
+		<li><a href="#sense-1">first meaning</a></li>
+		<li><a href="#sense-2">second meaning</a></li>
+		<li><a href="#sense-3">third meaning</a></li>
+	</ol><div class="sense"><span class="def">a small hook used to fasten a sail</span></div>
+	<div class="sense"><span class="def">the act of fastening such a hook</span></div></article>`)
+	if len(entry.Parts) != 1 || len(entry.Parts[0].Senses) != 2 {
+		t.Fatalf("navigation menu became senses: %+v", senseTexts(entry))
+	}
+	for _, definition := range senseTexts(entry) {
+		if strings.Contains(definition, "meaning") {
+			t.Fatalf("menu label survived as definition: %q", definition)
+		}
+	}
+}
+
+func TestLabelledNestedListsKeepSemanticRoles(t *testing.T) {
+	entry := parse(t, "wexal", `<article><div class="sense"><span class="def">a small hook used to fasten a sail</span>
+		<h3>Collocations</h3><ul><li>secure a wexal</li><li>loose wexal</li></ul>
+		<h3>Synonyms</h3><ul><li>hook</li><li>fastener</li></ul></div>
+		<div class="sense"><span class="def">the act of fastening such a hook</span></div></article>`)
+	if len(entry.Collocations) != 2 || len(entry.Synonyms) != 2 {
+		t.Fatalf("semantic lists = collocations %v synonyms %v", entry.Collocations, entry.Synonyms)
+	}
+	if len(entry.Parts) != 1 || len(entry.Parts[0].Senses[0].Examples) != 0 {
+		t.Fatalf("labelled lists became examples: %+v", entry.Parts)
+	}
+}
+
 // The same guard, without links: a numbering that accounts for a fortieth of
 // the record is an index of it, not the meanings in it.
 func TestNumberingThatCoversNothingIsNotASenseList(t *testing.T) {

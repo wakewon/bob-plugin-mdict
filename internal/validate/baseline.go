@@ -171,8 +171,18 @@ func classify(before, after Snapshot, existed bool) (Change, string) {
 	// of the source looks like. Retention is checked first for the same
 	// reason: it is the measure closest to "did anything go missing".
 	retentionRose := after.Metrics.Retention > before.Metrics.Retention+retentionDrop
+	honestFallback := structuredBefore && !structuredAfter &&
+		after.Fields.Fallback > 0 && len(after.Failures) == 0 &&
+		after.Metrics.Retention >= 0.75 &&
+		after.Metrics.Retention >= before.Metrics.Retention-0.05 &&
+		after.Metrics.Duplication <= before.Metrics.Duplication-duplicationRise &&
+		hadSuspiciousStructure(before)
 
 	switch {
+	case honestFallback && retentionRose:
+		return ChangeImprovement, "suspicious structure gave way to a higher-retention, lower-duplication fallback"
+	case honestFallback:
+		return ChangeNeedsReview, "suspicious structure gave way to an honest high-retention, lower-duplication fallback"
 	case structuredBefore && !structuredAfter && !retentionRose:
 		return ChangeRegression, "senses were recovered before and are not now"
 	case retentionFell:
@@ -191,6 +201,17 @@ func classify(before, after Snapshot, existed bool) (Change, string) {
 		return ChangeImprovement, "the parse now accounts for materially more of the record"
 	}
 	return ChangeNeedsReview, "the semantic result changed"
+}
+
+func hadSuspiciousStructure(snapshot Snapshot) bool {
+	for _, signal := range snapshot.Signals {
+		switch signal {
+		case SignalHighSenseCount, SignalHighDuplication, SignalRepeatedContent,
+			SignalSubsenseEcho, SignalExamplesNoDefs, SignalSingleHugeExample:
+			return true
+		}
+	}
+	return snapshot.Metrics.Duplication > duplicationCeiling
 }
 
 func timestamp() string { return time.Now().UTC().Format(time.RFC3339) }

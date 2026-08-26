@@ -74,3 +74,18 @@ func TestDerivativeAndSynonymHeadingsAreTyped(t *testing.T) {
 		t.Fatalf("semantic headings were not typed: parts=%+v derivatives=%+v synonyms=%+v", entry.Parts, entry.Derivatives, entry.Synonyms)
 	}
 }
+
+func TestUsageGrammarAndCollocationHeadingsAreTyped(t *testing.T) {
+	markup := []byte(`<article class="collinsbody"><header class="word_entry"><span class="word_key">flimber</span></header>
+		<section class="collins_en_cn"><div class="caption"><span class="st">Usage notes</span>Mostly used in careful speech.</div></section>
+		<section class="collins_en_cn"><div class="caption"><span class="st">Grammar</span>Usually followed by a preposition.</div></section>
+		<section class="collins_en_cn"><div class="caption"><span class="st">Collocations</span>secure a flimber, loose flimber</div></section></article>`)
+	entry, err := parser.Parse(markup, parser.Options{Profile: profiles.ByID("collins-cobuild-overhaul")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entry.Parts) != 0 || len(entry.UsageNotes) != 1 || len(entry.GrammarNotes) != 1 || len(entry.Collocations) != 2 {
+		t.Fatalf("semantic headings were not typed: parts=%+v usage=%+v grammar=%+v collocations=%+v",
+			entry.Parts, entry.UsageNotes, entry.GrammarNotes, entry.Collocations)
+	}
+}

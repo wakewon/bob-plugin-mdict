@@ -5,11 +5,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
+	"github.com/wakewon/bob-plugin-mdict/internal/parser"
 )
 
 // Backend parity asks a different question from the metrics: not "is the parse
@@ -180,7 +182,7 @@ func (c *checker) checkMarkdown(in parityInput) {
 	// Merriam-Webster delimits its transcriptions with backslashes, and
 	// stripping those would compare two different strings.
 	var missing []string
-	for _, field := range irFields(in.set) {
+	for _, field := range markdownFields(in.set) {
 		if !containsNormalized(in.markdown, mdrender.Escape(field.text)) {
 			missing = append(missing, field.kind+": "+truncate(field.text, 40))
 		}
@@ -230,15 +232,32 @@ func init() {
 
 // irField is one piece of IR text that a presentation layer must not lose.
 func irFields(set *entryir.EntrySet) []semanticField {
+	return parityFields(set, false)
+}
+
+// markdownFields replaces a rich section's compatibility-oriented flat Body
+// with the ordered text and table cells that Markdown actually renders. A
+// table delimiter may split the flat Body, but it must not hide any semantic
+// block. Bob consumes Body directly and therefore keeps using irFields.
+func markdownFields(set *entryir.EntrySet) []semanticField {
+	return parityFields(set, true)
+}
+
+func parityFields(set *entryir.EntrySet, richSections bool) []semanticField {
 	var out []semanticField
 	for _, record := range set.Records {
 		if record.Entry == nil {
 			continue
 		}
-		for _, field := range semanticFields(record.Entry) {
-			// Very short strings match by accident everywhere and prove
-			// nothing about preservation.
-			if len([]rune(field.text)) < 8 {
+		fields := semanticFields(record.Entry)
+		if richSections {
+			fields = markdownSemanticFields(record.Entry, fields)
+		}
+		for _, field := range fields {
+			// Short CJK strings are often complete translations or register
+			// labels (放弃, 正式). Latin fragments still need enough length to
+			// avoid matching by accident throughout an entry.
+			if !meaningfulParityField(field.text) {
 				continue
 			}
 			switch field.kind {
@@ -253,6 +272,93 @@ func irFields(set *entryir.EntrySet) []semanticField {
 		}
 	}
 	return out
+}
+
+func markdownSemanticFields(entry *entryir.Entry, fields []semanticField) []semanticField {
+	tailFields := 0
+	for _, section := range entry.UsageNotes {
+		if strings.TrimSpace(section.Title) != "" {
+			tailFields++
+		}
+		if strings.TrimSpace(section.Body) != "" {
+			tailFields++
+		}
+	}
+	for _, section := range entry.GrammarNotes {
+		if strings.TrimSpace(section.Title) != "" {
+			tailFields++
+		}
+		if strings.TrimSpace(section.Body) != "" {
+			tailFields++
+		}
+	}
+	if strings.TrimSpace(entry.Etymology) != "" {
+		tailFields++
+	}
+	for _, section := range entry.Sections {
+		if strings.TrimSpace(section.Body) != "" {
+			tailFields++
+		}
+	}
+	if tailFields > len(fields) {
+		return fields
+	}
+	out := append([]semanticField(nil), fields[:len(fields)-tailFields]...)
+	add := func(kind, value string) {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, semanticField{kind: kind, text: trimmed})
+		}
+	}
+	addSection := func(kind string, section entryir.Section, includeTitle bool) {
+		if includeTitle {
+			add(kind, section.Title)
+		}
+		if len(section.Blocks) == 0 {
+			add(kind, section.Body)
+			return
+		}
+		for _, block := range section.Blocks {
+			switch block.Kind {
+			case entryir.RichText:
+				add(kind, block.Text)
+			case entryir.RichTable:
+				for _, row := range block.Rows {
+					for _, cell := range row {
+						add(kind, cell)
+					}
+				}
+			}
+		}
+	}
+	for _, section := range entry.UsageNotes {
+		addSection("usageNote", section, true)
+	}
+	for _, section := range entry.GrammarNotes {
+		addSection("grammarNote", section, true)
+	}
+	add("etymology", entry.Etymology)
+	for _, section := range entry.Sections {
+		kind := "section"
+		if section.Title == parser.FallbackSectionTitle {
+			kind = "fallback"
+		}
+		addSection(kind, section, false)
+	}
+	return out
+}
+
+func meaningfulParityField(text string) bool {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) >= 8 {
+		return true
+	}
+	cjk := 0
+	for _, r := range runes {
+		if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+			cjk++
+		}
+	}
+	return cjk >= 2
 }
 
 func irDefinitionOrder(set *entryir.EntrySet) []string {

@@ -878,6 +878,17 @@ func (s *parseState) orderedListSenses() []enumBlock {
 		if len(items) < 2 || len(items) > maxEnumeratedSenses {
 			continue
 		}
+		linkOnly := 0
+		for _, item := range items {
+			if s.textIsAllLinks(item) {
+				linkOnly++
+			}
+		}
+		// A navigation menu can contain one plain current item among links, so
+		// require a strong majority rather than literally every item.
+		if linkOnly*4 >= len(items)*3 {
+			continue
+		}
 		var blocks []enumBlock
 		for _, item := range items {
 			if len([]rune(Normalize(s.textOf(item)))) < minSenseTextRunes {

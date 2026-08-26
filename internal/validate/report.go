@@ -168,7 +168,7 @@ directory measures it; that is what the review queue is for.
 			dictionary.Language.Tier.Short(), escapeCell(container.Title), health,
 			len(dictionary.Snapshots), structured,
 			100*dictionary.MeanRetention, 100*dictionary.MeanDuplication,
-			dictionary.Report.Profile.Selected, container.ID)
+			dictionary.RuntimeProfile, container.ID)
 	}
 	return out.String()
 }
@@ -180,7 +180,8 @@ func renderDictionary(dictionary DictionaryResult, run *Run, paths map[string]st
 	fmt.Fprintf(&out, "[← index](../README.md)\n\n")
 	fmt.Fprintf(&out, "- id: `%s`\n- health: %s\n- entries: %d\n- MDD volumes: %d\n",
 		container.ID, container.Health, container.EntryCount, container.MDDVolumes)
-	fmt.Fprintf(&out, "- parser: `%s` (evidence %s over %d samples)\n",
+	fmt.Fprintf(&out, "- runtime parser: `%s`\n", dictionary.RuntimeProfile)
+	fmt.Fprintf(&out, "- diagnostic evidence: `%s` (%s over %d samples)\n",
 		dictionary.Report.Profile.Selected, dictionary.Report.Profile.Strength, dictionary.Report.Profile.Samples)
 	fmt.Fprintf(&out, "- priority: **%s**\n", dictionary.Language.Tier.Label())
 	fmt.Fprintf(&out, "- key script: %s · content scripts: %s\n",

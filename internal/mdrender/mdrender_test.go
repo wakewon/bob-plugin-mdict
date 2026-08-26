@@ -287,3 +287,46 @@ func TestExampleLimitIsHonoured(t *testing.T) {
 		t.Errorf("rendered %d examples, want 3:\n%s", got, out)
 	}
 }
+
+func TestUserMarkdownRendersInlineImageAndSafeUnevenTable(t *testing.T) {
+	entry := &entryir.Entry{
+		Headword: "wexal",
+		Sections: []entryir.Section{
+			{
+				Title: "Illustrated note", Body: "before after",
+				Blocks: []entryir.RichBlock{
+					{Kind: entryir.RichText, Text: "before"},
+					{Kind: entryir.RichImage, Image: &entryir.Image{Alt: "a [small] diagram", URL: "http://127.0.0.1:15321/v2/resource/TOKEN"}},
+					{Kind: entryir.RichText, Text: "after"},
+					{Kind: entryir.RichTable, Rows: [][]string{{"Form", "Meaning"}, {"wexal|s", "plural"}, {"wexalled"}}},
+				},
+			},
+		},
+	}
+	set := &entryir.EntrySet{LookupKey: "wexal", Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}}}
+	out := mdrender.RenderEntrySet(set, mdrender.UserOptions())
+	for _, want := range []string{
+		"before\n\n![a \\[small\\] diagram](http://127.0.0.1:15321/v2/resource/TOKEN)\n\nafter",
+		"| Form | Meaning |", "| --- | --- |", `| wexal\|s | plural |`, "| wexalled |  |",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	diagnostic := mdrender.RenderEntrySet(set, mdrender.DefaultOptions())
+	if strings.Contains(diagnostic, "TOKEN") || strings.Contains(diagnostic, "![") {
+		t.Fatalf("diagnostic Markdown leaked a live image URL:\n%s", diagnostic)
+	}
+}
+
+func TestUserOptionsNeverEnableProvenance(t *testing.T) {
+	entry := &entryir.Entry{Parts: []entryir.Part{{
+		POS: "noun", Rule: "generic:markerBlocks", Confidence: 0.42,
+		Senses: []entryir.Sense{{Definition: "a small hook", Rule: "generic:markerBlocks", Confidence: 0.42}},
+	}}}
+	set := &entryir.EntrySet{LookupKey: "wexal", Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}}}
+	out := mdrender.RenderEntrySet(set, mdrender.UserOptions())
+	if strings.Contains(out, "generic:markerBlocks") || strings.Contains(out, "0.42") {
+		t.Fatalf("provenance leaked into user Markdown:\n%s", out)
+	}
+}

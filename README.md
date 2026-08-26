@@ -142,6 +142,9 @@ this navigation syntax.
 Choose **Combined** in the plugin settings to keep all records in one card,
 labelled with `¹`, `²`, `³`, and so on.
 
+In **Markdown** presentation, all preserved records use explicit `Record n of
+total` headings. A typed record selector still selects exactly that record.
+
 Examples are grouped directly by their displayed sense, such as
 `Examples · verb 1` and `Examples · verb 2`. See also references are exposed
 through Bob's structured `relatedWordParts` representation when possible;
@@ -153,6 +156,7 @@ phrases and other explanatory sections remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
+| Presentation | Dictionary card | Keep the existing native Bob card, or request service-rendered Markdown through `toParagraphs`. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |

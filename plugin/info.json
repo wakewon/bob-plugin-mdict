@@ -33,6 +33,23 @@
       }
     },
     {
+      "identifier": "presentationMode",
+      "type": "menu",
+      "title": "显示方式",
+      "defaultValue": "dict",
+      "desc": "词典卡片保留现有 Bob 原生显示；Markdown 由本地服务从同一结构化词条生成。",
+      "menuValues": [
+        {
+          "title": "词典卡片",
+          "value": "dict"
+        },
+        {
+          "title": "Markdown",
+          "value": "markdown"
+        }
+      ]
+    },
+    {
       "identifier": "multiRecordMode",
       "type": "menu",
       "title": "重复词条显示方式",

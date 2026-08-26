@@ -114,9 +114,12 @@ type Snapshot struct {
 
 // DictionaryResult is one dictionary's validation run.
 type DictionaryResult struct {
-	Report    diagnose.Report `json:"report"`
-	Language  Language        `json:"language"`
-	Snapshots []Snapshot      `json:"snapshots"`
+	Report diagnose.Report `json:"report"`
+	// RuntimeProfile is authoritative for every metric below. Report.Profile
+	// remains the independent diagnostic evidence used to explain the choice.
+	RuntimeProfile string     `json:"runtimeProfile"`
+	Language       Language   `json:"language"`
+	Snapshots      []Snapshot `json:"snapshots"`
 	// Aggregates over this dictionary's snapshots.
 	MeanRetention   float64     `json:"meanRetention"`
 	MeanDuplication float64     `json:"meanDuplication"`
@@ -142,7 +145,7 @@ func Dictionary(svc *service.Service, dict *mdict.Dictionary) DictionaryResult {
 		diagnostic.ResolveAudio = dict.HasResource
 	}
 	report := diagnose.Inspect(dict, diagnostic)
-	result := DictionaryResult{Report: report}
+	result := DictionaryResult{Report: report, RuntimeProfile: svc.ProfileID(dict)}
 	if report.Container.Health != string(mdict.HealthOK) {
 		return result
 	}
@@ -157,7 +160,7 @@ func Dictionary(svc *service.Service, dict *mdict.Dictionary) DictionaryResult {
 
 	samples := diagnose.Samples(dict, samplingForTier(result.Language.Tier))
 	for _, sample := range samples {
-		snapshot, ok := validateOne(svc, dict, sample, report, result.Language)
+		snapshot, ok := validateOne(svc, dict, sample, report, result.RuntimeProfile, result.Language)
 		if !ok {
 			continue
 		}
@@ -169,30 +172,34 @@ func Dictionary(svc *service.Service, dict *mdict.Dictionary) DictionaryResult {
 
 // validateOne drives one record through the real pipeline.
 func validateOne(svc *service.Service, dict *mdict.Dictionary, sample diagnose.Sample,
-	report diagnose.Report, lang Language) (Snapshot, bool) {
+	report diagnose.Report, runtimeProfile string, lang Language) (Snapshot, bool) {
 
 	source, err := dict.LookupAll(sample.Key)
 	if err != nil || len(source.Records) == 0 {
 		return Snapshot{}, false
 	}
-	digest := sha256.Sum256(source.Records[0].HTML)
+	hasher := sha256.New()
+	for _, record := range source.Records {
+		_, _ = hasher.Write(record.HTML)
+		_, _ = hasher.Write([]byte{0})
+	}
+	digest := hasher.Sum(nil)
 	snapshot := Snapshot{
 		DictionaryID:    report.Container.ID,
 		DictionaryTitle: report.Container.Title,
 		Tier:            lang.Tier.Short(),
 		Key:             sample.Key,
 		MatchedKey:      source.MatchedKey,
-		RecordHash:      hex.EncodeToString(digest[:])[:16],
-		Parser:          report.Profile.Selected,
+		RecordHash:      hex.EncodeToString(digest)[:16],
+		Parser:          runtimeProfile,
 		Evidence:        string(report.Profile.Strength),
 		RawRecords:      len(source.Records),
 		profileEv:       report.Profile,
 		sourceHTML:      source.Records[0].HTML,
 	}
-	// The denominator every retention figure is measured against: the same
-	// view of a record the parser itself reads, scoped the way its profile
-	// scopes it.
-	snapshot.sourceText = parser.ScopedVisibleText(source.Records[0].HTML, profileByID(report.Profile.Selected))
+	// The source preview remains the first raw record for readable snapshots;
+	// metrics below pair every semantic record with its own raw record.
+	snapshot.sourceText = parser.ScopedVisibleText(source.Records[0].HTML, profileByID(runtimeProfile))
 	snapshot.recordText = parser.VisibleText(source.Records[0].HTML)
 
 	// The real lookup: same profile resolution, same duplicate handling, same
@@ -245,11 +252,73 @@ func validateOne(svc *service.Service, dict *mdict.Dictionary, sample diagnose.S
 		ruleCounts(record.Entry, rules)
 	}
 	snapshot.Rules = sortedCounts(rules)
-	snapshot.Metrics = measure(snapshot.sourceText, snapshot.recordText, set.Primary())
+	snapshot.Metrics = measureEntrySet(source, set, profileByID(runtimeProfile))
 	snapshot.EntryHash = hashEntrySet(set)
 	snapshot.bobJSON = encodeJSON(separate)
 	snapshot.Signals = append(snapshot.Signals, detectSignals(snapshot, set)...)
 	return snapshot, true
+}
+
+// measureEntrySet compares corresponding raw and semantic records, then
+// aggregates counts. Record provenance, rather than visible ordinal, is used
+// because empty-record filtering must not shift the pairing.
+func measureEntrySet(source *mdict.LookupSet, set *entryir.EntrySet, profile *parser.Profile) Metrics {
+	if source == nil || set == nil {
+		return Metrics{}
+	}
+	type identity struct {
+		key     string
+		ordinal int
+	}
+	raw := make(map[identity]*mdict.LookupResult, len(source.Records))
+	for _, record := range source.Records {
+		raw[identity{record.MatchedKey, record.RawRecordOrdinal}] = record
+	}
+	var measurements []Metrics
+	for _, record := range set.Records {
+		if record.Entry == nil {
+			continue
+		}
+		origin := record.Entry.Source
+		sourceRecord := raw[identity{origin.MatchedKey, origin.RawRecordOrdinal}]
+		if sourceRecord == nil {
+			continue
+		}
+		measurements = append(measurements, measure(
+			parser.ScopedVisibleText(sourceRecord.HTML, profile),
+			parser.VisibleText(sourceRecord.HTML), record.Entry))
+	}
+	return aggregateMetrics(measurements)
+}
+
+func aggregateMetrics(items []Metrics) Metrics {
+	var out Metrics
+	covered, excess := 0.0, 0.0
+	for _, item := range items {
+		out.SourceTokens += item.SourceTokens
+		out.OutputTokens += item.OutputTokens
+		out.RecordTokens += item.RecordTokens
+		covered += item.Retention * float64(item.SourceTokens)
+		excess += item.Duplication * float64(item.OutputTokens)
+		if item.LargestFieldShare > out.LargestFieldShare {
+			out.LargestFieldShare = item.LargestFieldShare
+			out.LargestFieldKind = item.LargestFieldKind
+		}
+		out.RepeatedDefinitions += item.RepeatedDefinitions
+		out.RepeatedExamples += item.RepeatedExamples
+		out.SubsenseEchoesParent += item.SubsenseEchoesParent
+		out.SectionEchoesSense += item.SectionEchoesSense
+	}
+	if out.SourceTokens > 0 {
+		out.Retention = covered / float64(out.SourceTokens)
+	}
+	if out.OutputTokens > 0 {
+		out.Duplication = excess / float64(out.OutputTokens)
+	}
+	if out.RecordTokens > 0 {
+		out.Scope = float64(out.SourceTokens) / float64(out.RecordTokens)
+	}
+	return out
 }
 
 func bobOptions(mode bobadapter.MultiRecordMode) bobadapter.Options {
@@ -279,25 +348,60 @@ func addFields(a, b Fields) Fields {
 // would otherwise hash differently on every run and report every entry as
 // changed.
 func hashEntrySet(set *entryir.EntrySet) string {
-	clone := *set
-	clone.Records = make([]entryir.EntryRecord, 0, len(set.Records))
-	for _, record := range set.Records {
-		if record.Entry == nil {
-			continue
-		}
-		entry := *record.Entry
-		entry.Pronunciations = append([]entryir.Pronunciation(nil), entry.Pronunciations...)
-		for i := range entry.Pronunciations {
-			if entry.Pronunciations[i].Audio != nil {
-				audio := *entry.Pronunciations[i].Audio
-				audio.Token, audio.URL = "", ""
-				entry.Pronunciations[i].Audio = &audio
-			}
-		}
-		clone.Records = append(clone.Records, entryir.EntryRecord{RecordOrdinal: record.RecordOrdinal, Entry: &entry})
+	var clone entryir.EntrySet
+	if err := json.Unmarshal([]byte(encodeJSON(set)), &clone); err != nil {
+		return ""
+	}
+	for i := range clone.Records {
+		scrubEntryResources(clone.Records[i].Entry)
 	}
 	digest := sha256.Sum256([]byte(encodeJSON(clone)))
 	return hex.EncodeToString(digest[:])[:16]
+}
+
+func scrubEntryResources(entry *entryir.Entry) {
+	if entry == nil {
+		return
+	}
+	scrubAudio := func(audio *entryir.Audio) {
+		if audio != nil {
+			audio.Token, audio.URL = "", ""
+		}
+	}
+	for i := range entry.Pronunciations {
+		scrubAudio(entry.Pronunciations[i].Audio)
+	}
+	for i := range entry.Forms {
+		scrubAudio(entry.Forms[i].Audio)
+	}
+	var scrubSenses func([]entryir.Sense)
+	scrubSenses = func(senses []entryir.Sense) {
+		for i := range senses {
+			for j := range senses[i].Examples {
+				scrubAudio(senses[i].Examples[j].Audio)
+			}
+			scrubSenses(senses[i].Subsenses)
+		}
+	}
+	for i := range entry.Parts {
+		scrubSenses(entry.Parts[i].Senses)
+	}
+	for _, phrases := range [][]entryir.PhraseEntry{entry.Phrases, entry.Idioms, entry.PhrasalVerbs, entry.Derivatives} {
+		for i := range phrases {
+			for j := range phrases[i].Examples {
+				scrubAudio(phrases[i].Examples[j].Audio)
+			}
+		}
+	}
+	for _, sections := range [][]entryir.Section{entry.Sections, entry.UsageNotes, entry.GrammarNotes} {
+		for i := range sections {
+			for j := range sections[i].Blocks {
+				if image := sections[i].Blocks[j].Image; image != nil {
+					image.Token, image.URL = "", ""
+				}
+			}
+		}
+	}
 }
 
 // encodeJSON serializes without HTML escaping.

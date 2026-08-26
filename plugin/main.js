@@ -121,6 +121,10 @@ function configuredMultiRecordMode() {
     return getOption('multiRecordMode', 'separate') === 'combined' ? 'combined' : 'separate';
 }
 
+function configuredPresentationMode() {
+    return getOption('presentationMode', 'dict') === 'markdown' ? 'markdown' : 'dict';
+}
+
 /**
  * describeTransportError 把连接失败翻译成用户能照着做的提示。
  * “服务没装”和“服务没跑”对用户来说是完全不同的两件事。
@@ -213,14 +217,14 @@ function serviceErrorFor(statusCode, body, serviceURL) {
 /**
  * buildRequestBody 组装查询请求。
  *
- * format 为 "bob" 时服务会直接返回渲染好的 toDict，
- * 这样插件不需要理解词典的内部结构。
+ * 服务直接返回对应的呈现结果；插件不解释 EntrySet，也不解析 Markdown。
  */
 function buildRequestBody(text, recordOrdinal) {
+    var presentation = configuredPresentationMode();
     var body = {
         query: text,
         multiRecordMode: configuredMultiRecordMode(),
-        format: 'bob',
+        format: presentation === 'markdown' ? 'markdown' : 'bob',
         mode: 'exact',
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
         includeExamples: getOption('showExamples', 'enable') === 'enable',
@@ -333,19 +337,26 @@ function translate(query, completion) {
                 query.onCompletion({ error: serviceErrorFor(statusCode, body, serviceURL) });
                 return;
             }
-            if (!body || !body.bob || !body.bob.word) {
+            var presentation = configuredPresentationMode();
+            if (!body || (presentation === 'markdown' ? !body.markdown : (!body.bob || !body.bob.word))) {
                 query.onCompletion({ error: { type: 'notFound', message: '词典中没有收录这个词' } });
                 return;
             }
 
+            var result = {
+                from: query.detectFrom,
+                to: query.detectTo
+            };
+            if (presentation === 'markdown') {
+                // Upcoming Bob Markdown support consumes the service-rendered string
+                // directly. Keeping this assignment thin makes later API adaptation a
+                // presentation-only change.
+                result.toParagraphs = body.markdown;
+            } else {
+                result.toDict = body.bob;
+            }
             query.onCompletion({
-                result: {
-                    from: query.detectFrom,
-                    to: query.detectTo,
-                    // 普通查词只返回 toDict。Bob 1.6+ 明确允许这样做；
-                    // 额外的段落会让词头在结果底部重复出现。
-                    toDict: body.bob
-                }
+                result: result
             });
         }
     });

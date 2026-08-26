@@ -87,10 +87,21 @@ var audioExtensions = map[string]string{
 	".flac": "audio/flac",
 }
 
+var imageExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
+	".svg": true, ".webp": true,
+}
+
 // IsAudioRef reports whether a reference points at a pronunciation asset.
 func IsAudioRef(ref string) bool {
 	_, ok := audioExtensions[strings.ToLower(path.Ext(NormalizeResourceKey(ref)))]
 	return ok
+}
+
+// IsImageRef reports whether a reference has a supported dictionary image
+// extension. It does not fetch or resolve the reference.
+func IsImageRef(ref string) bool {
+	return imageExtensions[strings.ToLower(path.Ext(NormalizeResourceKey(ref)))]
 }
 
 // IsSpeexRef reports whether a reference needs Speex decoding before macOS can
