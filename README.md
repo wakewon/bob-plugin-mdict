@@ -1,6 +1,6 @@
 # MDict for Bob
 
-Current product version: **1.0.0** · local API: **v2**.
+Current product version: **1.1.0** · local API: **v2**.
 
 English | [简体中文](README_CN.md)
 
@@ -142,8 +142,27 @@ this navigation syntax.
 Choose **Combined** in the plugin settings to keep all records in one card,
 labelled with `¹`, `²`, `³`, and so on.
 
-In **Markdown** presentation, all preserved records use explicit `Record n of
-total` headings. A typed record selector still selects exactly that record.
+**Markdown** presentation answers the same setting with what Markdown has.
+Combined renders every record in order, each under a `Record n of total`
+heading and divided from the next by a `---` thematic break. Separate renders
+one record and closes with an `Other entries` list of the other records'
+selectors. A typed record selector still selects exactly that record in either
+mode.
+
+Bob documents no Markdown lookup action, so those selectors — and cross
+references and related entries — are written as copyable query text in a code
+span rather than as links that would not work:
+
+```markdown
+## Other entries
+
+- `wound²`
+- `wound³`
+```
+
+This is presentation only. The navigation target stays in the parsed entry, so
+if Bob later publishes a real Markdown lookup mechanism, only this rendering
+changes.
 
 Examples are grouped directly by their displayed sense, such as
 `Examples · verb 1` and `Examples · verb 2`. See also references are exposed
@@ -156,7 +175,7 @@ phrases and other explanatory sections remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
-| Presentation | Dictionary card | Keep the existing native Bob card, or request service-rendered Markdown through `toParagraphs`. |
+| Presentation | Dictionary card | Keep the existing native Bob card, or ask the service for Markdown. The whole document is returned as one `toParagraphs` element, which is Bob's documented array-of-strings contract. Bob does not currently document Markdown rendering of that content; what this option guarantees is a standards-compliant Markdown document, not that Bob draws it as formatted text. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
@@ -191,7 +210,7 @@ of the record, and does it survive the rest of the pipeline? It runs the real
 service and the real Bob adapter over records the dictionary actually
 contains, measures how much of each record the parse accounts for and how much
 it repeats, checks the invariants between parser, service, adapter and the
-experimental Markdown renderer, and writes a ranked set of Markdown review
+Markdown renderer, and writes a ranked set of Markdown review
 files. Unlike the diagnostics, those files quote real entries, so they are
 written only where you point them and belong somewhere private. See
 [docs/PARSER.md](docs/PARSER.md#validating-what-the-parser-produced).

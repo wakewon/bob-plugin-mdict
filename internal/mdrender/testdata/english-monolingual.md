@@ -55,12 +55,12 @@
 
 ## See also
 
-- grommet
-- cleat
+- `grommet`
+- `cleat`
 
 ## Related
 
-- halyard
+- `halyard`
 
 ## Word family
 

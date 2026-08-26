@@ -248,6 +248,75 @@ func TestV2LookupMarkdownIsAdditiveUserOutput(t *testing.T) {
 	}
 }
 
+// multiRecordMode means the same thing in both presentations. What differs is
+// only how each one can draw it: Bob has clickable related words, Markdown has
+// a thematic break and copyable query text.
+func TestV2LookupMarkdownHonoursMultiRecordMode(t *testing.T) {
+	root := t.TempDir()
+	markup := func(pos, definition string) string {
+		return `<article><h1>flimber</h1><div class="sense"><span class="pos">` + pos +
+			`</span><span class="definition">` + definition + `</span></div></article>`
+	}
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{
+		{Key: "flimber", HTML: markup("noun", "synthetic noun definition")},
+		{Key: "flimber", HTML: markup("verb", "synthetic verb definition")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	markdownFor := func(body string) string {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(body)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		var payload struct {
+			Markdown string `json:"markdown"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload.Markdown
+	}
+
+	combined := markdownFor(`{"query":"flimber","format":"markdown","multiRecordMode":"combined"}`)
+	if !strings.Contains(combined, "synthetic noun definition") || !strings.Contains(combined, "synthetic verb definition") {
+		t.Errorf("combined Markdown dropped a record:\n%s", combined)
+	}
+	if got := strings.Count(combined, "\n---\n"); got != 1 {
+		t.Errorf("two records need exactly one divider, got %d:\n%s", got, combined)
+	}
+
+	separate := markdownFor(`{"query":"flimber","format":"markdown","multiRecordMode":"separate"}`)
+	if !strings.Contains(separate, "synthetic noun definition") || strings.Contains(separate, "synthetic verb definition") {
+		t.Errorf("separate Markdown should show record 1 only:\n%s", separate)
+	}
+	if !strings.Contains(separate, "## Other entries") || !strings.Contains(separate, "- `flimber\u00b2`") {
+		t.Errorf("separate Markdown must offer the sibling record as copyable text:\n%s", separate)
+	}
+	if strings.Contains(separate, "](") {
+		t.Errorf("Bob has no Markdown lookup contract, so nothing may become a link:\n%s", separate)
+	}
+
+	selected := markdownFor(`{"query":"flimber","format":"markdown","multiRecordMode":"separate","recordOrdinal":2}`)
+	if !strings.Contains(selected, "synthetic verb definition") || strings.Contains(selected, "synthetic noun definition") {
+		t.Errorf("record selector 2 should show record 2 only:\n%s", selected)
+	}
+	if !strings.Contains(selected, "- `flimber\u00b9`") {
+		t.Errorf("the selected record should point back at its sibling:\n%s", selected)
+	}
+
+	// An out-of-range selector is a 404 in Markdown exactly as in the Bob card.
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
+		strings.NewReader(`{"query":"flimber","format":"markdown","recordOrdinal":9}`)))
+	if recorder.Code != http.StatusNotFound || !strings.Contains(recorder.Body.String(), "recordNotFound") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestV2LookupRejectsUnknownFormat(t *testing.T) {
 	handler := newTestServer(t)
 	recorder := httptest.NewRecorder()

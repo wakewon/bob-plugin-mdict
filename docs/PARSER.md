@@ -80,8 +80,8 @@ bob-mdict --dictionary-dir /path/to/mdxs --validate-all --validate-out /private/
 This runs the real service and the real Bob adapter over records the dictionary
 actually contains, then writes a Markdown review set: an index, a page per
 dictionary, and one file per queued record showing the source markup, the
-canonical EntrySet, what Bob would receive, the experimental Markdown
-rendering, and every automatic measurement of the three.
+canonical EntrySet, what Bob would receive, the Markdown rendering, and every
+automatic measurement of the three.
 
 **These files quote real entries.** That is what they are for, and it is why
 they are written only where you point them. Keep them somewhere private and

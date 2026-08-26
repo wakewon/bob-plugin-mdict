@@ -55,10 +55,12 @@ func (s *parseState) richBlocks(root *html.Node) []entryir.RichBlock {
 				}
 				return
 			case "table":
-				rows := tableRows(node)
-				if len(rows) > 0 {
+				header, rows := tableRows(node)
+				if len(header) > 0 || len(rows) > 0 {
 					flush()
-					blocks = append(blocks, entryir.RichBlock{Kind: entryir.RichTable, Rows: rows})
+					blocks = append(blocks, entryir.RichBlock{
+						Kind: entryir.RichTable, Header: header, Rows: rows,
+					})
 				}
 				return
 			case "br":
@@ -86,17 +88,23 @@ func (s *parseState) richBlocks(root *html.Node) []entryir.RichBlock {
 		return nil
 	}
 	// Publisher markup commonly contains the same illustration twice for two
-	// switchable language views. Once hidden variants and CSS are unavailable,
-	// identical adjacent resources are the strongest safe dedupe evidence.
-	seenImages := map[string]bool{}
+	// switchable language views of one figure. Once hidden variants and CSS are
+	// unavailable those two arrive back to back with nothing between them, and
+	// that adjacency is the only safe evidence of a duplicated presentation
+	// variant.
+	//
+	// Anything further apart is left alone. A dictionary that genuinely
+	// illustrates the same thing twice — once per sense, once per idiom — is
+	// showing it deliberately, and a visible duplicate costs the reader far
+	// less than a silently deleted illustration.
 	kept := blocks[:0]
 	for _, block := range blocks {
-		if block.Kind == entryir.RichImage && block.Image != nil {
-			key := block.Image.ResourceRef
-			if seenImages[key] {
+		if block.Kind == entryir.RichImage && block.Image != nil && len(kept) > 0 {
+			previous := kept[len(kept)-1]
+			if previous.Kind == entryir.RichImage && previous.Image != nil &&
+				previous.Image.ResourceRef == block.Image.ResourceRef {
 				continue
 			}
-			seenImages[key] = true
 		}
 		kept = append(kept, block)
 	}
@@ -112,19 +120,33 @@ func firstAttr(node *html.Node, names ...string) string {
 	return ""
 }
 
-func tableRows(table *html.Node) [][]string {
-	var rows [][]string
+// tableRows splits a conventional table into its explicit header row, if the
+// source marked one with <th> cells, and its remaining rows.
+//
+// Only the first all-<th> row is treated as the header. A dictionary that
+// repeats header cells down the side of a table is labelling rows, not
+// declaring several headers, and Markdown has one header row to give.
+func tableRows(table *html.Node) (header []string, rows [][]string) {
 	for _, row := range QueryAllNested(table, ParseSelector("tr")) {
 		var cells []string
+		headerCells := 0
 		for child := row.FirstChild; child != nil; child = child.NextSibling {
 			if child.Type != html.ElementNode || (child.Data != "th" && child.Data != "td") {
 				continue
 			}
+			if child.Data == "th" {
+				headerCells++
+			}
 			cells = append(cells, Normalize(Text(child, TextOptions{SkipHidden: true})))
 		}
-		if len(cells) > 0 {
-			rows = append(rows, cells)
+		if len(cells) == 0 {
+			continue
 		}
+		if header == nil && headerCells == len(cells) {
+			header = cells
+			continue
+		}
+		rows = append(rows, cells)
 	}
-	return rows
+	return header, rows
 }

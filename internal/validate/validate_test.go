@@ -327,7 +327,7 @@ func TestWriteProducesALinkedReviewSet(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, section := range []string{"## Metadata", "## Automated consistency", "## Backend parity",
-			"## Source record", "## Experimental Markdown rendering", "## Parsed EntrySet",
+			"## Source record", "## Markdown rendering", "## Parsed EntrySet",
 			"## Simulated Bob result"} {
 			if !strings.Contains(string(body), section) {
 				t.Errorf("%s is missing %q", entry.Name(), section)

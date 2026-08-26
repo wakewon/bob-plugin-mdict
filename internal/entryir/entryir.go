@@ -60,12 +60,16 @@ const (
 )
 
 // RichBlock preserves ordered text, image, and conventional table content.
-// Exactly one of Text, Image, or Rows is populated according to Kind.
+// Exactly one of Text, Image, or Rows/Header is populated according to Kind.
 type RichBlock struct {
 	Kind  RichBlockKind `json:"kind"`
 	Text  string        `json:"text,omitempty"`
 	Image *Image        `json:"image,omitempty"`
 	Rows  [][]string    `json:"rows,omitempty"`
+	// Header is the table's own header row, present only when the source
+	// marked one with <th> cells. Absent means the source declared no header,
+	// which is a different fact from having an empty one.
+	Header []string `json:"header,omitempty"`
 }
 
 // Pronunciation preserves transcription and recording provenance separately.

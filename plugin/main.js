@@ -348,10 +348,12 @@ function translate(query, completion) {
                 to: query.detectTo
             };
             if (presentation === 'markdown') {
-                // Upcoming Bob Markdown support consumes the service-rendered string
-                // directly. Keeping this assignment thin makes later API adaptation a
-                // presentation-only change.
-                result.toParagraphs = body.markdown;
+                // Bob's documented plugin contract types toParagraphs as an array of
+                // strings, so the service-rendered document travels as one element
+                // rather than as a bare string. Keeping the whole document together
+                // preserves its formatting as a single unit, and is the shape a future
+                // Bob Markdown renderer would consume without changing this plugin.
+                result.toParagraphs = [body.markdown];
             } else {
                 result.toDict = body.bob;
             }

@@ -1,9 +1,11 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
+	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 )
 
 func TestParityKeepsShortCJKSemanticFields(t *testing.T) {
@@ -74,5 +76,45 @@ func TestHonestFallbackAfterSuspiciousStructureIsNotRegression(t *testing.T) {
 	change, _ := classify(before, after, true)
 	if change == ChangeRegression {
 		t.Fatalf("honest fallback classified as %q", change)
+	}
+}
+
+// A navigation target is written inside a code span, where Markdown syntax is
+// already inert, so it is not escaped the way prose is. The parity check has to
+// know that, or every cross-reference containing Markdown punctuation — and
+// "[sense 2]" is a real one — is reported as a field the renderer dropped.
+func TestParityAcceptsUnescapedNavigationTargetsInCodeSpans(t *testing.T) {
+	set := &entryir.EntrySet{
+		LookupKey: "analogue",
+		Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: &entryir.Entry{
+			Headword:        "analogue",
+			Parts:           []entryir.Part{{POS: "noun", Senses: []entryir.Sense{{Definition: "a thing seen as comparable to another"}}}},
+			CrossReferences: []string{"[sense 2]"},
+			Related:         []string{"digital*"},
+		}}},
+	}
+	markdown := mdrender.RenderEntrySet(set, mdrender.DefaultOptions())
+
+	var c checker
+	c.checkMarkdown(parityInput{set: set, markdown: markdown, irJSON: encodeJSON(set)})
+	for _, check := range c.checks {
+		if check.Name == "markdown-preserves-semantic-fields" && !check.OK {
+			t.Fatalf("code-spanned navigation target reported missing: %s\n%s", check.Detail, markdown)
+		}
+	}
+
+	// The check must still catch a target that really is gone, or it has been
+	// weakened into always passing.
+	stripped := strings.ReplaceAll(markdown, mdrender.NavigationTarget("[sense 2]"), "")
+	var after checker
+	after.checkMarkdown(parityInput{set: set, markdown: stripped, irJSON: encodeJSON(set)})
+	failed := false
+	for _, check := range after.checks {
+		if check.Name == "markdown-preserves-semantic-fields" && !check.OK {
+			failed = true
+		}
+	}
+	if !failed {
+		t.Fatal("removing a navigation target did not fail the parity check")
 	}
 }

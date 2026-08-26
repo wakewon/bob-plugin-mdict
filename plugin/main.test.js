@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
-    .replace('__BOB_MDICT_PLUGIN_VERSION__', '1.0.0-test')
+    .replace('__BOB_MDICT_PLUGIN_VERSION__', '1.1.0-test')
     .replace('__BOB_MDICT_PLUGIN_COMMIT__', 'test123');
 
 function load(options, respond) {
@@ -60,9 +60,12 @@ test('blank ID uses first match and explicit ID restricts lookup', () => {
     }
 });
 
-test('Markdown presentation requests service Markdown and returns it directly', () => {
+// Bob types toParagraphs as an array of strings. The whole Markdown document
+// travels as exactly one element so its formatting stays one unit; splitting it
+// into per-paragraph strings would break fenced blocks, lists and tables apart.
+test('Markdown presentation returns the whole document as one toParagraphs element', () => {
     let completion;
-    const markdown = '# flimber\n\n## noun\n\n- **1** synthetic definition\n';
+    const markdown = '# flimber\n\n## noun\n\n- **1** synthetic definition\n\n---\n\n## verb\n';
     const loaded = load({
         presentationMode: 'markdown', showExamples: 'disable', showExtras: 'disable', maxExamples: '2'
     }, request => {
@@ -73,8 +76,38 @@ test('Markdown presentation requests service Markdown and returns it directly', 
         request.handler(response(200, { markdown, matches: [{}] }));
     });
     loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
-    assert.equal(completion.result.toParagraphs, markdown);
+    assert.ok(Array.isArray(completion.result.toParagraphs));
+    assert.equal(completion.result.toParagraphs.length, 1);
+    assert.equal(completion.result.toParagraphs[0], markdown);
     assert.equal('toDict' in completion.result, false);
+});
+
+test('Markdown presentation forwards the configured multi-record mode', () => {
+    for (const [configured, expected] of [[undefined, 'separate'], ['separate', 'separate'], ['combined', 'combined']]) {
+        let completion;
+        const loaded = load({ presentationMode: 'markdown', multiRecordMode: configured }, request => {
+            assert.equal(request.body.format, 'markdown');
+            assert.equal(request.body.multiRecordMode, expected);
+            request.handler(response(200, { markdown: '# wound\n', matches: [{}] }));
+        });
+        loaded.context.translate(bobQuery({ text: 'wound', originalText: 'wound' }, value => { completion = value; }));
+        assert.equal(completion.result.toParagraphs.length, 1);
+    }
+});
+
+// A record selector must reach the service identically in both presentations,
+// so Markdown separate mode can answer with the selected record.
+test('Markdown presentation forwards a reserved record selector', () => {
+    for (const originalText of ['wound\u00b2', 'wound^2', 'wound^{2}']) {
+        let completion;
+        const loaded = load({ presentationMode: 'markdown' }, request => {
+            assert.equal(request.body.query, 'wound');
+            assert.equal(request.body.recordOrdinal, 2);
+            request.handler(response(200, { markdown: '# wound\n', matches: [{}] }));
+        });
+        loaded.context.translate(bobQuery({ text: 'wound', originalText }, value => { completion = value; }));
+        assert.equal(completion.result.toParagraphs[0], '# wound\n');
+    }
 });
 
 test('dictionary card remains the default presentation', () => {
@@ -196,7 +229,7 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     assert.equal(completion.result, false);
     assert.match(completion.error.message, /expired-id/);
     assert.match(completion.error.addition, /\/list/);
-    assert.match(loaded.logs[0], /MDict plugin 1\.0\.0-test \(test123\)/);
+    assert.match(loaded.logs[0], /MDict plugin 1\.1\.0-test \(test123\)/);
     assert.match(loaded.logs[0], /bob-mdict 1\.0\.0 \(service1\), API v2/);
 });
 

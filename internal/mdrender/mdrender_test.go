@@ -330,3 +330,196 @@ func TestUserOptionsNeverEnableProvenance(t *testing.T) {
 		t.Fatalf("provenance leaked into user Markdown:\n%s", out)
 	}
 }
+
+// Combined mode is the "show me everything" answer, and the thematic break is
+// what makes each record's extent visible once several of them carry headings.
+func TestCombinedModeDividesRecordsWithoutInterleavingThem(t *testing.T) {
+	opts := mdrender.UserOptions()
+	opts.MultiRecordMode = mdrender.MultiRecordCombined
+	out := mdrender.RenderEntrySet(duplicates(), opts)
+
+	if got := strings.Count(out, "\n---\n"); got != 2 {
+		t.Errorf("three records need exactly two dividers, got %d:\n%s", got, out)
+	}
+	if strings.HasPrefix(strings.TrimSpace(out), "---") {
+		t.Errorf("a divider must not precede the first record:\n%s", out)
+	}
+	if strings.HasSuffix(strings.TrimSpace(out), "---") {
+		t.Errorf("a divider must not follow the last record:\n%s", out)
+	}
+
+	// Record order and record containment are the two properties combined mode
+	// exists to preserve: every field of record N stays between boundary N and
+	// boundary N+1.
+	sections := strings.Split(out, "\n---\n")
+	if len(sections) != 3 {
+		t.Fatalf("expected three record sections, got %d:\n%s", len(sections), out)
+	}
+	for i, want := range []string{"Record 1 of 3", "Record 2 of 3", "Record 3 of 3"} {
+		if !strings.Contains(sections[i], want) {
+			t.Errorf("section %d is not %q:\n%s", i+1, want, sections[i])
+		}
+	}
+	if !strings.Contains(sections[0], "a small hook") || strings.Contains(sections[0], "to fasten with a hook") {
+		t.Errorf("record 1 absorbed another record's content:\n%s", sections[0])
+	}
+	if !strings.Contains(sections[1], "to fasten with a hook") || strings.Contains(sections[1], "a small hook") {
+		t.Errorf("record 2 absorbed another record's content:\n%s", sections[1])
+	}
+	if strings.Contains(out, "Other entries") {
+		t.Errorf("combined mode shows every record, so it needs no selectors:\n%s", out)
+	}
+
+	// One record is one thing: nothing to divide and nothing to select.
+	single := mdrender.RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "wexal", Records: duplicates().Records[:1],
+	}, opts)
+	if strings.Contains(single, "---") || strings.Contains(single, "Record 1") {
+		t.Errorf("a single-record set needs no boundaries:\n%s", single)
+	}
+}
+
+// Separate mode shows one record and says how to reach the rest. The selectors
+// are the same reserved forms the plugin parses, so a reader can copy one
+// straight back into the search field.
+func TestSeparateModeShowsOneRecordAndCopyableSiblingSelectors(t *testing.T) {
+	opts := mdrender.UserOptions()
+	if opts.MultiRecordMode != mdrender.MultiRecordSeparate {
+		t.Fatalf("user Markdown default = %q, want separate", opts.MultiRecordMode)
+	}
+
+	first := mdrender.RenderEntrySet(duplicates(), opts)
+	if !strings.Contains(first, "a small hook") || strings.Contains(first, "to fasten with a hook") {
+		t.Errorf("default separate view should show record 1 only:\n%s", first)
+	}
+	if strings.Contains(first, "Record 1 of 3") || strings.Contains(first, "---") {
+		t.Errorf("one visible record needs no record boundary:\n%s", first)
+	}
+	if !strings.Contains(first, "## Other entries") {
+		t.Errorf("sibling records must be reachable:\n%s", first)
+	}
+	if !strings.Contains(first, "- `wexal\u00b2`") || !strings.Contains(first, "- `wexal\u00b3`") {
+		t.Errorf("missing copyable sibling selectors:\n%s", first)
+	}
+	if strings.Contains(first, "`wexal\u00b9`") {
+		t.Errorf("the visible record must not be offered as somewhere to go:\n%s", first)
+	}
+
+	opts.RecordOrdinal = 2
+	second := mdrender.RenderEntrySet(duplicates(), opts)
+	if !strings.Contains(second, "to fasten with a hook") || strings.Contains(second, "a small hook") {
+		t.Errorf("selector 2 should show record 2 only:\n%s", second)
+	}
+	if !strings.HasPrefix(second, "# wexal\u00b2\n") {
+		t.Errorf("the title should echo the selector that was answered:\n%s", second)
+	}
+	if !strings.Contains(second, "- `wexal\u00b9`") || !strings.Contains(second, "- `wexal\u00b3`") ||
+		strings.Contains(second, "- `wexal\u00b2`") {
+		t.Errorf("selector 2 should offer records 1 and 3 only:\n%s", second)
+	}
+
+	// An explicit selector wins over combined, because the reader named a record.
+	opts.MultiRecordMode = mdrender.MultiRecordCombined
+	if again := mdrender.RenderEntrySet(duplicates(), opts); again != second {
+		t.Errorf("an explicit ordinal must select one record in either mode:\n%s", again)
+	}
+}
+
+func TestSeparateModeIsUnremarkableForASingleRecord(t *testing.T) {
+	opts := mdrender.UserOptions()
+	out := mdrender.RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "wexal", Records: duplicates().Records[:1],
+	}, opts)
+	if strings.Contains(out, "Other entries") {
+		t.Errorf("nothing to navigate to:\n%s", out)
+	}
+	if !strings.Contains(out, "\n## noun\n") {
+		t.Errorf("a lone record keeps its parts one heading below the title:\n%s", out)
+	}
+}
+
+// Bob publishes no Markdown lookup-action contract, so a navigation target is
+// rendered as text the reader can copy — never as a link that would not work.
+func TestNavigationTargetsAreCopyableCodeAndNotLinks(t *testing.T) {
+	entry := &entryir.Entry{
+		Headword:        "wexal",
+		CrossReferences: []string{"grommet", "belaying pin"},
+		Related:         []string{"halyard"},
+		Synonyms:        []string{"hook"},
+		Antonyms:        []string{"release"},
+		Collocations:    []string{"secure a wexal"},
+		WordFamily:      []string{"wexaller"},
+	}
+	out := mdrender.RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "wexal", Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+	}, mdrender.UserOptions())
+
+	for _, want := range []string{"- `grommet`", "- `belaying pin`", "- `halyard`"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("navigation target %q is not copyable code:\n%s", want, out)
+		}
+	}
+	// Semantic vocabulary lists are not navigation and must stay plain text.
+	for _, unwanted := range []string{"`hook`", "`release`", "`secure a wexal`", "`wexaller`"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("%s was dressed up as a lookup target:\n%s", unwanted, out)
+		}
+	}
+	if strings.Contains(out, "](") {
+		t.Errorf("no navigation target may become a link while Bob has no contract for one:\n%s", out)
+	}
+}
+
+// A backtick inside a headword must not end the code span early.
+func TestCopyableTargetsSurviveBackticksInContent(t *testing.T) {
+	out := mdrender.RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "wexal",
+		Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: &entryir.Entry{
+			CrossReferences: []string{"a`b"},
+		}}},
+	}, mdrender.UserOptions())
+	if !strings.Contains(out, "- ``a`b``") {
+		t.Errorf("fence did not grow past the content's own backtick:\n%s", out)
+	}
+}
+
+// Markdown gives a table one header row. The source's own <th> cells are the
+// only evidence of which row that is.
+func TestExplicitTableHeaderIsUsedWhenTheSourceDeclaredOne(t *testing.T) {
+	render := func(block entryir.RichBlock) string {
+		return mdrender.RenderEntrySet(&entryir.EntrySet{
+			LookupKey: "wexal",
+			Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: &entryir.Entry{
+				Sections: []entryir.Section{{Title: "Table", Blocks: []entryir.RichBlock{block}}},
+			}}},
+		}, mdrender.UserOptions())
+	}
+
+	declared := render(entryir.RichBlock{
+		Kind:   entryir.RichTable,
+		Header: []string{"Tense", "Form"},
+		Rows:   [][]string{{"present", "wexals"}, {"past", "wexalled"}},
+	})
+	if !strings.Contains(declared, "| Tense | Form |\n| --- | --- |\n| present | wexals |\n| past | wexalled |") {
+		t.Errorf("declared header was not used:\n%s", declared)
+	}
+
+	// With no declared header the first row still serves, which is what an
+	// undeclared dictionary table almost always means.
+	undeclared := render(entryir.RichBlock{
+		Kind: entryir.RichTable,
+		Rows: [][]string{{"present", "wexals"}, {"past", "wexalled"}},
+	})
+	if !strings.Contains(undeclared, "| present | wexals |\n| --- | --- |\n| past | wexalled |") {
+		t.Errorf("undeclared table lost its fallback header:\n%s", undeclared)
+	}
+
+	// A header narrower than a data row must still pad, or cells shift columns.
+	uneven := render(entryir.RichBlock{
+		Kind: entryir.RichTable, Header: []string{"Tense"},
+		Rows: [][]string{{"present", "wexals"}},
+	})
+	if !strings.Contains(uneven, "| Tense |  |\n| --- | --- |\n| present | wexals |") {
+		t.Errorf("uneven declared header was not padded:\n%s", uneven)
+	}
+}

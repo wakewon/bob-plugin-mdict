@@ -1,6 +1,6 @@
 {
   "identifier": "com.github.wakewon.mdict",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "translate",
   "name": "MDict",
   "summary": "查询你自己的本地 MDict（.mdx/.mdd）词典：完全离线，支持英式/美式音标与词典 MDD 音频。",

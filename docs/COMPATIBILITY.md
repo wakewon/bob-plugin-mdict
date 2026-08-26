@@ -173,6 +173,12 @@ Known imprecisions that remain, all visible in the review snapshots:
 - Material printed **after** the last sense is attached only when the dictionary
   has already shown that shape of element to be an example. Otherwise it is left
   where it is rather than swallowed, which loses it from a structured parse.
+- A numbered block whose whole content is a **pointer to another entry**
+  (`OPPOSITES: SEE safe`, `另见 tight`) becomes a numbered sense, so it is
+  counted among the meanings and shifts the numbering of the real ones. It was
+  found in one of the 96 healthy dictionaries, and the pointer's target is not
+  reliably separable from its lead-in text, so no rule was written for it: an
+  approximate label beats a guess at what the target is.
 
 Reproduce against your own library:
 
@@ -190,8 +196,14 @@ bob-mdict --dictionary-dir /path/to/mdxs --validate-all --validate-out /private/
   British transcription under an American flag.
 - **Collins labels its phrase senses as a part of speech** (`PHRASE`), so they
   appear as a part rather than under Idioms. The content is present either way.
-- **Images are addressable but not displayed.** Bob's `toDict` has no image
-  slot; the resource endpoint serves them for any future use.
+- **Images reach Markdown, not the Bob card.** Bob's `toDict` has no image
+  slot, so the card can only address a resource; Markdown presentation embeds a
+  resolved MDD illustration inline at its original position in the prose.
+- **Markdown navigation is copyable text, not links.** Bob documents no
+  Markdown lookup action, so record selectors, cross-references and related
+  entries are written as code spans a reader can copy into the search field. The
+  targets remain typed fields in the IR, ready for a real mechanism if Bob
+  publishes one.
 - **No full-text search.** Lookup is exact, normalized, case-insensitive, with
   optional prefix suggestions. Morphological fallback (`ran` → `run`) is not
   implemented; most dictionaries already carry inflected headwords as redirects.
@@ -203,7 +215,9 @@ bob-mdict --dictionary-dir /path/to/mdxs --validate-all --validate-out /private/
 - **Duplicate exact keys preserve record boundaries.** Resolved byte-identical
   records are safely deduplicated; every remaining non-empty record is parsed
   independently. Separate mode shows one record with sibling navigation;
-  Combined mode keeps all ordinal-labelled records in one Bob card.
+  Combined mode keeps all records — ordinal-labelled in one Bob card, or divided
+  by a `---` thematic break in Markdown. No field of one record is ever
+  interleaved with another's.
 
 ## Performance
 

@@ -23,6 +23,25 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 )
 
+// MultiRecordMode selects how several records under one key are presented.
+//
+// It mirrors the Bob adapter's option of the same name. The concept is shared —
+// show one record, or show them all — but each surface expresses it with what
+// it actually has. Bob has clickable related words; Markdown has a horizontal
+// rule and no documented lookup action, so combined mode divides records with
+// a thematic break and separate mode lists siblings as copyable query text.
+type MultiRecordMode string
+
+const (
+	// MultiRecordCombined renders every record in canonical order, divided by
+	// a Markdown thematic break. It is the default because a caller that has
+	// not chosen — diagnostics above all — must see everything the parser
+	// produced rather than one arbitrary record.
+	MultiRecordCombined MultiRecordMode = "combined"
+	// MultiRecordSeparate renders exactly one record plus sibling selectors.
+	MultiRecordSeparate MultiRecordMode = "separate"
+)
+
 // Options configures rendering. The zero value renders senses only.
 type Options struct {
 	IncludeExamples     bool
@@ -39,8 +58,12 @@ type Options struct {
 	// prose position. It is disabled for deterministic diagnostic snapshots.
 	ImageLinks bool
 	// RecordOrdinal selects one visible record when a record selector was used.
-	// Zero renders every record with explicit boundaries.
+	// A non-zero value always wins over MultiRecordMode, because the user asked
+	// for that record by name.
 	RecordOrdinal int
+	// MultiRecordMode selects combined or separate presentation. Empty means
+	// combined.
+	MultiRecordMode MultiRecordMode
 	// IncludeProvenance annotates each structure with the parser rule that
 	// produced it. Development only; it is what makes a snapshot answer "which
 	// heuristic did this?".
@@ -53,6 +76,7 @@ func DefaultOptions() Options {
 		IncludeExamples:     true,
 		IncludeExtras:       true,
 		MaxExamplesPerSense: 8,
+		MultiRecordMode:     MultiRecordCombined,
 	}
 }
 
@@ -63,6 +87,9 @@ func UserOptions() Options {
 	opts := DefaultOptions()
 	opts.AudioLinks = true
 	opts.ImageLinks = true
+	// Separate matches the plugin's own default and the Bob adapter's, so the
+	// two presentations answer the same question the same way.
+	opts.MultiRecordMode = MultiRecordSeparate
 	return opts
 }
 
@@ -82,7 +109,8 @@ func RenderEntry(entry *entryir.Entry, opts Options) string {
 //
 // Distinct records are never merged: each keeps its own heading and its own
 // ordinal, because two records under one key are two things the dictionary
-// chose to say separately.
+// chose to say separately. No field of one record is ever interleaved with
+// another's, in either mode.
 func RenderEntrySet(set *entryir.EntrySet, opts Options) string {
 	if set == nil || len(set.Records) == 0 {
 		return ""
@@ -90,18 +118,18 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) string {
 	if opts.MaxExamplesPerSense <= 0 {
 		opts.MaxExamplesPerSense = DefaultOptions().MaxExamplesPerSense
 	}
+
+	key := firstNonEmpty(set.LookupKey, set.Headword)
+	if primary := set.Primary(); key == "" && primary != nil {
+		key = primary.Headword
+	}
+	if opts.MultiRecordMode == MultiRecordSeparate || opts.RecordOrdinal > 0 {
+		return renderSelectedRecord(set, key, opts)
+	}
+
 	doc := &document{opts: opts}
+	doc.heading(1, key)
 
-	title := firstNonEmpty(set.LookupKey, set.Headword)
-	if primary := set.Primary(); title == "" && primary != nil {
-		title = primary.Headword
-	}
-	doc.heading(1, title)
-
-	records := set.Records
-	if opts.RecordOrdinal > 0 && opts.RecordOrdinal <= len(records) {
-		records = records[opts.RecordOrdinal-1 : opts.RecordOrdinal]
-	}
 	multi := len(set.Records) > 1
 	// Nesting each record under its own heading costs one level, so a
 	// single-record entry keeps its parts one step closer to the surface.
@@ -109,7 +137,8 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) string {
 	if multi {
 		base = 3
 	}
-	for index, record := range records {
+	rendered := 0
+	for index, record := range set.Records {
 		if record.Entry == nil {
 			continue
 		}
@@ -118,11 +147,113 @@ func RenderEntrySet(set *entryir.EntrySet, opts Options) string {
 			ordinal = index + 1
 		}
 		if multi {
+			// A heading alone is a weak boundary once several records carry
+			// headings of their own. A thematic break is the strongest
+			// separation Markdown has, and it is what makes "where does record
+			// one end?" answerable at a glance. It goes between records only:
+			// never before the first, never after the last.
+			if rendered > 0 {
+				doc.line("---")
+			}
 			doc.heading(2, fmt.Sprintf("Record %d of %d", ordinal, len(set.Records)))
 		}
 		doc.renderEntry(record.Entry, base, set.LookupKey)
+		rendered++
 	}
 	return doc.String()
+}
+
+// renderSelectedRecord shows exactly one record and how to reach the others.
+func renderSelectedRecord(set *entryir.EntrySet, key string, opts Options) string {
+	selected := opts.RecordOrdinal
+	if selected <= 0 {
+		selected = 1
+	}
+	if selected > len(set.Records) {
+		return ""
+	}
+	record := set.Records[selected-1]
+	if record.Entry == nil {
+		return ""
+	}
+	doc := &document{opts: opts}
+	title := key
+	if opts.RecordOrdinal > 0 && len(set.Records) > 1 {
+		// The reader asked for this record by selector; echoing the selector
+		// back is how the page says which one it answered with.
+		title += superscriptOrdinal(selected)
+	}
+	doc.heading(1, title)
+	doc.renderEntry(record.Entry, 2, set.LookupKey)
+	doc.renderSiblingSelectors(set, selected, key)
+	return doc.String()
+}
+
+// renderSiblingSelectors lists the other records under this key as copyable
+// query text.
+//
+// Bob exposes no documented Markdown lookup-action contract, so a link here
+// could only be an invalid external URL or a private scheme Bob would not
+// honour. A code span is unambiguous, is safe to copy straight into the search
+// field, and is purely presentation: the navigation target is already in the
+// IR, so a future Bob-native lookup action replaces this one function and
+// touches neither the parser nor the IR.
+func (d *document) renderSiblingSelectors(set *entryir.EntrySet, selected int, key string) {
+	if len(set.Records) <= 1 || strings.TrimSpace(key) == "" {
+		return
+	}
+	var lines []string
+	for index, record := range set.Records {
+		if record.Entry == nil {
+			continue
+		}
+		ordinal := record.RecordOrdinal
+		if ordinal <= 0 {
+			ordinal = index + 1
+		}
+		if ordinal == selected {
+			continue
+		}
+		lines = append(lines, "- "+codeSpan(key+superscriptOrdinal(ordinal)))
+	}
+	if len(lines) == 0 {
+		return
+	}
+	d.heading(2, "Other entries")
+	d.block(lines)
+}
+
+// superscriptOrdinal renders a record ordinal in the reserved selector form.
+// The Bob adapter has its own copy on purpose: the two surfaces must agree on
+// the user-visible selector, but neither package may import the other.
+func superscriptOrdinal(value int) string {
+	if value <= 0 {
+		return ""
+	}
+	digits := [...]rune{'⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'}
+	var out []rune
+	for _, digit := range strconv.Itoa(value) {
+		out = append(out, digits[digit-'0'])
+	}
+	return string(out)
+}
+
+// codeSpan wraps navigation text in an inline code span, choosing a fence that
+// the content itself cannot terminate.
+func codeSpan(text string) string {
+	value := strings.Join(strings.Fields(text), " ")
+	if value == "" {
+		return ""
+	}
+	fence := "`"
+	for strings.Contains(value, fence) {
+		fence += "`"
+	}
+	pad := ""
+	if strings.HasPrefix(value, "`") || strings.HasSuffix(value, "`") {
+		pad = " "
+	}
+	return fence + pad + value + pad + fence
 }
 
 type document struct {
@@ -187,11 +318,17 @@ func (d *document) renderEntry(entry *entryir.Entry, base int, lookupKey string)
 	d.renderPhrases("Idioms", entry.Idioms, base)
 	d.renderPhrases("Phrasal verbs", entry.PhrasalVerbs, base)
 	d.renderPhrases("Derivatives", entry.Derivatives, base)
+	// Collocations, synonyms, antonyms and word family stay ordinary text.
+	// They are semantic lists: the dictionary is naming related vocabulary, not
+	// pointing at another of its own entries, and dressing every one of them up
+	// as a lookup target would make the real navigation targets invisible.
 	d.renderList("Collocations", entry.Collocations, base)
 	d.renderList("Synonyms", entry.Synonyms, base)
 	d.renderList("Antonyms", entry.Antonyms, base)
-	d.renderList("See also", entry.CrossReferences, base)
-	d.renderList("Related", entry.Related, base)
+	// Cross-references and related entries are explicit dictionary navigation
+	// in the IR, so they are the two lists rendered as copyable query text.
+	d.renderNavigationList("See also", entry.CrossReferences, base)
+	d.renderNavigationList("Related", entry.Related, base)
 	d.renderList("Word family", entry.WordFamily, base)
 	for _, note := range entry.UsageNotes {
 		d.renderSection("Usage · "+note.Title, note, base)
@@ -389,6 +526,22 @@ func (d *document) renderList(title string, values []string, base int) {
 	d.block(lines)
 }
 
+// renderNavigationList prints dictionary navigation targets as copyable query
+// text. See renderSiblingSelectors for why these are code spans and not links.
+func (d *document) renderNavigationList(title string, values []string, base int) {
+	var lines []string
+	for _, value := range values {
+		if span := codeSpan(value); span != "" {
+			lines = append(lines, "- "+span)
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	d.heading(base, title)
+	d.block(lines)
+}
+
 func (d *document) renderSection(title string, section entryir.Section, base int) {
 	body := strings.TrimSpace(section.Body)
 	if body == "" && len(section.Blocks) == 0 {
@@ -413,13 +566,24 @@ func (d *document) renderSection(title string, section entryir.Section, base int
 				d.line("![" + escapeImageAlt(block.Image.Alt) + "](" + block.Image.URL + ")")
 			}
 		case entryir.RichTable:
-			d.renderTable(block.Rows)
+			d.renderTable(block.Header, block.Rows)
 		}
 	}
 }
 
-func (d *document) renderTable(rows [][]string) {
-	columns := 0
+// renderTable emits a Markdown table. Markdown has exactly one header row and
+// no way to omit it, so a source header is used when the dictionary declared
+// one with <th> cells, and otherwise the first row serves — which is what the
+// overwhelming majority of dictionary tables intend anyway. Uneven rows are
+// padded to the widest row so no cell shifts into the wrong column.
+func (d *document) renderTable(header []string, rows [][]string) {
+	if len(header) == 0 {
+		if len(rows) == 0 {
+			return
+		}
+		header, rows = rows[0], rows[1:]
+	}
+	columns := len(header)
 	for _, row := range rows {
 		if len(row) > columns {
 			columns = len(row)
@@ -437,14 +601,13 @@ func (d *document) renderTable(rows [][]string) {
 		}
 		return "| " + strings.Join(cells, " | ") + " |"
 	}
-	var lines []string
-	lines = append(lines, normalizeRow(rows[0]))
+	lines := []string{normalizeRow(header)}
 	delimiters := make([]string, columns)
 	for i := range delimiters {
 		delimiters[i] = "---"
 	}
 	lines = append(lines, "| "+strings.Join(delimiters, " | ")+" |")
-	for _, row := range rows[1:] {
+	for _, row := range rows {
 		lines = append(lines, normalizeRow(row))
 	}
 	d.block(lines)
@@ -502,6 +665,12 @@ func escape(text string) string {
 // text inside rendered output. Re-implementing it in the checker would let the
 // two drift, and the check would then be testing the copy.
 func Escape(text string) string { return escape(text) }
+
+// NavigationTarget exposes how a lookup target is written, for the same reason
+// Escape is exposed. A navigation target is inside a code span, where Markdown
+// syntax is already inert and escaping it would put literal backslashes on the
+// page — so it is not escaped, and tooling must look for this form instead.
+func NavigationTarget(text string) string { return codeSpan(text) }
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {

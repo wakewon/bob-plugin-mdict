@@ -65,12 +65,57 @@ changed, and would have to relearn everything the parser already knows.
 Diagnostic rendering stays deterministic and may include provenance while
 omitting per-process resource URLs. User rendering contains only dictionary
 content and enables resolved loopback audio/image links. The plugin requests
-this user rendering with `format:"markdown"` and assigns it directly to
-`toParagraphs`; it never reparses Markdown or dictionary HTML.
+this user rendering with `format:"markdown"` and returns it as a single-element
+`toParagraphs` array — Bob's documented shape for that field — so the document
+stays one formatting unit. It never reparses Markdown or dictionary HTML.
+
+Bob does not currently document Markdown rendering of `toParagraphs`. What this
+path provides is a standards-compliant Markdown document from the canonical IR;
+whether Bob eventually draws it as formatted text is Bob's decision, and this
+project does not depend on an undocumented API to claim that it will.
+
+#### Record boundaries in each presentation
+
+`multiRecordMode` is one concept — show one record, or show them all — expressed
+twice, because the two surfaces have different capabilities:
+
+| | Bob `toDict` | Markdown |
+|---|---|---|
+| combined | one card, records labelled `¹ ² ³` | `Record n of total` headings, records divided by `---` |
+| separate | one record plus an `Other entries` related-word group | one record plus an `Other entries` list of selectors |
+| navigation | Bob's own clickable related words | copyable query text in a code span |
+
+The divider matters in Markdown for the same reason ordinal labels matter in
+Bob: once several records carry headings of their own, a heading is no longer a
+boundary. A thematic break is the strongest separation Markdown has.
+
+#### Navigation targets
+
+Bob publishes a lookup action for related words in `toDict`. It publishes none
+for Markdown content. Rather than invent a private URL scheme Bob would not
+honour, or emit an external link that would take the reader out of the
+dictionary, `mdrender` writes navigation targets as copyable query text inside a
+code span — sibling record selectors, cross-references, and related entries.
+
+This is a presentation decision and lives entirely in `mdrender`. The target is
+already a typed field in the IR, so a Bob-native Markdown lookup mechanism would
+replace one function here and would touch neither the parser nor the IR nor the
+API version. Semantic vocabulary lists — synonyms, antonyms, collocations, word
+family — are deliberately *not* code-spanned, so a code span keeps meaning "this
+is somewhere you can go".
 
 Free-form sections may carry a deliberately small ordered rich vocabulary:
 text, resolved MDD image, and conventional table. This preserves positions such
 as text → image → text → table without turning the Entry IR into a browser DOM.
+
+A repeated illustration is dropped only when the two occurrences are adjacent,
+which is what a publisher's two switchable language views of one figure look
+like once CSS is unavailable. Two occurrences with content between them are both
+kept: a visible duplicate is a much smaller error than a deleted illustration.
+
+A table records its own `<th>` header row separately from its body rows when the
+source declares one. Markdown has exactly one header row and no way to omit it,
+so a table that declares none keeps its first row in that position.
 
 ## Parsing: generic first, profiles as reinforcement
 

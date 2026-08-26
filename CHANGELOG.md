@@ -1,9 +1,35 @@
 # Changelog
 
 All notable product changes are recorded here. Product versions and the local
-HTTP API version are independent; MDict for Bob 1.0.0 continues to use API v2.
+HTTP API version are independent; MDict for Bob 1.1.0 continues to use API v2.
 
-## [Unreleased]
+## [1.1.0] - unreleased
+
+Feature release scope, backward compatible with 1.0.0. Prepared and validated
+on this branch; not tagged, not published, and 1.0.0's artifacts are untouched.
+
+- Present a dictionary entry as Markdown as an alternative to the Bob
+  dictionary card, rendered by the service from the same canonical EntrySet the
+  card is rendered from. The plugin returns the document as a single
+  `toParagraphs` element, which is Bob's documented array-of-strings contract;
+  Bob does not currently document Markdown rendering of that content, and this
+  release claims no such behaviour.
+- Give `重复词条显示方式` meaning in Markdown as well as in the dictionary card.
+  Combined renders every record in source order, divided by a `---` thematic
+  break; separate renders one record and lists the other records' selectors.
+- Render dictionary navigation targets — sibling record selectors, cross
+  references, related entries — as copyable query text rather than as links,
+  because Bob publishes no Markdown lookup-action contract. The target stays in
+  the IR, so a future Bob mechanism replaces the presentation and nothing else.
+- Show an inline MDD illustration at its original position in the prose, over
+  an opaque loopback resource URL. External, `data:` and filesystem image
+  references remain refused.
+- Deduplicate a repeated illustration only when the two occurrences are
+  adjacent, which is what a publisher's two language views of one figure look
+  like once CSS is gone. An illustration the dictionary places twice with
+  content between the two is no longer deleted.
+- Use a table's own `<th>` cells as its Markdown header instead of promoting
+  whichever row came first.
 
 - Attach the material between one sense and the next to the sense that opens
   it. Many dictionaries keep the definition in one element and its examples in
@@ -36,9 +62,9 @@ HTTP API version are independent; MDict for Bob 1.0.0 continues to use API v2.
   and written out as ranked Markdown snapshots. Content retention across the
   surveyed corpus rose from 68 % to 79 %, and on Chinese-related dictionaries
   from 66 % to 82 %.
-- Add an experimental Markdown renderer for the canonical EntrySet, a sibling
-  of the Bob adapter rather than a second conversion path. It is a development
-  and validation surface in this release and is not part of API v2.
+- Render the canonical EntrySet as Markdown in `internal/mdrender`, a sibling
+  of the Bob adapter rather than a second conversion path. It backs both the
+  `format:"markdown"` presentation above and the validation review snapshots.
 - Recover senses from visible numbering, ordered and definition lists, and
   repeated definition blocks when a dictionary's class names say nothing. A
   survey of 99 unknown MDX dictionaries went from 22 % mean structural coverage
@@ -84,5 +110,5 @@ First stable release.
   official tag-built artifacts, never-replaced Release assets, Bob appcast
   updates, and a repository-scoped Homebrew tap publication path.
 
-[Unreleased]: https://github.com/wakewon/bob-plugin-mdict/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/wakewon/bob-plugin-mdict/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/wakewon/bob-plugin-mdict/releases/tag/v1.0.0

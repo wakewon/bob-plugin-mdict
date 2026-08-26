@@ -310,7 +310,7 @@ func renderSnapshot(snapshot Snapshot, run *Run) string {
 	out.WriteString(clip(prettyHTML(snapshot.sourceHTML), 24000))
 	out.WriteString("\n```\n")
 
-	out.WriteString("\n## Experimental Markdown rendering\n\n")
+	out.WriteString("\n## Markdown rendering\n\n")
 	out.WriteString("Rendered from the canonical EntrySet by `internal/mdrender`, the sibling of the Bob adapter.\n\n")
 	out.WriteString("---\n\n")
 	out.WriteString(indentQuote(snapshot.markdown))

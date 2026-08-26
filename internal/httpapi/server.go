@@ -201,8 +201,9 @@ type LookupRequest struct {
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
 	IncludeExtras   *bool `json:"includeExtras,omitempty"`
-	// MultiRecordMode controls Bob presentation only: "separate" selects one
-	// semantic record with sibling navigation; "combined" renders all records.
+	// MultiRecordMode controls presentation only, in both the Bob card and
+	// Markdown: "separate" selects one semantic record and offers sibling
+	// navigation; "combined" renders every record with explicit boundaries.
 	MultiRecordMode string `json:"multiRecordMode,omitempty"`
 	// RecordOrdinal is one-based over the visible, deduplicated EntrySet.
 	RecordOrdinal int `json:"recordOrdinal,omitempty"`
@@ -258,11 +259,19 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		bobOpts.MultiRecordMode = bobadapter.MultiRecordSeparate
 	}
 	bobOpts.RecordOrdinal = req.RecordOrdinal
+	// Markdown reads the same request fields as the Bob card. The two
+	// presentations differ in what they can draw, never in what the user asked
+	// for, so multiRecordMode is mapped rather than reinterpreted.
 	markdownOpts := mdrender.UserOptions()
 	markdownOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
 	markdownOpts.IncludeExamples = bobOpts.IncludeExamples
 	markdownOpts.IncludeExtras = bobOpts.IncludeExtras
 	markdownOpts.RecordOrdinal = req.RecordOrdinal
+	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		markdownOpts.MultiRecordMode = mdrender.MultiRecordCombined
+	} else {
+		markdownOpts.MultiRecordMode = mdrender.MultiRecordSeparate
+	}
 
 	result, err := s.svc.Lookup(req.Query, service.LookupOptions{
 		DictionaryIDs:   req.Dictionaries,

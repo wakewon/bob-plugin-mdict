@@ -183,9 +183,17 @@ func (c *checker) checkMarkdown(in parityInput) {
 	// stripping those would compare two different strings.
 	var missing []string
 	for _, field := range markdownFields(in.set) {
-		if !containsNormalized(in.markdown, mdrender.Escape(field.text)) {
-			missing = append(missing, field.kind+": "+truncate(field.text, 40))
+		if containsNormalized(in.markdown, mdrender.Escape(field.text)) {
+			continue
 		}
+		// Navigation targets are written as copyable code spans, where Markdown
+		// syntax is inert and therefore unescaped. Both forms are accepted
+		// rather than assumed, so this check still fails if a target vanishes.
+		if isNavigationField(field.kind) &&
+			containsNormalized(in.markdown, mdrender.NavigationTarget(field.text)) {
+			continue
+		}
+		missing = append(missing, field.kind+": "+truncate(field.text, 40))
 	}
 	c.assert("markdown-preserves-semantic-fields", len(missing) == 0,
 		"%d fields absent from the Markdown: %s", len(missing), strings.Join(head(missing, 5), " | "))
@@ -233,6 +241,12 @@ func init() {
 // irField is one piece of IR text that a presentation layer must not lose.
 func irFields(set *entryir.EntrySet) []semanticField {
 	return parityFields(set, false)
+}
+
+// isNavigationField reports whether a field is dictionary navigation, which the
+// Markdown renderer presents as copyable query text rather than as prose.
+func isNavigationField(kind string) bool {
+	return kind == "crossReference" || kind == "related"
 }
 
 // markdownFields replaces a rich section's compatibility-oriented flat Body
