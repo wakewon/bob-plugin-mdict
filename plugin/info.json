@@ -37,11 +37,15 @@
       "type": "menu",
       "title": "显示方式",
       "defaultValue": "dict",
-      "desc": "词典卡片保留现有 Bob 原生显示；Markdown 由本地服务从同一结构化词条生成。",
+      "desc": "词典卡片优先使用 Bob 原生显示；自由排版词条会自动改用纯文本。纯文本和 Markdown 都由本地服务从同一结构化词条直接生成。Bob 当前未正式支持 Markdown 渲染。",
       "menuValues": [
         {
           "title": "词典卡片",
           "value": "dict"
+        },
+        {
+          "title": "纯文本",
+          "value": "plain"
         },
         {
           "title": "Markdown",

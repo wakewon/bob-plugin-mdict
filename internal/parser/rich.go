@@ -18,13 +18,13 @@ func (s *parseState) richBlocks(root *html.Node) []entryir.RichBlock {
 	}
 	var blocks []entryir.RichBlock
 	var text strings.Builder
-	flush := func() {
+	flush := func(kind entryir.RichBlockKind) {
 		value := Normalize(text.String())
 		text.Reset()
 		if value == "" {
 			return
 		}
-		blocks = append(blocks, entryir.RichBlock{Kind: entryir.RichText, Text: value})
+		blocks = append(blocks, entryir.RichBlock{Kind: kind, Text: value})
 	}
 	var walk func(*html.Node)
 	walk = func(node *html.Node) {
@@ -33,8 +33,7 @@ func (s *parseState) richBlocks(root *html.Node) []entryir.RichBlock {
 		}
 		switch node.Type {
 		case html.TextNode:
-			text.WriteString(node.Data)
-			text.WriteByte(' ')
+			writeBoundaryAware(&text, node.Data)
 			return
 		case html.CommentNode, html.DoctypeNode:
 			return
@@ -43,6 +42,18 @@ func (s *parseState) richBlocks(root *html.Node) []entryir.RichBlock {
 				return
 			}
 			switch node.Data {
+			case "h1", "h2", "h3", "h4", "h5", "h6":
+				flush(entryir.RichText)
+				if value := Normalize(Text(node, TextOptions{SkipHidden: true})); value != "" {
+					blocks = append(blocks, entryir.RichBlock{Kind: entryir.RichHeading, Text: value})
+				}
+				return
+			case "li":
+				flush(entryir.RichText)
+				if value := Normalize(Text(node, TextOptions{SkipHidden: true})); value != "" {
+					blocks = append(blocks, entryir.RichBlock{Kind: entryir.RichListItem, Text: value})
+				}
+				return
 			case "img":
 				ref := firstAttr(node, "src", "data-src")
 				if ref == "" || s.opts.Image == nil {
@@ -50,43 +61,36 @@ func (s *parseState) richBlocks(root *html.Node) []entryir.RichBlock {
 				}
 				alt := firstNonEmpty(Attr(node, "alt"), Attr(node, "title"))
 				if image := s.opts.Image.ResolveImage(ref, alt); image != nil {
-					flush()
+					flush(entryir.RichText)
 					blocks = append(blocks, entryir.RichBlock{Kind: entryir.RichImage, Image: image})
 				}
 				return
 			case "table":
 				header, rows := tableRows(node)
 				if len(header) > 0 || len(rows) > 0 {
-					flush()
+					flush(entryir.RichText)
 					blocks = append(blocks, entryir.RichBlock{
 						Kind: entryir.RichTable, Header: header, Rows: rows,
 					})
 				}
 				return
 			case "br":
-				text.WriteByte('\n')
+				flush(entryir.RichText)
 				return
+			}
+			if blockTags[node.Data] {
+				flush(entryir.RichText)
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
 			walk(child)
 		}
 		if node.Type == html.ElementNode && blockTags[node.Data] {
-			text.WriteByte('\n')
+			flush(entryir.RichText)
 		}
 	}
 	walk(root)
-	flush()
-	hasRich := false
-	for _, block := range blocks {
-		if block.Kind == entryir.RichImage || block.Kind == entryir.RichTable {
-			hasRich = true
-			break
-		}
-	}
-	if !hasRich {
-		return nil
-	}
+	flush(entryir.RichText)
 	// Publisher markup commonly contains the same illustration twice for two
 	// switchable language views of one figure. Once hidden variants and CSS are
 	// unavailable those two arrive back to back with nothing between them, and

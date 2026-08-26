@@ -51,6 +51,7 @@ type parityInput struct {
 	set      *entryir.EntrySet
 	separate *bobadapter.Dict
 	combined *bobadapter.Dict
+	plain    string
 	markdown string
 	// irJSON is the serialized EntrySet. It is the complete vocabulary of the
 	// IR, which is what the Markdown is allowed to contain and nothing more.
@@ -62,8 +63,27 @@ func checkParity(in parityInput) []Check {
 	var c checker
 	c.checkRecords(in)
 	c.checkBob(in)
+	c.checkPlain(in)
 	c.checkMarkdown(in)
 	return c.checks
+}
+
+func (c *checker) checkPlain(in parityInput) {
+	c.assert("plain-renders", strings.TrimSpace(in.plain) != "",
+		"the Plain renderer produced nothing for a non-empty EntrySet")
+	var missing []string
+	for _, field := range markdownFields(in.set) {
+		if !containsNormalized(in.plain, field.text) {
+			missing = append(missing, field.kind+": "+truncate(field.text, 40))
+		}
+	}
+	c.assert("plain-preserves-semantic-fields", len(missing) == 0,
+		"%d fields absent from Plain Text: %s", len(missing), strings.Join(head(missing, 5), " | "))
+	if len(in.set.Records) > 1 {
+		boundaries := strings.Count(in.plain, "Record ")
+		c.assert("plain-keeps-record-boundaries", boundaries == len(in.set.Records),
+			"%d record headings for %d records", boundaries, len(in.set.Records))
+	}
 }
 
 func (c *checker) checkRecords(in parityInput) {
@@ -138,10 +158,10 @@ func (c *checker) checkBob(in parityInput) {
 	var missing []string
 	for _, field := range irFields(in.set) {
 		switch field.kind {
-		// Sense-level grammar, synonyms and antonyms have no Bob carrier.
+		// Sense-level synonyms and antonyms have no Bob carrier.
 		// That is a schema limit rather than an adapter defect, and it is
 		// recorded here so the limit stays visible instead of being forgotten.
-		case "senseGrammar", "senseSynonym", "senseAntonym":
+		case "senseSynonym", "senseAntonym":
 			continue
 		// Bob's word is the re-lookupable MDX key, never the headword the
 		// parser found in the markup. That is deliberate product behaviour:
@@ -149,7 +169,11 @@ func (c *checker) checkBob(in parityInput) {
 		case "headword":
 			continue
 		}
-		if !containsNormalized(haystack, field.text) {
+		needle := field.text
+		if field.kind == "pos" {
+			needle = bobadapter.CompactPOS(needle)
+		}
+		if !containsNormalized(haystack, needle) {
 			missing = append(missing, field.kind+": "+truncate(field.text, 40))
 		}
 	}
@@ -333,7 +357,7 @@ func markdownSemanticFields(entry *entryir.Entry, fields []semanticField) []sema
 		}
 		for _, block := range section.Blocks {
 			switch block.Kind {
-			case entryir.RichText:
+			case entryir.RichText, entryir.RichHeading, entryir.RichListItem:
 				add(kind, block.Text)
 			case entryir.RichTable:
 				for _, row := range block.Rows {

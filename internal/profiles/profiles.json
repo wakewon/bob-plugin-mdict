@@ -1,5 +1,26 @@
 [
   {
+    "id": "oxford-collocations",
+    "name": "Oxford Collocations Dictionary family",
+    "match": {
+      "titleContains": [
+        "牛津英语搭配",
+        "Oxford Collocations"
+      ],
+      "requireTitle": true,
+      "selectors": [
+        ".CK .JS",
+        ".JS .GZ"
+      ]
+    },
+    "root": [
+      ".CK"
+    ],
+    "headword": [
+      ".DC"
+    ]
+  },
+  {
     "id": "oald8",
     "name": "Oxford Advanced Learner's Dictionary (8th ed., bilingual)",
     "match": {

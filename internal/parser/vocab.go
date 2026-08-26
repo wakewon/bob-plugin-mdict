@@ -2,6 +2,7 @@ package parser
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -112,10 +113,30 @@ var semanticLabels = map[string]SemanticLabel{
 	"synonym": LabelSynonyms, "synonyms": LabelSynonyms,
 	"synonymantonym": LabelSynonyms, "synonymsantonyms": LabelSynonyms,
 	"antonym": LabelAntonyms, "antonyms": LabelAntonyms,
+	"opposite": LabelAntonyms, "opposites": LabelAntonyms,
 	"example": LabelExamples, "examples": LabelExamples, "examplesentences": LabelExamples,
 	"collocation": LabelCollocations, "collocations": LabelCollocations, "wordcombinations": LabelCollocations,
 	"usage": LabelUsage, "usagenote": LabelUsage, "usagenotes": LabelUsage, "用法": LabelUsage,
 	"grammar": LabelGrammar, "grammarnote": LabelGrammar, "grammarnotes": LabelGrammar, "语法": LabelGrammar,
+}
+
+// CanonicalPOSVocabulary returns every canonical label this parser can emit.
+// Presentation adapters use it in exhaustive tests so adding a parser POS
+// cannot silently leave a user surface with an unreviewed long label.
+func CanonicalPOSVocabulary() []string {
+	seen := make(map[string]struct{}, len(posCanonical)+len(codePrefixes))
+	for _, value := range posCanonical {
+		seen[value] = struct{}{}
+	}
+	for _, value := range codePrefixes {
+		seen[value] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for value := range seen {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var semanticLabelCleanRe = regexp.MustCompile(`[^\p{L}\p{N}]+`)

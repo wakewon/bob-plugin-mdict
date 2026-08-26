@@ -15,7 +15,7 @@ an older plugin.
 ```json
 {
   "service": "bob-mdict",
-  "serviceVersion": "1.0.0",
+  "serviceVersion": "1.1.0",
   "buildCommit": "abcdef1",
   "apiVersion": "v2",
   "platform": "darwin",
@@ -93,14 +93,14 @@ a reason in `diagnostics`; the others stay usable.
 | Field | Meaning |
 |---|---|
 | `query` | Required. |
-| `format` | `ir` (default) returns the duplicate-aware EntrySet IR. `bob` additionally returns one top-level `bob` `toDict`. `markdown` additionally returns top-level user-facing `markdown`. Both presentations use the first dictionary match; the IR remains in `matches`. |
+| `format` | `ir` (default) returns the duplicate-aware EntrySet IR. `bob`, `plain`, and `markdown` add the requested presentation from the first dictionary match; the IR remains in `matches`. A `bob` request may conservatively return `plain` instead for a free-form fallback entry. `effectiveFormat` identifies the populated presentation field. |
 | `mode` | `exact` (default) prefers an exactly cased headword, then tries Unicode-normalized and case-insensitive fallback matches. `smart` also returns prefix suggestions on a miss. |
 | `dictionaries` | Restrict and order the search. Empty means all, in registry order. |
 | `limit` | Stop after this many dictionaries answer. |
 | `maxExamples` | Cap parsed and displayed examples independently per sense or subsense. |
-| `includeExamples` / `includeExtras` | Trim both rendered presentation formats consistently. |
-| `multiRecordMode` | Presentation only, applied to whichever format was asked for. `separate` shows one record plus navigation to the others; `combined` shows every record with explicit boundaries. Bob expresses this with ordinal labels and a related-word group; Markdown expresses it with `Record n of total` headings, a `---` thematic break between records, and copyable sibling selectors. |
-| `recordOrdinal` | One-based ordinal in the visible EntrySet after resolved-byte dedupe and parser-empty filtering—not a raw MDX record index. It selects that record in both formats, and overrides `multiRecordMode` in both, because the caller named a record. |
+| `includeExamples` / `includeExtras` | Trim all rendered presentation formats consistently. |
+| `multiRecordMode` | Presentation only. `separate` shows one record plus navigation to the others; `combined` shows every record with explicit boundaries. Bob uses ordinal labels/related words, Plain uses a textual separator/copyable selectors, and Markdown uses headings/`---`/code-spanned selectors. |
+| `recordOrdinal` | One-based ordinal in the visible EntrySet after resolved-byte dedupe and parser-empty filtering—not a raw MDX record index. It selects that record in every presentation and overrides `multiRecordMode`. |
 | `debug` | Attach parser provenance notes to each entry. |
 
 Responses: `200` with matches; a normal headword miss is `404` with an empty
@@ -152,12 +152,37 @@ alias such as `lead²` while `lookupKey` remains `lead`; parsed headwords and
 record provenance remain unchanged. Combined mode preserves the complete
 ordinal-labelled card and uses the same `lookupKey` for Bob `word`.
 
+The response also carries `effectiveFormat`. Normally it equals the requested
+presentation. For a `bob` request whose selected EntrySet has no meaningful
+typed structure or navigation and consists only of generic free-form Entry/
+headword sections (or weak, untyped generic marker blocks), it is `plain`; the response contains
+top-level `plain` and omits `bob`. Entry length and sense density never trigger
+this fallback.
+
+`format: "plain"` always adds one complete Plain Text document rendered
+directly from the canonical EntrySet:
+
+```json
+{
+  "query": "lead",
+  "effectiveFormat": "plain",
+  "matches": [{"lookupKey": "lead", "records": []}],
+  "plain": "lead\n\nRecord 1 of 2\n\n...\n\n====================\n\nRecord 2 of 2\n\n...\n"
+}
+```
+
+Plain uses paragraphs, indentation, blank lines and textual section headings;
+it is not Markdown with syntax stripped. Navigation is ordinary labelled text
+such as `See also: injure`. Separate mode ends with copyable `Other entries`
+selectors without inventing URLs or private lookup schemes.
+
 `format: "markdown"` leaves the same `matches` array intact and adds a
 top-level Markdown string:
 
 ```json
 {
   "query": "lead",
+  "effectiveFormat": "markdown",
   "matches": [{"lookupKey": "lead", "records": []}],
   "markdown": "# lead\n\n## Record 1 of 2\n\n...\n\n---\n\n## Record 2 of 2\n\n...\n"
 }

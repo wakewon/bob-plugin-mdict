@@ -19,6 +19,7 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/parser"
 	"github.com/wakewon/bob-plugin-mdict/internal/resource"
+	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 )
 
 // Service coordinates every component behind the HTTP API.
@@ -220,8 +221,16 @@ type Result struct {
 	Bob *bobadapter.Dict `json:"bob,omitempty"`
 	// Markdown is user-facing dictionary content, present only for
 	// format:"markdown". Diagnostic provenance is never enabled here.
-	Markdown    string   `json:"markdown,omitempty"`
-	Suggestions []string `json:"suggestions,omitempty"`
+	Markdown string `json:"markdown,omitempty"`
+	// Plain is a complete user-facing plain-text document. It is returned for
+	// explicit plain requests and when a requested Bob card conservatively
+	// falls back because the IR contains only free-form sections or weak,
+	// untyped generic marker blocks.
+	Plain string `json:"plain,omitempty"`
+	// EffectiveFormat tells thin clients which presentation field is populated.
+	// It is additive to API v2, so clients that know only bob/markdown can ignore it.
+	EffectiveFormat string   `json:"effectiveFormat,omitempty"`
+	Suggestions     []string `json:"suggestions,omitempty"`
 }
 
 // ErrNoDictionaries means the user has not installed any dictionaries yet.
@@ -265,6 +274,9 @@ type LookupOptions struct {
 	// RenderMarkdown adds user Markdown rendered from the same EntrySet.
 	RenderMarkdown  bool
 	MarkdownOptions mdrender.Options
+	// RenderPlain adds plain text rendered directly from the canonical EntrySet.
+	RenderPlain  bool
+	PlainOptions textrender.Options
 }
 
 // Lookup resolves a query across the selected dictionaries.
@@ -309,11 +321,13 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 	if len(result.Matches) == 0 && opts.Mode == ModeSmart {
 		result.Suggestions = s.suggest(dicts, query, 8)
 	}
-	if (opts.RenderBob || opts.RenderMarkdown) && len(result.Matches) > 0 {
+	if (opts.RenderBob || opts.RenderMarkdown || opts.RenderPlain) && len(result.Matches) > 0 {
 		set := result.Matches[0].EntrySet()
 		ordinal := opts.BobOptions.RecordOrdinal
 		if opts.RenderMarkdown {
 			ordinal = opts.MarkdownOptions.RecordOrdinal
+		} else if opts.RenderPlain {
+			ordinal = opts.PlainOptions.RecordOrdinal
 		}
 		if ordinal > len(set.Records) {
 			return nil, &RecordNotFoundError{
@@ -326,12 +340,41 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 		// when an API client asks the server for several matches, the Bob view is
 		// deliberately rendered from the first match only.
 		set := result.Matches[0].EntrySet()
-		result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
+		if bobadapter.ShouldUsePlainFallback(set, opts.BobOptions) {
+			plainOpts := opts.PlainOptions
+			if plainOpts.MaxExamplesPerSense <= 0 {
+				plainOpts = plainOptionsFromBob(opts.BobOptions)
+			}
+			result.Plain = textrender.RenderEntrySet(set, plainOpts)
+			result.EffectiveFormat = "plain"
+		} else {
+			result.Bob = bobadapter.RenderEntrySet(set, opts.BobOptions)
+			result.EffectiveFormat = "bob"
+		}
 	}
 	if opts.RenderMarkdown && len(result.Matches) > 0 {
 		result.Markdown = mdrender.RenderEntrySet(result.Matches[0].EntrySet(), opts.MarkdownOptions)
+		result.EffectiveFormat = "markdown"
+	}
+	if opts.RenderPlain && len(result.Matches) > 0 {
+		result.Plain = textrender.RenderEntrySet(result.Matches[0].EntrySet(), opts.PlainOptions)
+		result.EffectiveFormat = "plain"
 	}
 	return result, nil
+}
+
+func plainOptionsFromBob(opts bobadapter.Options) textrender.Options {
+	plain := textrender.UserOptions()
+	plain.IncludeExamples = opts.IncludeExamples
+	plain.IncludeExtras = opts.IncludeExtras
+	plain.MaxExamplesPerSense = opts.MaxExamplesPerSense
+	plain.RecordOrdinal = opts.RecordOrdinal
+	if opts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		plain.MultiRecordMode = textrender.MultiRecordCombined
+	} else {
+		plain.MultiRecordMode = textrender.MultiRecordSeparate
+	}
+	return plain
 }
 
 func (s *Service) lookupOne(dict *mdict.Dictionary, query string, opts LookupOptions) (Match, bool) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
+	"github.com/wakewon/bob-plugin-mdict/internal/parser"
 )
 
 func audio(url string) *entryir.Audio {
@@ -71,24 +72,25 @@ func TestRenderProducesBobShape(t *testing.T) {
 		t.Error("uk and us share one audio url")
 	}
 
-	if len(dict.Parts) != 2 || dict.Parts[0].Part != "verb [transitive]" || dict.Parts[1].Part != "verb [transitive]" {
+	if len(dict.Parts) != 5 || dict.Parts[0].Part != "v." || dict.Parts[1].Part != "v." || dict.Parts[2].Part != "v." {
 		t.Fatalf("parts = %+v", dict.Parts)
 	}
 	means := dict.Parts[0].Means
-	if len(means) != 2 {
-		t.Fatalf("first sense means = %d lines, want parent plus subsense: %v", len(means), means)
+	if len(means) != 1 {
+		t.Fatalf("first sense means = %d lines, want one independent sense: %v", len(means), means)
 	}
 	if !strings.Contains(means[0], "1.") || !strings.Contains(means[0], "(informal)") ||
 		!strings.Contains(means[0], "[SHAPING]") || !strings.Contains(means[0], "抹平黏土") {
 		t.Errorf("sense line lost detail: %q", means[0])
 	}
-	// The hierarchy has to survive being flattened into strings: a subsense
-	// follows its own parent, indented, not the whole sense list.
-	if !strings.HasPrefix(means[1], "1.1.") {
-		t.Errorf("subsense has no generated hierarchical number: %q", means[1])
+	if got := dict.Parts[1].Means; len(got) != 1 || !strings.Contains(got[0], "1.1.") {
+		t.Errorf("subsense is not an independent Bob Part: %+v", dict.Parts[1])
 	}
-	if got := dict.Parts[1].Means; len(got) != 1 || !strings.HasPrefix(got[0], "2.") {
-		t.Errorf("sense 2 should be a separate repeated Bob part: %+v", dict.Parts[1])
+	if got := dict.Parts[2].Means; len(got) != 1 || !strings.Contains(got[0], "2.") {
+		t.Errorf("sense 2 should be a separate repeated Bob part: %+v", dict.Parts[2])
+	}
+	if dict.Parts[3].Part != "idiom" || dict.Parts[4].Part != "phr. v." {
+		t.Fatalf("important secondary sections are not independent Parts: %+v", dict.Parts)
 	}
 
 	if len(dict.Exchanges) != 1 || dict.Exchanges[0].Name != "past tense" {
@@ -99,12 +101,12 @@ func TestRenderProducesBobShape(t *testing.T) {
 	for _, addition := range dict.Additions {
 		names[addition.Name] = addition.Value
 	}
-	for _, want := range []string{"Examples · verb [transitive] 1", "Idioms", "Phrasal verbs", "Synonyms", "Origin"} {
+	for _, want := range []string{"Examples · v. 1", "Synonyms", "Origin"} {
 		if _, ok := names[want]; !ok {
 			t.Errorf("missing addition %q; have %v", want, keys(names))
 		}
 	}
-	if !strings.Contains(names["Examples · verb [transitive] 1"], "她抹平了它。") {
+	if !strings.Contains(names["Examples · v. 1"], "她抹平了它。") {
 		t.Error("example translation was dropped")
 	}
 }
@@ -159,7 +161,7 @@ func TestDisplayNumbersResetPerPOSWithoutMutatingSource(t *testing.T) {
 	want := []struct {
 		part   string
 		prefix string
-	}{{"verb", "1."}, {"verb", "2."}, {"noun", "1."}}
+	}{{"v.", "1."}, {"v.", "2."}, {"n.", "1."}}
 	for i, expected := range want {
 		if dict.Parts[i].Part != expected.part || len(dict.Parts[i].Means) != 1 || !strings.HasPrefix(dict.Parts[i].Means[0], expected.prefix) {
 			t.Errorf("part %d = %+v, want %s %s", i, dict.Parts[i], expected.part, expected.prefix)
@@ -170,21 +172,87 @@ func TestDisplayNumbersResetPerPOSWithoutMutatingSource(t *testing.T) {
 	}
 }
 
-func TestSubsensesRemainWithTheirTopLevelSense(t *testing.T) {
+func TestCompactPOSCoversCanonicalParserVocabulary(t *testing.T) {
+	for _, pos := range parser.CanonicalPOSVocabulary() {
+		compact := CompactPOS(pos)
+		if compact == "" || compact == pos {
+			t.Errorf("canonical POS %q has no reviewed compact Bob label (got %q)", pos, compact)
+		}
+	}
+	if got := CompactPOS("particle-x"); got != "particle-x" {
+		t.Fatalf("unknown POS was dropped or rewritten: %q", got)
+	}
+}
+
+func TestGrammarMovesIntoMeaningWithoutDuplication(t *testing.T) {
+	entry := &entryir.Entry{Headword: "act", Parts: []entryir.Part{{POS: "verb", Grammar: "[with object]", Senses: []entryir.Sense{
+		{Definition: "take measures", Grammar: "with object"},
+		{Definition: "behave", Grammar: "linking verb"},
+	}}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Parts) != 2 || dict.Parts[0].Part != "v." || dict.Parts[1].Part != "v." {
+		t.Fatalf("grammar leaked into POS column: %+v", dict.Parts)
+	}
+	if got := dict.Parts[0].Means[0]; strings.Count(got, "with object") != 1 || !strings.Contains(got, "[with object] 1. take measures") {
+		t.Fatalf("equivalent Part/Sense grammar duplicated or moved incorrectly: %q", got)
+	}
+	if got := dict.Parts[1].Means[0]; !strings.Contains(got, "[with object] linking verb 2. behave") {
+		t.Fatalf("distinct sense grammar was lost: %q", got)
+	}
+}
+
+func TestMissingPOSStaysNeutralAndNeverShowsDefinition(t *testing.T) {
+	dict := Render(&entryir.Entry{Headword: "gut", Parts: []entryir.Part{{Senses: []entryir.Sense{{Definition: "synthetic meaning"}}}}}, DefaultOptions())
+	if len(dict.Parts) != 1 || dict.Parts[0].Part != "" || strings.Contains(strings.ToLower(dict.Parts[0].Part), "definition") {
+		t.Fatalf("missing POS became implementation leakage: %+v", dict.Parts)
+	}
+}
+
+func TestPlainFallbackRequiresConservativeUntypedEvidence(t *testing.T) {
+	set := func(entry *entryir.Entry) *entryir.EntrySet {
+		return &entryir.EntrySet{LookupKey: "好", Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}}}
+	}
+	if !ShouldUsePlainFallback(set(&entryir.Entry{Sections: []entryir.Section{{Title: "Entry", Body: "first paragraph"}}}), DefaultOptions()) {
+		t.Fatal("one free-form Entry section should use Plain fallback")
+	}
+	if !ShouldUsePlainFallback(set(&entryir.Entry{Headword: "好", Sections: []entryir.Section{
+		{Title: "好", Body: "first free-form article"}, {Title: "好", Body: "second free-form article"}, {Title: "Entry", Body: "source footer"},
+	}}), DefaultOptions()) {
+		t.Fatal("homograph-like free-form articles plus an Entry footer should use Plain fallback")
+	}
+	if !ShouldUsePlainFallback(set(&entryir.Entry{Parts: []entryir.Part{{
+		Rule: "generic:markerBlocks", Confidence: 0.35,
+		Senses: []entryir.Sense{{Rule: "generic:markerBlocks", Definition: "article-like numbered block"}},
+	}}}), DefaultOptions()) {
+		t.Fatal("weak untyped marker recovery should use Plain fallback")
+	}
+	for name, entry := range map[string]*entryir.Entry{
+		"structured sense": {Parts: []entryir.Part{{POS: "noun", Senses: []entryir.Sense{{Definition: "long but structured"}}}}},
+		"strong untyped sense": {Parts: []entryir.Part{{Rule: "generic:senseHints", Confidence: 0.45,
+			Senses: []entryir.Sense{{Rule: "generic:senseHints", Definition: "publisher-declared sense"}}}}},
+		"typed phrase":  {Sections: []entryir.Section{{Title: "Entry", Body: "body"}}, Phrases: []entryir.PhraseEntry{{Phrase: "a phrase"}}},
+		"navigation":    {Sections: []entryir.Section{{Title: "Entry", Body: "body"}}, CrossReferences: []string{"target"}},
+		"named section": {Sections: []entryir.Section{{Title: "Usage", Body: "body"}}},
+	} {
+		if ShouldUsePlainFallback(set(entry), DefaultOptions()) {
+			t.Errorf("%s should remain a Bob card", name)
+		}
+	}
+}
+
+func TestEverySubsenseBecomesAnIndependentTopLevelPart(t *testing.T) {
 	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{
 		{Definition: "parent", Subsenses: []entryir.Sense{{Definition: "first child"}, {Definition: "second child"}}},
 		{Definition: "another parent"},
 	}}}}
 	dict := Render(entry, DefaultOptions())
-	if len(dict.Parts) != 2 {
-		t.Fatalf("parts = %+v, want two top-level sense blocks", dict.Parts)
+	if len(dict.Parts) != 4 {
+		t.Fatalf("parts = %+v, want one top-level Part per semantic sense node", dict.Parts)
 	}
-	if got := dict.Parts[0].Means; len(got) != 3 || !strings.HasPrefix(got[0], "1.") ||
-		!strings.HasPrefix(got[1], "1.1.") || !strings.HasPrefix(got[2], "1.2.") {
-		t.Fatalf("subsenses were split away from parent: %v", got)
-	}
-	if got := dict.Parts[1].Means; len(got) != 1 || !strings.HasPrefix(got[0], "2.") {
-		t.Fatalf("second parent = %v", got)
+	for index, prefix := range []string{"1.", "1.1.", "1.2.", "2."} {
+		if dict.Parts[index].Part != "v." || len(dict.Parts[index].Means) != 1 || !strings.HasPrefix(dict.Parts[index].Means[0], prefix) {
+			t.Fatalf("flattened Part %d = %+v, want prefix %q", index, dict.Parts[index], prefix)
+		}
 	}
 }
 
@@ -200,7 +268,7 @@ func TestExamplesUseOneAdditionPerDisplaySense(t *testing.T) {
 	if len(dict.Additions) != 3 {
 		t.Fatalf("additions = %+v", dict.Additions)
 	}
-	wantNames := []string{"Examples · verb 1", "Examples · verb 2", "Examples · noun 1"}
+	wantNames := []string{"Examples · v. 1", "Examples · v. 2", "Examples · n. 1"}
 	for i, want := range wantNames {
 		if dict.Additions[i].Name != want {
 			t.Errorf("addition %d name = %q, want %q", i, dict.Additions[i].Name, want)
@@ -224,6 +292,31 @@ func TestExamplesUseOneAdditionPerDisplaySense(t *testing.T) {
 	}
 }
 
+func TestExamplesWithNoPOSUseNeutralAdditionName(t *testing.T) {
+	entry := &entryir.Entry{Headword: "good", Parts: []entryir.Part{{
+		Senses: []entryir.Sense{{Definition: "well behaved", Examples: []entryir.Example{{Text: "Be good."}}}},
+	}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Additions) != 1 || dict.Additions[0].Name != "Examples 1" {
+		t.Fatalf("additions = %+v", dict.Additions)
+	}
+}
+
+func TestPhraseExamplesStayWithIndependentBobPhrasePart(t *testing.T) {
+	entry := &entryir.Entry{Headword: "art", Phrases: []entryir.PhraseEntry{{
+		Phrase: "arts and crafts", Definition: "handicrafts",
+		Examples: []entryir.Example{{Text: "an exhibition of arts and crafts", Translation: "工艺品展"}},
+	}}}
+	dict := Render(entry, DefaultOptions())
+	if len(dict.Parts) != 1 || dict.Parts[0].Part != "phr." {
+		t.Fatalf("parts = %+v", dict.Parts)
+	}
+	if len(dict.Additions) != 1 || dict.Additions[0].Name != "Examples · phr. 1" ||
+		!strings.Contains(dict.Additions[0].Value, "工艺品展") {
+		t.Fatalf("additions = %+v", dict.Additions)
+	}
+}
+
 func TestSubsenseExamplesUseHierarchicalAdditionNames(t *testing.T) {
 	entry := &entryir.Entry{Headword: "flimber", Parts: []entryir.Part{{POS: "verb", Senses: []entryir.Sense{{
 		Definition: "parent", Examples: []entryir.Example{{Text: "Main"}}, Subsenses: []entryir.Sense{
@@ -236,7 +329,7 @@ func TestSubsenseExamplesUseHierarchicalAdditionNames(t *testing.T) {
 	if len(dict.Additions) != 3 {
 		t.Fatalf("additions = %+v", dict.Additions)
 	}
-	for i, want := range []string{"Examples · verb 1", "Examples · verb 1.1", "Examples · verb 1.2"} {
+	for i, want := range []string{"Examples · v. 1", "Examples · v. 1.1", "Examples · v. 1.2"} {
 		if dict.Additions[i].Name != want {
 			t.Errorf("addition %d = %q, want %q", i, dict.Additions[i].Name, want)
 		}
@@ -390,12 +483,13 @@ func TestRenderEntrySetPreservesEveryRecordBoundary(t *testing.T) {
 		}
 	}
 
-	if len(dict.Parts) != 3 || dict.Parts[0].Part != "¹ noun" || dict.Parts[1].Part != "² verb" || dict.Parts[2].Part != "³ adjective" {
+	if len(dict.Parts) != 6 || dict.Parts[0].Part != "¹ n." || dict.Parts[2].Part != "² v." || dict.Parts[4].Part != "³ adj." {
 		t.Fatalf("parts = %+v", dict.Parts)
 	}
 	for i, want := range []string{"1. synthetic noun meaning", "1. synthetic verb meaning", "1. synthetic adjective meaning"} {
-		if len(dict.Parts[i].Means) != 1 || dict.Parts[i].Means[0] != want {
-			t.Errorf("part %d means = %v, want %q", i, dict.Parts[i].Means, want)
+		partIndex := i * 2
+		if len(dict.Parts[partIndex].Means) != 1 || dict.Parts[partIndex].Means[0] != want {
+			t.Errorf("part %d means = %v, want %q", partIndex, dict.Parts[partIndex].Means, want)
 		}
 	}
 	if len(dict.Exchanges) != 3 || dict.Exchanges[0].Name != "¹ form" || dict.Exchanges[1].Name != "² form" {
@@ -410,8 +504,8 @@ func TestRenderEntrySetPreservesEveryRecordBoundary(t *testing.T) {
 		names[addition.Name] = true
 	}
 	for _, want := range []string{
-		"Examples · ¹ noun 1", "Examples · ² verb 1", "Examples · ³ adjective 1",
-		"¹ Phrases", "² Phrases", "¹ Usage · note", "² Usage · note", "¹ Origin", "² Origin",
+		"Examples · ¹ n. 1", "Examples · ² v. 1", "Examples · ³ adj. 1",
+		"¹ Usage · note", "² Usage · note", "¹ Origin", "² Origin",
 	} {
 		if !names[want] {
 			t.Errorf("missing addition %q in %+v", want, dict.Additions)
@@ -497,7 +591,7 @@ func navigationSet() *entryir.EntrySet {
 
 func TestRenderEntrySetDefaultsToSeparateNavigation(t *testing.T) {
 	dict := RenderEntrySet(navigationSet(), DefaultOptions())
-	if dict.Word != "foo" || len(dict.Parts) != 1 || dict.Parts[0].Part != "noun" {
+	if dict.Word != "foo" || len(dict.Parts) != 1 || dict.Parts[0].Part != "n." {
 		t.Fatalf("default separate card = %+v", dict)
 	}
 	if strings.Contains(dict.Parts[0].Part, "¹") || strings.Contains(dict.Parts[0].Means[0], "¹") {
@@ -521,9 +615,9 @@ func TestRenderEntrySetExplicitSelectionUsesAliasAndBidirectionalSiblings(t *tes
 		part    string
 		sibling []string
 	}{
-		{ordinal: 1, word: "foo¹", part: "noun", sibling: []string{"foo²", "foo³"}},
-		{ordinal: 2, word: "foo²", part: "verb", sibling: []string{"foo¹", "foo³"}},
-		{ordinal: 3, word: "foo³", part: "adjective", sibling: []string{"foo¹", "foo²"}},
+		{ordinal: 1, word: "foo¹", part: "n.", sibling: []string{"foo²", "foo³"}},
+		{ordinal: 2, word: "foo²", part: "v.", sibling: []string{"foo¹", "foo³"}},
+		{ordinal: 3, word: "foo³", part: "adj.", sibling: []string{"foo¹", "foo²"}},
 	} {
 		opts := DefaultOptions()
 		opts.RecordOrdinal = test.ordinal

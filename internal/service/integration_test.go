@@ -214,36 +214,43 @@ func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.
 		rendered := bobadapter.Render(entry, bobadapter.DefaultOptions())
 		type expectedPart struct {
 			label  string
-			number int
+			number string
 		}
 		var expected []expectedPart
-		for _, sourcePart := range entry.Parts {
-			label := sourcePart.POS
-			if label == "" {
-				label = "definition"
+		var appendSense func(label string, sense entryir.Sense, path []int)
+		appendSense = func(label string, sense entryir.Sense, path []int) {
+			numbers := make([]string, len(path))
+			for i, value := range path {
+				numbers[i] = strconv.Itoa(value)
 			}
-			if sourcePart.Grammar != "" {
-				label += " " + sourcePart.Grammar
-			}
-			for senseIndex := range sourcePart.Senses {
-				expected = append(expected, expectedPart{label: label, number: senseIndex + 1})
+			expected = append(expected, expectedPart{label: label, number: strings.Join(numbers, ".")})
+			for i, sub := range sense.Subsenses {
+				appendSense(label, sub, append(append([]int(nil), path...), i+1))
 			}
 		}
-		if len(rendered.Parts) != len(expected) {
-			t.Fatalf("%s rendered %d Bob parts, want %d top-level senses",
+		for _, sourcePart := range entry.Parts {
+			label := bobadapter.CompactPOS(sourcePart.POS)
+			for senseIndex, sense := range sourcePart.Senses {
+				appendSense(label, sense, []int{senseIndex + 1})
+			}
+		}
+		if len(rendered.Parts) < len(expected) {
+			t.Fatalf("%s rendered %d Bob parts, want at least %d recursive senses",
 				shortName(match.DictionaryTitle), len(rendered.Parts), len(expected))
 		}
-		for partIndex, part := range rendered.Parts {
-			want := expected[partIndex]
+		for partIndex, want := range expected {
+			part := rendered.Parts[partIndex]
 			if part.Part != want.label {
 				t.Fatalf("%s Bob part %d label = %q, want repeated label %q",
 					shortName(match.DictionaryTitle), partIndex, part.Part, want.label)
 			}
-			wantPrefix := strconv.Itoa(want.number) + "."
+			wantPrefix := want.number + "."
 			if len(part.Means) == 0 || !strings.HasPrefix(part.Means[0], wantPrefix) {
 				t.Fatalf("%s Bob part %d first meaning = %q, want prefix %q",
 					shortName(match.DictionaryTitle), partIndex, strings.Join(part.Means, " | "), wantPrefix)
 			}
+		}
+		for _, part := range rendered.Parts {
 			if strings.EqualFold(strings.TrimSpace(part.Part), "see also") {
 				t.Fatalf("%s still rendered See also as a Bob part", shortName(match.DictionaryTitle))
 			}
@@ -272,7 +279,7 @@ func TestRealEntrySourceNumbersAndBobPresentationNumbersStaySeparate(t *testing.
 	t.Skip("no real matching entry exposed source-global numbering across multiple POS groups")
 }
 
-func TestRealAbandonBobPresentationV012(t *testing.T) {
+func TestRealAbandonBobPresentationV110(t *testing.T) {
 	svc := newService(t)
 	result, err := svc.Lookup("abandon", service.LookupOptions{Mode: service.ModeExact})
 	if err != nil {
@@ -286,8 +293,8 @@ func TestRealAbandonBobPresentationV012(t *testing.T) {
 		wantParts := []struct {
 			label  string
 			prefix string
-		}{{"verb", "1."}, {"verb", "2."}, {"verb", "3."}, {"verb", "4."}, {"noun", "1."}}
-		if len(dict.Parts) != len(wantParts) {
+		}{{"v.", "1."}, {"v.", "2."}, {"v.", "3."}, {"v.", "4."}, {"n.", "1."}}
+		if len(dict.Parts) < len(wantParts) {
 			t.Fatalf("abandon parts = %+v", dict.Parts)
 		}
 		for i, want := range wantParts {
@@ -303,10 +310,19 @@ func TestRealAbandonBobPresentationV012(t *testing.T) {
 				t.Errorf("obsolete Bob presentation survived: %+v", addition)
 			}
 		}
-		for _, want := range []string{"Examples · verb 1", "Examples · verb 2", "Examples · noun 1", "Phrases"} {
+		for _, want := range []string{"Examples · v. 1", "Examples · v. 2", "Examples · n. 1"} {
 			if !additionNames[want] {
 				t.Errorf("abandon missing addition %q; have %+v", want, additionNames)
 			}
+		}
+		foundPhrasePart := false
+		for _, part := range dict.Parts {
+			if part.Part == "phr." && len(part.Means) > 0 {
+				foundPhrasePart = true
+			}
+		}
+		if !foundPhrasePart {
+			t.Errorf("abandon phrases were not surfaced as independent Bob parts: %+v", dict.Parts)
 		}
 		foundSeeAlso := false
 		for _, relatedPart := range dict.RelatedWordParts {

@@ -96,6 +96,7 @@ func Parse(raw []byte, opts Options) (*entryir.Entry, error) {
 	// internal structure cannot be mistaken for the entry's own senses.
 	state.parseSections()
 	state.parseGenericCrossReferences()
+	state.parseGenericSemanticSections()
 	state.parseParts()
 	state.finalize()
 

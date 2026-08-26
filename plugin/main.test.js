@@ -82,6 +82,34 @@ test('Markdown presentation returns the whole document as one toParagraphs eleme
     assert.equal('toDict' in completion.result, false);
 });
 
+test('Plain presentation returns the whole document as one toParagraphs element', () => {
+    let completion;
+    const plain = 'flimber\n\nnoun\n1. synthetic definition\n';
+    const loaded = load({ presentationMode: 'plain' }, request => {
+        assert.equal(request.body.format, 'plain');
+        request.handler(response(200, { effectiveFormat: 'plain', plain, matches: [{}] }));
+    });
+    loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
+    assert.equal(Array.isArray(completion.result.toParagraphs), true);
+    assert.equal(completion.result.toParagraphs.length, 1);
+    assert.equal(completion.result.toParagraphs[0], plain);
+    assert.equal('toDict' in completion.result, false);
+});
+
+test('Dictionary card honours the service effective Plain fallback', () => {
+    let completion;
+    const plain = '好\n\n第一段。\n\n第二段。\n';
+    const loaded = load({}, request => {
+        assert.equal(request.body.format, 'bob');
+        request.handler(response(200, { effectiveFormat: 'plain', plain, matches: [{}] }));
+    });
+    loaded.context.translate(bobQuery({ text: '好', originalText: '好' }, value => { completion = value; }));
+    assert.equal(Array.isArray(completion.result.toParagraphs), true);
+    assert.equal(completion.result.toParagraphs.length, 1);
+    assert.equal(completion.result.toParagraphs[0], plain);
+    assert.equal('toDict' in completion.result, false);
+});
+
 test('Markdown presentation forwards the configured multi-record mode', () => {
     for (const [configured, expected] of [[undefined, 'separate'], ['separate', 'separate'], ['combined', 'combined']]) {
         let completion;

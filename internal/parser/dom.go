@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 )
@@ -89,7 +91,7 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 	}
 	switch node.Type {
 	case html.TextNode:
-		builder.WriteString(node.Data)
+		writeBoundaryAware(builder, node.Data)
 		return
 	case html.ElementNode:
 		if node.Data == "script" || node.Data == "style" || node.Data == "head" {
@@ -118,6 +120,49 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 	if node.Type == html.ElementNode && blockTags[node.Data] {
 		builder.WriteString(" ")
 	}
+}
+
+// writeBoundaryAware joins text from adjacent DOM nodes without producing
+// artifacts such as "goodorthe". It adds a boundary only when separate nodes
+// would otherwise merge word-like scripts. Punctuation remains attached and
+// adjacent CJK text remains naturally unspaced.
+func writeBoundaryAware(builder *strings.Builder, text string) {
+	if text == "" {
+		return
+	}
+	if builder.Len() > 0 && !startsWithSpace(text) {
+		left, _ := utf8.DecodeLastRuneInString(builder.String())
+		right, _ := utf8.DecodeRuneInString(text)
+		if needsTextBoundary(left, right) && !isInlineSuffix(text) {
+			builder.WriteByte(' ')
+		}
+	}
+	builder.WriteString(text)
+}
+
+func isInlineSuffix(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return trimmed == "s" || strings.HasPrefix(trimmed, "s ") || strings.HasPrefix(trimmed, "s.") ||
+		trimmed == "'s" || trimmed == "’s" || strings.HasPrefix(trimmed, "'s ") || strings.HasPrefix(trimmed, "’s ")
+}
+
+func startsWithSpace(text string) bool {
+	r, _ := utf8.DecodeRuneInString(text)
+	return unicode.IsSpace(r)
+}
+
+func needsTextBoundary(left, right rune) bool {
+	if unicode.IsSpace(left) || unicode.IsSpace(right) || unicode.IsPunct(left) || unicode.IsPunct(right) ||
+		unicode.IsSymbol(left) || unicode.IsSymbol(right) {
+		return false
+	}
+	leftCJK := unicode.In(left, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+	rightCJK := unicode.In(right, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+	if leftCJK && rightCJK {
+		return false
+	}
+	return (unicode.IsLetter(left) || unicode.IsDigit(left)) &&
+		(unicode.IsLetter(right) || unicode.IsDigit(right))
 }
 
 // Walk visits every element node in document order. Returning false from the

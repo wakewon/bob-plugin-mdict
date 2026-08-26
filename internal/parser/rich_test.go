@@ -148,7 +148,8 @@ func TestMissingImageDoesNotProduceBrokenRichBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entry.Sections) != 1 || len(entry.Sections[0].Blocks) != 0 || entry.Sections[0].Body != "before after" {
+	if len(entry.Sections) != 1 || len(entry.Sections[0].Blocks) != 2 || entry.Sections[0].Body != "before after" ||
+		entry.Sections[0].Blocks[0].Text != "before" || entry.Sections[0].Blocks[1].Text != "after" {
 		t.Fatalf("missing image changed prose: %+v", entry.Sections)
 	}
 }

@@ -210,7 +210,7 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 		records[0].RecordOrdinal != 1 || records[1].RecordOrdinal != 2 {
 		t.Fatalf("records=%+v err=%v", records, err)
 	}
-	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ noun" || payload.Bob.Parts[1].Part != "² verb" {
+	if len(payload.Bob.Parts) != 2 || payload.Bob.Parts[0].Part != "¹ n." || payload.Bob.Parts[1].Part != "² v." {
 		t.Fatalf("Bob parts=%+v", payload.Bob.Parts)
 	}
 }
@@ -245,6 +245,53 @@ func TestV2LookupMarkdownIsAdditiveUserOutput(t *testing.T) {
 		if strings.Contains(payload.Markdown, forbidden) {
 			t.Errorf("user Markdown contains %q:\n%s", forbidden, payload.Markdown)
 		}
+	}
+}
+
+func TestV2LookupPlainAndAutomaticBobFallbackAreAdditive(t *testing.T) {
+	root := t.TempDir()
+	markup := `<article><p>first synthetic paragraph</p><p>second synthetic paragraph</p></article>`
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{{Key: "flimber", HTML: markup}}); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	lookup := func(format string) struct {
+		Matches         []json.RawMessage `json:"matches"`
+		Plain           string            `json:"plain"`
+		Bob             json.RawMessage   `json:"bob"`
+		EffectiveFormat string            `json:"effectiveFormat"`
+	} {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(
+			`{"query":"flimber","format":"`+format+`","limit":1}`)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", format, recorder.Code, recorder.Body.String())
+		}
+		var payload struct {
+			Matches         []json.RawMessage `json:"matches"`
+			Plain           string            `json:"plain"`
+			Bob             json.RawMessage   `json:"bob"`
+			EffectiveFormat string            `json:"effectiveFormat"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+
+	explicit := lookup("plain")
+	if explicit.EffectiveFormat != "plain" || explicit.Plain == "" || len(explicit.Matches) != 1 || len(explicit.Bob) != 0 {
+		t.Fatalf("explicit Plain response = %+v", explicit)
+	}
+	if !strings.Contains(explicit.Plain, "first synthetic paragraph\n\nsecond synthetic paragraph") {
+		t.Fatalf("Plain did not preserve paragraph blocks:\n%s", explicit.Plain)
+	}
+
+	fallback := lookup("bob")
+	if fallback.EffectiveFormat != "plain" || fallback.Plain != explicit.Plain || len(fallback.Bob) != 0 {
+		t.Fatalf("Bob fallback response = %+v", fallback)
 	}
 }
 
@@ -321,7 +368,7 @@ func TestV2LookupRejectsUnknownFormat(t *testing.T) {
 	handler := newTestServer(t)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(`{"query":"hello","format":"html"}`)))
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "ir, bob, or markdown") {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "ir, bob, plain, or markdown") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
@@ -415,7 +462,7 @@ func TestV2LookupSeparatesAndSelectsVisibleRecordOrdinals(t *testing.T) {
 	}
 	bob = payload["bob"].(map[string]any)
 	parts := bob["parts"].([]any)
-	if bob["word"] != "foo²" || len(parts) != 1 || parts[0].(map[string]any)["part"] != "verb" {
+	if bob["word"] != "foo²" || len(parts) != 1 || parts[0].(map[string]any)["part"] != "v." {
 		t.Fatalf("explicit second bob=%+v", bob)
 	}
 	groups = bob["relatedWordParts"].([]any)

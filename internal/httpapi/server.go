@@ -16,6 +16,7 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
+	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/version"
 )
 
@@ -195,14 +196,14 @@ type LookupRequest struct {
 	// MaxExamples caps examples per sense.
 	MaxExamples int  `json:"maxExamples,omitempty"`
 	Debug       bool `json:"debug,omitempty"`
-	// Format is "ir" (default), "bob", or "markdown". Presentation formats add
+	// Format is "ir" (default), "bob", "plain", or "markdown". Presentation formats add
 	// a rendered sibling field while preserving the canonical IR matches.
 	Format string `json:"format,omitempty"`
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
 	IncludeExtras   *bool `json:"includeExtras,omitempty"`
 	// MultiRecordMode controls presentation only, in both the Bob card and
-	// Markdown: "separate" selects one semantic record and offers sibling
+	// Plain/Markdown: "separate" selects one semantic record and offers sibling
 	// navigation; "combined" renders every record with explicit boundaries.
 	MultiRecordMode string `json:"multiRecordMode,omitempty"`
 	// RecordOrdinal is one-based over the visible, deduplicated EntrySet.
@@ -227,8 +228,8 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "ir"
 	}
-	if format != "ir" && format != "bob" && format != "markdown" {
-		writeError(w, http.StatusBadRequest, "badRequest", "format must be ir, bob, or markdown", "")
+	if format != "ir" && format != "bob" && format != "plain" && format != "markdown" {
+		writeError(w, http.StatusBadRequest, "badRequest", "format must be ir, bob, plain, or markdown", "")
 		return
 	}
 	if req.MultiRecordMode != "" &&
@@ -272,6 +273,16 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	} else {
 		markdownOpts.MultiRecordMode = mdrender.MultiRecordSeparate
 	}
+	plainOpts := textrender.UserOptions()
+	plainOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
+	plainOpts.IncludeExamples = bobOpts.IncludeExamples
+	plainOpts.IncludeExtras = bobOpts.IncludeExtras
+	plainOpts.RecordOrdinal = req.RecordOrdinal
+	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		plainOpts.MultiRecordMode = textrender.MultiRecordCombined
+	} else {
+		plainOpts.MultiRecordMode = textrender.MultiRecordSeparate
+	}
 
 	result, err := s.svc.Lookup(req.Query, service.LookupOptions{
 		DictionaryIDs:   req.Dictionaries,
@@ -283,6 +294,8 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		BobOptions:      bobOpts,
 		RenderMarkdown:  format == "markdown",
 		MarkdownOptions: markdownOpts,
+		RenderPlain:     format == "plain",
+		PlainOptions:    plainOpts,
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrNoDictionaries) {

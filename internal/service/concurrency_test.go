@@ -13,6 +13,7 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
 	"github.com/wakewon/bob-plugin-mdict/internal/testmdx"
+	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 )
 
 // The service is used from many goroutines at once: Bob's HTTP requests each
@@ -41,6 +42,7 @@ func syntheticService(t *testing.T, dictionaries, entries int) *service.Service 
 			// and sibling navigation are exercised concurrently too.
 			records = append(records, testmdx.Entry{Key: key, HTML: strings.Replace(html, "noun", "verb", 1)})
 		}
+		records = append(records, testmdx.Entry{Key: "freeform", HTML: `<article><p>synthetic first block</p><p>synthetic second block</p></article>`})
 		path := filepath.Join(root, fmt.Sprintf("book%02d", d), fmt.Sprintf("book%02d.mdx", d))
 		if err := mkdirWrite(path, records); err != nil {
 			t.Fatal(err)
@@ -89,13 +91,27 @@ func TestConcurrentLookupsShareCacheAndProfilesSafely(t *testing.T) {
 			for round := 0; round < 12; round++ {
 				id := ids[(worker+round)%len(ids)]
 				word := fmt.Sprintf("word%02d", (worker*round)%8)
-				result, err := svc.Lookup(word, service.LookupOptions{
+				opts := service.LookupOptions{
 					DictionaryIDs: []string{id},
 					Mode:          service.ModeExact,
 					MaxExamples:   4,
-					RenderBob:     true,
 					BobOptions:    bobadapter.DefaultOptions(),
-				})
+					PlainOptions:  textrender.UserOptions(),
+				}
+				surface := round % 4
+				switch surface {
+				case 0:
+					opts.RenderBob = true
+				case 1:
+					opts.RenderMarkdown = true
+					opts.MarkdownOptions = mdrender.UserOptions()
+				case 2:
+					opts.RenderPlain = true
+				default:
+					word = "freeform"
+					opts.RenderBob = true
+				}
+				result, err := svc.Lookup(word, opts)
 				if err != nil {
 					errs <- fmt.Sprintf("lookup %s/%s: %v", id, word, err)
 					continue
@@ -111,8 +127,23 @@ func TestConcurrentLookupsShareCacheAndProfilesSafely(t *testing.T) {
 				if match.LookupKey != word {
 					errs <- fmt.Sprintf("asked %q, got key %q", word, match.LookupKey)
 				}
-				if result.Bob == nil || result.Bob.Word != word {
-					errs <- fmt.Sprintf("Bob card for %q is wrong: %+v", word, result.Bob)
+				switch surface {
+				case 0:
+					if result.Bob == nil || result.Bob.Word != word || result.EffectiveFormat != "bob" {
+						errs <- fmt.Sprintf("Bob card for %q is wrong: %+v", word, result)
+					}
+				case 1:
+					if result.Markdown == "" || result.EffectiveFormat != "markdown" {
+						errs <- fmt.Sprintf("Markdown for %q is wrong", word)
+					}
+				case 2:
+					if result.Plain == "" || result.EffectiveFormat != "plain" {
+						errs <- fmt.Sprintf("Plain for %q is wrong", word)
+					}
+				default:
+					if result.Bob != nil || result.Plain == "" || result.EffectiveFormat != "plain" {
+						errs <- fmt.Sprintf("Dict fallback for %q is wrong: %+v", word, result)
+					}
 				}
 			}
 		}(worker)

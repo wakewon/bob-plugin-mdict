@@ -54,9 +54,11 @@ type Image struct {
 type RichBlockKind string
 
 const (
-	RichText  RichBlockKind = "text"
-	RichImage RichBlockKind = "image"
-	RichTable RichBlockKind = "table"
+	RichText     RichBlockKind = "text"
+	RichHeading  RichBlockKind = "heading"
+	RichListItem RichBlockKind = "listItem"
+	RichImage    RichBlockKind = "image"
+	RichTable    RichBlockKind = "table"
 )
 
 // RichBlock preserves ordered text, image, and conventional table content.

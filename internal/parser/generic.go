@@ -24,6 +24,11 @@ var exampleClassHints = []string{"example", "exa", "eg", "x-g", "sent", "cit", "
 // labelClassHints mark register and domain labels.
 var labelClassHints = []string{"label", "register", "lbl", "gram-label"}
 
+// grammarClassHints mark compact argument/usage qualifiers that publishers
+// place beside a POS heading rather than inside each sense. Keep the evidence
+// class-based: bracketed prose by itself is too common to infer grammar from.
+var grammarClassHints = []string{"gram", "grammar"}
+
 // headwordClassHints mark the element holding the entry's own headword. They
 // are matched as whole class tokens, not fragments: "hw" is two characters and
 // would otherwise match half the class names in existence.
@@ -117,8 +122,9 @@ func (s *parseState) parseGenericSenseBlocks() bool {
 
 	// Group senses under the nearest preceding part-of-speech label.
 	type group struct {
-		pos    string
-		senses []entryir.Sense
+		pos     string
+		grammar string
+		senses  []entryir.Sense
 	}
 	var groups []group
 	current := -1
@@ -131,8 +137,11 @@ func (s *parseState) parseGenericSenseBlocks() bool {
 
 	for _, node := range senseNodes {
 		pos := s.genericPOSFor(node)
-		if current < 0 || (pos != "" && pos != groups[current].pos) {
-			groups = append(groups, group{pos: pos})
+		grammar := s.genericGrammarFor(node)
+		pos = posWithGrammar(pos, grammar)
+		if current < 0 || (pos != "" && pos != groups[current].pos) ||
+			(grammar != "" && grammar != groups[current].grammar) {
+			groups = append(groups, group{pos: pos, grammar: grammar})
 			current = len(groups) - 1
 		}
 		sense := s.genericSense(node)
@@ -149,12 +158,68 @@ func (s *parseState) parseGenericSenseBlocks() bool {
 		}
 		s.appendPart(entryir.Part{
 			POS:        item.pos,
+			Grammar:    item.grammar,
 			Senses:     item.senses,
 			Confidence: confidenceForPOS(item.pos) - 0.15,
 			Rule:       "generic:senseHints",
 		})
 	}
 	return len(s.entry.Parts) > 0
+}
+
+// genericGrammarFor searches the same local/preceding scope used for POS, but
+// only accepts nodes whose class explicitly identifies grammatical material.
+// This covers templates such as Merriam-Webster's `.labels .gram` without
+// treating arbitrary bracketed notes as grammar.
+func (s *parseState) genericGrammarFor(node *html.Node) string {
+	if grammar := scanForGrammar(node); grammar != "" {
+		return grammar
+	}
+	for current := node; current != nil; current = current.Parent {
+		for sibling := current.PrevSibling; sibling != nil; sibling = sibling.PrevSibling {
+			if sibling.Type != html.ElementNode {
+				continue
+			}
+			if grammar := scanForGrammar(sibling); grammar != "" {
+				return grammar
+			}
+		}
+	}
+	return ""
+}
+
+func scanForGrammar(node *html.Node) string {
+	found := ""
+	Walk(node, func(child *html.Node) bool {
+		if found != "" {
+			return false
+		}
+		if !classMatchesHint(child, grammarClassHints) {
+			return true
+		}
+		text := Normalize(Text(child, TextOptions{SkipHidden: true}))
+		if text != "" && len([]rune(text)) <= 80 && CanonicalPOS(text) == "" {
+			found = text
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func posWithGrammar(pos, grammar string) string {
+	if pos != "verb" {
+		return pos
+	}
+	normalized := strings.ToLower(Normalize(grammar))
+	switch {
+	case strings.Contains(normalized, "+ object"), strings.Contains(normalized, "transitive"):
+		return "transitive verb"
+	case strings.Contains(normalized, "- object"), strings.Contains(normalized, "intransitive"):
+		return "intransitive verb"
+	default:
+		return pos
+	}
 }
 
 // genericSenseNodes finds the outermost blocks that look like senses.

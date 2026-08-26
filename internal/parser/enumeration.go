@@ -651,6 +651,9 @@ func (s *parseState) siblingRuns(nodes []*html.Node) map[*html.Node][]*html.Node
 			if sibling.Type != html.ElementNode {
 				continue
 			}
+			if _, _, heading := semanticHeading(sibling); heading {
+				break
+			}
 			if _, isBoundary := boundary[sibling]; isBoundary {
 				break
 			}

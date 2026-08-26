@@ -29,6 +29,8 @@ this project never generates or uses TTS as a fallback.
 ```text
 Bob plugin → http://127.0.0.1:15321 → MDX/MDD → semantic parser
                                               → EntrySet IR → Bob toDict
+                                                            → Plain Text
+                                                            → Markdown
 ```
 
 `bob-mdict` is a native Go service that owns the indexes, parsing and MDD
@@ -164,10 +166,18 @@ This is presentation only. The navigation target stays in the parsed entry, so
 if Bob later publishes a real Markdown lookup mechanism, only this rendering
 changes.
 
+**Plain Text** is rendered directly from the same EntrySet, using headings,
+paragraphs, indentation and blank lines rather than Markdown syntax. Combined
+mode uses a textual record separator; Separate mode lists copyable sibling
+selectors. A Dictionary card request automatically uses Plain Text only when
+the selected record is an untyped free-form fallback with no useful senses,
+phrases, forms or navigation. Long structured entries remain Bob cards.
+
 Examples are grouped directly by their displayed sense, such as
-`Examples · verb 1` and `Examples · verb 2`. See also references are exposed
+`Examples · v. 1` and `Examples · v. 2`. See also references are exposed
 through Bob's structured `relatedWordParts` representation when possible;
-phrases and other explanatory sections remain additions.
+phrases, idioms, phrasal verbs and collocations receive independent compact Bob
+parts, while prose notes remain additions.
 
 ## Plugin settings
 
@@ -175,7 +185,7 @@ phrases and other explanatory sections remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
-| Presentation | Dictionary card | Keep the existing native Bob card, or ask the service for Markdown. The whole document is returned as one `toParagraphs` element, which is Bob's documented array-of-strings contract. Bob does not currently document Markdown rendering of that content; what this option guarantees is a standards-compliant Markdown document, not that Bob draws it as formatted text. |
+| Presentation | Dictionary card | Choose Dictionary card, Plain Text or Markdown. Plain/Markdown documents—and automatic free-form fallback—are returned as one `toParagraphs` element, Bob's documented array-of-strings contract. Bob does not currently document Markdown rendering; the option guarantees a standards-compliant document, not formatted drawing by Bob. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
@@ -209,8 +219,8 @@ and counts, never dictionary text. See
 of the record, and does it survive the rest of the pipeline? It runs the real
 service and the real Bob adapter over records the dictionary actually
 contains, measures how much of each record the parse accounts for and how much
-it repeats, checks the invariants between parser, service, adapter and the
-Markdown renderer, and writes a ranked set of Markdown review
+it repeats, checks the invariants between parser, service and the
+Bob/Plain/Markdown renderers, and writes a ranked set of Markdown review
 files. Unlike the diagnostics, those files quote real entries, so they are
 written only where you point them and belong somewhere private. See
 [docs/PARSER.md](docs/PARSER.md#validating-what-the-parser-produced).

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 )
@@ -19,6 +20,29 @@ func TestParityKeepsShortCJKSemanticFields(t *testing.T) {
 	}
 	if !found["放弃"] || !found["正式"] {
 		t.Fatalf("short CJK fields were ignored: %+v", fields)
+	}
+}
+
+func TestBobParityUnderstandsCompactPOSAndSenseGrammar(t *testing.T) {
+	set := &entryir.EntrySet{LookupKey: "abandon", Records: []entryir.EntryRecord{{RecordOrdinal: 1, Entry: &entryir.Entry{
+		Headword: "abandon",
+		Parts: []entryir.Part{{POS: "transitive verb", Senses: []entryir.Sense{{
+			Definition: "leave permanently", Grammar: "[with object]",
+		}}}},
+	}}}}
+	opts := bobadapter.DefaultOptions()
+	combined := opts
+	combined.MultiRecordMode = bobadapter.MultiRecordCombined
+	var c checker
+	c.checkBob(parityInput{
+		set:      set,
+		separate: bobadapter.RenderEntrySet(set, opts),
+		combined: bobadapter.RenderEntrySet(set, combined),
+	})
+	for _, check := range c.checks {
+		if check.Name == "bob-preserves-semantic-fields" && !check.OK {
+			t.Fatal(check.Detail)
+		}
 	}
 }
 

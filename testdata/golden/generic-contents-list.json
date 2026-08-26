@@ -9,7 +9,33 @@
   "sections": [
     {
       "title": "Entry",
-      "body": "Wexal Theory 1. Origins 2. Development 3. Criticism Wexal theory is an invented account of how invented fittings came to be described. It was proposed by nobody in particular and has been discussed at length by nobody else, which is convenient for a test fixture that must reproduce a structure without reproducing anyone's writing. The argument proceeds in three movements, each longer than the last, and each concerned with a question the previous movement declined to answer. The first movement concerns origins. The second concerns development. The third concerns criticism, and is generally held to be the least persuasive of the three, on the grounds that it criticises a position that the first two movements had already abandoned."
+      "body": "Wexal Theory 1. Origins 2. Development 3. Criticism Wexal theory is an invented account of how invented fittings came to be described. It was proposed by nobody in particular and has been discussed at length by nobody else, which is convenient for a test fixture that must reproduce a structure without reproducing anyone's writing. The argument proceeds in three movements, each longer than the last, and each concerned with a question the previous movement declined to answer. The first movement concerns origins. The second concerns development. The third concerns criticism, and is generally held to be the least persuasive of the three, on the grounds that it criticises a position that the first two movements had already abandoned.",
+      "blocks": [
+        {
+          "kind": "heading",
+          "text": "Wexal Theory"
+        },
+        {
+          "kind": "listItem",
+          "text": "1. Origins"
+        },
+        {
+          "kind": "listItem",
+          "text": "2. Development"
+        },
+        {
+          "kind": "listItem",
+          "text": "3. Criticism"
+        },
+        {
+          "kind": "text",
+          "text": "Wexal theory is an invented account of how invented fittings came to be described. It was proposed by nobody in particular and has been discussed at length by nobody else, which is convenient for a test fixture that must reproduce a structure without reproducing anyone's writing. The argument proceeds in three movements, each longer than the last, and each concerned with a question the previous movement declined to answer."
+        },
+        {
+          "kind": "text",
+          "text": "The first movement concerns origins. The second concerns development. The third concerns criticism, and is generally held to be the least persuasive of the three, on the grounds that it criticises a position that the first two movements had already abandoned."
+        }
+      ]
     }
   ]
 }

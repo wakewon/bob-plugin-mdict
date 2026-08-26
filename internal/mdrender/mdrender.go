@@ -561,6 +561,14 @@ func (d *document) renderSection(title string, section entryir.Section, base int
 			if text := escape(block.Text); text != "" {
 				d.line(text)
 			}
+		case entryir.RichHeading:
+			if text := escape(block.Text); text != "" {
+				d.line("**" + text + "**")
+			}
+		case entryir.RichListItem:
+			if text := escape(block.Text); text != "" {
+				d.block([]string{"- " + text})
+			}
 		case entryir.RichImage:
 			if d.opts.ImageLinks && block.Image != nil && strings.TrimSpace(block.Image.URL) != "" {
 				d.line("![" + escapeImageAlt(block.Image.Alt) + "](" + block.Image.URL + ")")

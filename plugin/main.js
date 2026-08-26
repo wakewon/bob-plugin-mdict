@@ -122,7 +122,11 @@ function configuredMultiRecordMode() {
 }
 
 function configuredPresentationMode() {
-    return getOption('presentationMode', 'dict') === 'markdown' ? 'markdown' : 'dict';
+    var mode = getOption('presentationMode', 'dict');
+    if (mode === 'plain' || mode === 'markdown') {
+        return mode;
+    }
+    return 'dict';
 }
 
 /**
@@ -224,7 +228,7 @@ function buildRequestBody(text, recordOrdinal) {
     var body = {
         query: text,
         multiRecordMode: configuredMultiRecordMode(),
-        format: presentation === 'markdown' ? 'markdown' : 'bob',
+        format: presentation === 'dict' ? 'bob' : presentation,
         mode: 'exact',
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
         includeExamples: getOption('showExamples', 'enable') === 'enable',
@@ -338,7 +342,14 @@ function translate(query, completion) {
                 return;
             }
             var presentation = configuredPresentationMode();
-            if (!body || (presentation === 'markdown' ? !body.markdown : (!body.bob || !body.bob.word))) {
+            var effective = body && body.effectiveFormat ? body.effectiveFormat :
+                (presentation === 'dict' ? 'bob' : presentation);
+            var hasPresentation = body && (
+                (effective === 'bob' && body.bob && body.bob.word) ||
+                (effective === 'plain' && body.plain) ||
+                (effective === 'markdown' && body.markdown)
+            );
+            if (!hasPresentation) {
                 query.onCompletion({ error: { type: 'notFound', message: '词典中没有收录这个词' } });
                 return;
             }
@@ -347,7 +358,9 @@ function translate(query, completion) {
                 from: query.detectFrom,
                 to: query.detectTo
             };
-            if (presentation === 'markdown') {
+            if (effective === 'plain') {
+                result.toParagraphs = [body.plain];
+            } else if (effective === 'markdown') {
                 // Bob's documented plugin contract types toParagraphs as an array of
                 // strings, so the service-rendered document travels as one element
                 // rather than as a bare string. Keeping the whole document together

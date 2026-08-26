@@ -7,7 +7,7 @@ Bob
  │  selected text
  ▼
 plugin/main.js                 thin: selector → base query + recordOrdinal
- │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"|"markdown"}
+ │  POST /v2/lookup {query, recordOrdinal, multiRecordMode, format:"bob"|"plain"|"markdown"}
  ▼
 bob-mdict  (127.0.0.1 only)
  │
@@ -19,6 +19,7 @@ bob-mdict  (127.0.0.1 only)
  ├── entryir       EntrySet aggregate preserving semantic record boundaries
  ├── presentation  cached EntrySet → combined or selected record
  ├── bobadapter    selected view → one Bob toDict (+ sibling navigation)
+ ├── textrender    EntrySet → user Plain Text (sibling of bobadapter)
  ├── mdrender      EntrySet → user/diagnostic Markdown (sibling of bobadapter)
  ├── validate      development only: real backend over real records, ranked
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
@@ -48,26 +49,36 @@ changes reaching back into the MDX layer. It is also why the sense hierarchy
 survives: the IR keeps source numbers and nested subsenses, while the adapter
 generates display numbers afresh inside each POS at the very last step.
 
-### Two adapters, no conversion path
+Bob has no nested Part schema, so `bobadapter` recursively emits every sense
+and subsense as its own top-level Part, carrying compact POS and moving Part/
+Sense grammar into the meaning text. Plain Text and Markdown retain the IR's
+real nesting. A requested Bob card uses Plain Text only when the selected view
+contains no typed structure or navigation and consists solely of free-form
+`Entry`/headword sections or weak untyped generic marker blocks; the service reports this additive API-v2 decision as
+`effectiveFormat:"plain"`.
 
-`internal/mdrender` renders the same EntrySet as Markdown. It is a *sibling* of
-the Bob adapter, not a layer on top of it:
+### Three adapters, no conversion path
+
+`internal/textrender` and `internal/mdrender` render the same EntrySet as Plain
+Text and Markdown. They are *siblings* of the Bob adapter, not layers on top of
+it:
 
 ```text
 EntrySet → bobadapter → Bob toDict
+EntrySet → textrender → Plain Text
 EntrySet → mdrender   → Markdown
 ```
 
-Neither can see the other, and neither reads entry HTML. A second semantic path
+None can see another adapter, and none reads entry HTML. A second semantic path
 — MDX HTML straight to Markdown — would drift from the parser the moment either
 changed, and would have to relearn everything the parser already knows.
 
 Diagnostic rendering stays deterministic and may include provenance while
 omitting per-process resource URLs. User rendering contains only dictionary
-content and enables resolved loopback audio/image links. The plugin requests
-this user rendering with `format:"markdown"` and returns it as a single-element
-`toParagraphs` array — Bob's documented shape for that field — so the document
-stays one formatting unit. It never reparses Markdown or dictionary HTML.
+content and enables resolved loopback audio/image links where the format can
+express them. The plugin requests Plain or Markdown and returns the complete
+document as one `toParagraphs` element — Bob's documented array-of-strings
+shape. It never reparses EntrySet, Markdown or dictionary HTML.
 
 Bob does not currently document Markdown rendering of `toParagraphs`. What this
 path provides is a standards-compliant Markdown document from the canonical IR;
@@ -77,13 +88,13 @@ project does not depend on an undocumented API to claim that it will.
 #### Record boundaries in each presentation
 
 `multiRecordMode` is one concept — show one record, or show them all — expressed
-twice, because the two surfaces have different capabilities:
+by each surface with its own capabilities:
 
-| | Bob `toDict` | Markdown |
-|---|---|---|
-| combined | one card, records labelled `¹ ² ³` | `Record n of total` headings, records divided by `---` |
-| separate | one record plus an `Other entries` related-word group | one record plus an `Other entries` list of selectors |
-| navigation | Bob's own clickable related words | copyable query text in a code span |
+| | Bob `toDict` | Plain Text | Markdown |
+|---|---|---|---|
+| combined | one card, records labelled `¹ ² ³` | `Record n of total` plus a textual separator | `Record n of total` headings, divided by `---` |
+| separate | one record plus an `Other entries` related-word group | one record plus copyable selectors | one record plus copyable selectors |
+| navigation | Bob's own clickable related words | labelled ordinary text | copyable query text in a code span |
 
 The divider matters in Markdown for the same reason ordinal labels matter in
 Bob: once several records carry headings of their own, a heading is no longer a
@@ -105,8 +116,9 @@ family — are deliberately *not* code-spanned, so a code span keeps meaning "th
 is somewhere you can go".
 
 Free-form sections may carry a deliberately small ordered rich vocabulary:
-text, resolved MDD image, and conventional table. This preserves positions such
-as text → image → text → table without turning the Entry IR into a browser DOM.
+paragraph text, explicit headings, list items, resolved MDD images and
+conventional tables. This preserves document boundaries and positions without
+turning the Entry IR into a browser DOM.
 
 A repeated illustration is dropped only when the two occurrences are adjacent,
 which is what a publisher's two switchable language views of one figure look

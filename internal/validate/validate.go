@@ -28,6 +28,7 @@ import (
 	"github.com/wakewon/bob-plugin-mdict/internal/parser"
 	"github.com/wakewon/bob-plugin-mdict/internal/profiles"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
+	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 )
 
 // profileByID resolves the profile a dictionary was actually parsed with, so
@@ -72,7 +73,7 @@ func samplingForTier(tier Tier) diagnose.SampleOptions {
 // and every automatic signal about it.
 //
 // The persisted half is metadata and measurements. The rendered half — source
-// HTML, Markdown, Bob JSON — carries real dictionary text and is therefore
+// HTML, Plain Text, Markdown, Bob JSON — carries real dictionary text and is therefore
 // never serialized: it exists only to be written into a local review file.
 type Snapshot struct {
 	DictionaryID    string `json:"dictionaryId"`
@@ -107,6 +108,7 @@ type Snapshot struct {
 	sourceText string
 	recordText string
 	markdown   string
+	plain      string
 	bobJSON    string
 	irJSON     string
 	profileEv  diagnose.ProfileEvidence
@@ -210,6 +212,7 @@ func validateOne(svc *service.Service, dict *mdict.Dictionary, sample diagnose.S
 		MaxExamples:   maxExamplesPerSense,
 		RenderBob:     true,
 		BobOptions:    bobOptions(bobadapter.MultiRecordSeparate),
+		PlainOptions:  plainOptions(textrender.MultiRecordSeparate),
 	})
 	if err != nil || len(result.Matches) == 0 {
 		snapshot.Signals = append(snapshot.Signals, SignalNoResult)
@@ -226,20 +229,30 @@ func validateOne(svc *service.Service, dict *mdict.Dictionary, sample diagnose.S
 	markdownOpts.MaxExamplesPerSense = maxExamplesPerSense
 	markdownOpts.IncludeProvenance = true
 	snapshot.markdown = mdrender.RenderEntrySet(set, markdownOpts)
+	plainOpts := plainOptions(textrender.MultiRecordCombined)
+	snapshot.plain = textrender.RenderEntrySet(set, plainOpts)
 
 	snapshot.irJSON = encodeJSON(set)
 	snapshot.checks = checkParity(parityInput{
 		source: source, set: set, separate: separate, combined: combined,
-		markdown: snapshot.markdown, irJSON: snapshot.irJSON,
+		plain: snapshot.plain, markdown: snapshot.markdown, irJSON: snapshot.irJSON,
 	})
 	// The service renders Bob itself; confirming that its rendering matches the
 	// one measured here is what stops this harness from validating a path the
 	// product does not take.
-	snapshot.checks = append(snapshot.checks, Check{
-		Name:   "service-bob-matches-adapter",
-		OK:     encodeJSON(result.Bob) == encodeJSON(separate),
-		Detail: "the service's own Bob rendering differs from the adapter called directly",
-	})
+	if bobadapter.ShouldUsePlainFallback(set, bobOptions(bobadapter.MultiRecordSeparate)) {
+		expected := textrender.RenderEntrySet(set, plainOptions(textrender.MultiRecordSeparate))
+		snapshot.checks = append(snapshot.checks, Check{
+			Name: "service-bob-request-uses-plain-fallback", OK: result.EffectiveFormat == "plain" && result.Plain == expected && result.Bob == nil,
+			Detail: "the service did not return the adapter-equivalent Plain fallback",
+		})
+	} else {
+		snapshot.checks = append(snapshot.checks, Check{
+			Name:   "service-bob-matches-adapter",
+			OK:     result.EffectiveFormat == "bob" && encodeJSON(result.Bob) == encodeJSON(separate),
+			Detail: "the service's own Bob rendering differs from the adapter called directly",
+		})
+	}
 	for _, check := range snapshot.checks {
 		if !check.OK {
 			snapshot.Failures = append(snapshot.Failures, check.Name)
@@ -323,6 +336,13 @@ func aggregateMetrics(items []Metrics) Metrics {
 
 func bobOptions(mode bobadapter.MultiRecordMode) bobadapter.Options {
 	opts := bobadapter.DefaultOptions()
+	opts.MaxExamplesPerSense = maxExamplesPerSense
+	opts.MultiRecordMode = mode
+	return opts
+}
+
+func plainOptions(mode textrender.MultiRecordMode) textrender.Options {
+	opts := textrender.DefaultOptions()
 	opts.MaxExamplesPerSense = maxExamplesPerSense
 	opts.MultiRecordMode = mode
 	return opts

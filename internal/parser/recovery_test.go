@@ -171,6 +171,24 @@ func TestSingleLanguageSiblingsAreNotExamples(t *testing.T) {
 	}
 }
 
+func TestGenericGrammarQualifiesVerbPOSAndRemainsOnPart(t *testing.T) {
+	entry, err := Parse([]byte(`<div class="entry">
+		<span class="fl">verb</span>
+		<div class="labels"><span class="gram">[+ object]</span></div>
+		<div class="sblocks"><div class="sense"><span class="def_text">to leave something behind</span></div></div>
+	</div>`), Options{Headword: "abandon"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entry.Parts) != 1 {
+		t.Fatalf("parts = %+v", entry.Parts)
+	}
+	part := entry.Parts[0]
+	if part.POS != "transitive verb" || part.Grammar != "[+ object]" {
+		t.Fatalf("part = %+v", part)
+	}
+}
+
 // After the last sense there is no next sense to stop at, so the run reaches
 // the end of the record and takes the sections printed after the sense list
 // with it.

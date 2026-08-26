@@ -79,6 +79,10 @@ type Profile struct {
 type ProfileMatch struct {
 	// TitleContains matches against the MDX title or filename.
 	TitleContains []string `json:"titleContains,omitempty"`
+	// RequireTitle makes a title match mandatory in addition to structural
+	// selectors. Use it when sibling products intentionally share one DOM
+	// template but require different semantic handling.
+	RequireTitle bool `json:"requireTitle,omitempty"`
 	// Selectors must all be present in a sample entry. This is the reliable
 	// signal; titles vary between repacks of the same dictionary.
 	Selectors []string `json:"selectors,omitempty"`
@@ -147,6 +151,7 @@ type SectionRule struct {
 
 // compiledProfile holds the parsed selectors so compilation happens once.
 type compiledProfile struct {
+	id              string
 	root            Selector
 	ignore          Selector
 	headword        Selector
@@ -206,6 +211,7 @@ func (p *Profile) Compile() {
 		return
 	}
 	c := &compiledProfile{
+		id:              p.ID,
 		root:            ParseSelectors(p.Root),
 		ignore:          ParseSelectors(p.Ignore),
 		headword:        ParseSelectors(p.Headword),
@@ -269,10 +275,15 @@ func (p *Profile) Compile() {
 func (p *Profile) Fingerprint(title string, sample *html.Node) int {
 	p.Compile()
 	score := 0
+	titleMatched := false
 	for _, re := range p.compiled.titleRes {
 		if re.MatchString(title) {
 			score += 2
+			titleMatched = true
 		}
+	}
+	if p.Match.RequireTitle && !titleMatched {
+		return 0
 	}
 	if len(p.compiled.matchSel) > 0 {
 		matched := 0

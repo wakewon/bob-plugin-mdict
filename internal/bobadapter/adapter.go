@@ -91,6 +91,86 @@ func DefaultOptions() Options {
 	}
 }
 
+// ShouldUsePlainFallback reports whether the selected Bob presentation would
+// be an empty shell around untyped free-form Entry/headword sections. The test is
+// intentionally conservative: long or dense structured entries remain Bob
+// cards, and a single structured record keeps combined mode in Bob as well.
+func ShouldUsePlainFallback(set *entryir.EntrySet, opts Options) bool {
+	if set == nil || len(set.Records) == 0 {
+		return false
+	}
+	if opts.RecordOrdinal > 0 || opts.MultiRecordMode == MultiRecordSeparate || opts.MultiRecordMode == "" {
+		selected := opts.RecordOrdinal
+		if selected <= 0 {
+			selected = 1
+		}
+		return selected <= len(set.Records) && isFreeFormFallback(set.Records[selected-1].Entry)
+	}
+	found := false
+	for _, record := range set.Records {
+		if record.Entry == nil {
+			continue
+		}
+		found = true
+		if !isFreeFormFallback(record.Entry) {
+			return false
+		}
+	}
+	return found
+}
+
+func isFreeFormFallback(entry *entryir.Entry) bool {
+	if entry == nil || len(entry.Forms) != 0 ||
+		len(entry.Phrases) != 0 || len(entry.Idioms) != 0 || len(entry.PhrasalVerbs) != 0 ||
+		len(entry.Derivatives) != 0 || len(entry.Collocations) != 0 ||
+		len(entry.UsageNotes) != 0 || len(entry.GrammarNotes) != 0 ||
+		len(entry.Synonyms) != 0 || len(entry.Antonyms) != 0 ||
+		len(entry.CrossReferences) != 0 || len(entry.Related) != 0 ||
+		len(entry.WordFamily) != 0 || strings.TrimSpace(entry.Etymology) != "" {
+		return false
+	}
+	if len(entry.Parts) > 0 {
+		return len(entry.Sections) == 0 && weakUntypedMarkerParts(entry.Parts)
+	}
+	if len(entry.Sections) == 0 {
+		return false
+	}
+	foundContent := false
+	headword := strings.TrimSpace(entry.Headword)
+	for _, section := range entry.Sections {
+		title := strings.TrimSpace(section.Title)
+		if !strings.EqualFold(title, "Entry") && (headword == "" || title != headword) {
+			return false
+		}
+		if strings.TrimSpace(section.Body) != "" || len(section.Blocks) != 0 {
+			foundContent = true
+		}
+	}
+	return foundContent
+}
+
+// weakUntypedMarkerParts identifies the narrow case where generic recovery
+// found numbered blocks but no publisher-declared POS or other typed evidence.
+// Bob can technically draw these as blank-column Parts, but Plain preserves
+// their article-like reading more honestly. Stronger generic sense classes
+// (for example Cambridge's `generic:senseHints`) remain dictionary cards.
+func weakUntypedMarkerParts(parts []entryir.Part) bool {
+	for _, part := range parts {
+		if strings.TrimSpace(part.POS) != "" || strings.TrimSpace(part.Grammar) != "" ||
+			part.Rule != "generic:markerBlocks" || part.Confidence > 0.4 || len(part.Senses) == 0 {
+			return false
+		}
+		for _, sense := range part.Senses {
+			if sense.Rule != "generic:markerBlocks" || strings.TrimSpace(sense.Grammar) != "" ||
+				len(sense.Labels) != 0 || strings.TrimSpace(sense.Topic) != "" || len(sense.Patterns) != 0 ||
+				len(sense.Synonyms) != 0 || len(sense.Antonyms) != 0 || len(sense.Subsenses) != 0 {
+				return false
+			}
+		}
+	}
+	return len(parts) > 0
+}
+
 // Render is the single-record convenience renderer. RenderEntrySet owns the
 // presentation implementation so single- and multi-record paths cannot drift.
 func Render(entry *entryir.Entry, opts Options) *Dict {
@@ -441,23 +521,13 @@ func renderPhonetics(items []entryir.Pronunciation) ([]Phonetic, []string) {
 
 func renderEntry(dict *Dict, entry *entryir.Entry, opts Options, ordinal string) {
 	for _, part := range entry.Parts {
-		label := part.POS
-		if label == "" {
-			label = "definition"
-		}
-		if part.Grammar != "" {
-			label += " " + part.Grammar
-		}
+		// Bob's left column is narrow and semantically only a POS carrier. Grammar
+		// belongs with the meaning, and an absent POS stays absent rather than
+		// leaking an implementation label such as "definition".
+		label := CompactPOS(part.POS)
 		label = ordinalLabel(ordinal, label)
 		for i, sense := range part.Senses {
-			// Bob's parts field is an ordinary array and does not require part
-			// labels to be unique. Giving each top-level sense its own Part lets
-			// Bob provide the visual separation instead of turning a whole POS
-			// group into one dense means block. Subsenses remain with their parent.
-			means := renderSense(sense, []int{i + 1})
-			if len(means) > 0 {
-				dict.Parts = append(dict.Parts, Part{Part: label, Means: means})
-			}
+			appendFlattenedSenseParts(dict, label, part.Grammar, sense, []int{i + 1})
 		}
 		if opts.IncludeExamples {
 			appendExampleAdditions(dict, label, part.Senses, opts.MaxExamplesPerSense)
@@ -470,14 +540,14 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options, ordinal string)
 	if !opts.IncludeExtras {
 		return
 	}
-	appendPhraseAddition(dict, ordinalLabel(ordinal, "Phrases"), entry.Phrases)
-	appendPhraseAddition(dict, ordinalLabel(ordinal, "Idioms"), entry.Idioms)
-	appendPhraseAddition(dict, ordinalLabel(ordinal, "Phrasal verbs"), entry.PhrasalVerbs)
+	appendPhraseParts(dict, ordinalLabel(ordinal, "phr."), entry.Phrases, opts.IncludeExamples, opts.MaxExamplesPerSense)
+	appendPhraseParts(dict, ordinalLabel(ordinal, "idiom"), entry.Idioms, opts.IncludeExamples, opts.MaxExamplesPerSense)
+	appendPhraseParts(dict, ordinalLabel(ordinal, "phr. v."), entry.PhrasalVerbs, opts.IncludeExamples, opts.MaxExamplesPerSense)
 	appendPhraseAddition(dict, ordinalLabel(ordinal, "Derivatives"), entry.Derivatives)
 	seenRelatedWords := make(map[string]struct{}, len(entry.CrossReferences)+len(entry.Related))
 	appendRelatedWordPart(dict, ordinalLabel(ordinal, "See also"), entry.CrossReferences, seenRelatedWords)
 	appendRelatedWordPart(dict, ordinalLabel(ordinal, "Related"), entry.Related, seenRelatedWords)
-	appendListAddition(dict, ordinalLabel(ordinal, "Collocations"), entry.Collocations)
+	appendListParts(dict, ordinalLabel(ordinal, "colloc."), entry.Collocations)
 	appendListAddition(dict, ordinalLabel(ordinal, "Synonyms"), entry.Synonyms)
 	appendListAddition(dict, ordinalLabel(ordinal, "Antonyms"), entry.Antonyms)
 	appendListAddition(dict, ordinalLabel(ordinal, "Word family"), entry.WordFamily)
@@ -491,6 +561,39 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options, ordinal string)
 	for _, section := range entry.Sections {
 		appendTextAddition(dict, ordinalLabel(ordinal, section.Title), section.Body)
 	}
+}
+
+var compactPOS = map[string]string{
+	"noun":              "n.",
+	"verb":              "v.",
+	"transitive verb":   "vt.",
+	"intransitive verb": "vi.",
+	"adjective":         "adj.",
+	"adverb":            "adv.",
+	"preposition":       "prep.",
+	"conjunction":       "conj.",
+	"pronoun":           "pron.",
+	"determiner":        "det.",
+	"article":           "art.",
+	"number":            "num.",
+	"interjection":      "interj.",
+	"modal verb":        "modal v.",
+	"auxiliary verb":    "aux. v.",
+	"abbreviation":      "abbr.",
+	"combining form":    "comb. form",
+	"prefix":            "pref.",
+	"suffix":            "suff.",
+	"symbol":            "symb.",
+}
+
+// CompactPOS applies Bob-only abbreviations. Unknown non-empty labels are
+// preserved verbatim: an unfamiliar publisher category must never disappear.
+func CompactPOS(pos string) string {
+	trimmed := strings.TrimSpace(pos)
+	if compact, ok := compactPOS[strings.ToLower(trimmed)]; ok {
+		return compact
+	}
+	return trimmed
 }
 
 func ordinalLabel(ordinal, label string) string {
@@ -526,10 +629,27 @@ func superscriptOrdinal(value int) string {
 	return builder.String()
 }
 
+// appendFlattenedSenseParts recursively gives every semantic sense node its own
+// top-level Bob Part. Bob has no nested Part schema and concatenates Means, so
+// hierarchy is expressed only by the stable display number on each unit.
+func appendFlattenedSenseParts(dict *Dict, label, partGrammar string, sense entryir.Sense, displayPath []int) {
+	if line := renderSense(sense, displayPath, partGrammar); line != "" {
+		dict.Parts = append(dict.Parts, Part{Part: label, Means: []string{line}})
+	}
+	for i, sub := range sense.Subsenses {
+		path := append(append([]int(nil), displayPath...), i+1)
+		appendFlattenedSenseParts(dict, label, partGrammar, sub, path)
+	}
+}
+
 // renderSense generates presentation numbering from position within the Bob
 // POS group. Source numbering remains untouched in entryir.Sense.Number.
-func renderSense(sense entryir.Sense, displayPath []int) []string {
+func renderSense(sense entryir.Sense, displayPath []int, partGrammar string) string {
 	var builder strings.Builder
+	if grammar := combinedGrammar(partGrammar, sense.Grammar); grammar != "" {
+		builder.WriteString(grammar)
+		builder.WriteString(" ")
+	}
 	builder.WriteString(formatDisplayNumber(displayPath))
 	builder.WriteString(". ")
 	if len(sense.Labels) > 0 {
@@ -554,15 +674,32 @@ func renderSense(sense entryir.Sense, displayPath []int) []string {
 		builder.WriteString(strings.Join(sense.Patterns, " / "))
 	}
 
-	var out []string
-	if line := strings.TrimSpace(builder.String()); line != "" && line != formatDisplayNumber(displayPath)+"." {
-		out = append(out, line)
+	line := strings.TrimSpace(builder.String())
+	if line == formatDisplayNumber(displayPath)+"." {
+		return ""
 	}
-	for i, sub := range sense.Subsenses {
-		path := append(append([]int(nil), displayPath...), i+1)
-		out = append(out, renderSense(sub, path)...)
+	return line
+}
+
+func combinedGrammar(partGrammar, senseGrammar string) string {
+	partGrammar = strings.TrimSpace(partGrammar)
+	senseGrammar = strings.TrimSpace(senseGrammar)
+	if partGrammar == "" {
+		return senseGrammar
 	}
-	return out
+	if senseGrammar == "" || equivalentGrammar(partGrammar, senseGrammar) {
+		return partGrammar
+	}
+	return partGrammar + " " + senseGrammar
+}
+
+func equivalentGrammar(left, right string) bool {
+	normalize := func(value string) string {
+		value = strings.ToLower(strings.TrimSpace(value))
+		value = strings.Trim(value, "[](){}")
+		return strings.Join(strings.Fields(value), " ")
+	}
+	return normalize(left) == normalize(right)
 }
 
 func appendExampleAdditions(dict *Dict, label string, senses []entryir.Sense, limit int) {
@@ -582,8 +719,13 @@ func appendExampleAdditions(dict *Dict, label string, senses []entryir.Sense, li
 				examples = append(examples, line)
 			}
 			if len(examples) > 0 {
+				name := "Examples"
+				if label = strings.TrimSpace(label); label != "" {
+					name += " · " + label
+				}
+				name += " " + formatDisplayNumber(path)
 				dict.Additions = append(dict.Additions, Addition{
-					Name:  "Examples · " + label + " " + formatDisplayNumber(path),
+					Name:  name,
 					Value: strings.Join(examples, "\n\n"),
 				})
 			}
@@ -616,6 +758,44 @@ func appendPhraseAddition(dict *Dict, name string, entries []entryir.PhraseEntry
 		}
 	}
 	appendTextAddition(dict, name, strings.Join(lines, "\n"))
+}
+
+func appendPhraseParts(dict *Dict, label string, entries []entryir.PhraseEntry, includeExamples bool, limit int) {
+	for index, entry := range entries {
+		line := strings.TrimSpace(entry.Phrase)
+		if definition := strings.TrimSpace(entry.Definition); definition != "" {
+			if line != "" {
+				line += " — "
+			}
+			line += definition
+		}
+		if line != "" {
+			dict.Parts = append(dict.Parts, Part{Part: label, Means: []string{line}})
+		}
+		if !includeExamples || len(entry.Examples) == 0 {
+			continue
+		}
+		var examples []string
+		for exampleIndex, example := range entry.Examples {
+			if exampleIndex >= limit {
+				break
+			}
+			exampleLine := "• " + example.Text
+			if example.Translation != "" {
+				exampleLine += "\n  — " + example.Translation
+			}
+			examples = append(examples, exampleLine)
+		}
+		appendTextAddition(dict, fmt.Sprintf("Examples · %s %d", strings.TrimSpace(label), index+1), strings.Join(examples, "\n\n"))
+	}
+}
+
+func appendListParts(dict *Dict, label string, values []string) {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			dict.Parts = append(dict.Parts, Part{Part: label, Means: []string{value}})
+		}
+	}
 }
 
 func appendListAddition(dict *Dict, name string, values []string) {

@@ -30,7 +30,7 @@ func TestClassifySemanticLabel(t *testing.T) {
 		"See also": LabelCrossReference, "Cross-reference": LabelCrossReference,
 		"Related": LabelRelated, "PHRASE": LabelPhrase, "Idiom": LabelIdiom,
 		"Phrasal verb": LabelPhrasalVerb, "Derivatives": LabelDerivative,
-		"Synonym / Antonym section": LabelSynonyms, "noun": "", "PARTICLE-X": "",
+		"Synonym / Antonym section": LabelSynonyms, "OPPOSITES": LabelAntonyms, "noun": "", "PARTICLE-X": "",
 	}
 	for input, want := range cases {
 		if got := ClassifySemanticLabel(input); got != want {

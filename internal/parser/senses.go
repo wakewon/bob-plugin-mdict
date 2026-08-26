@@ -10,6 +10,9 @@ import (
 
 // parseParts fills Entry.Parts, grouping senses under their part of speech.
 func (s *parseState) parseParts() {
+	if s.profile != nil && s.profile.id == "oxford-collocations" {
+		s.parseOxfordCollocations()
+	}
 	if s.profile != nil && !s.profile.sense.IsEmpty() {
 		s.parsePartsFromProfile()
 	}

@@ -316,6 +316,11 @@ func renderSnapshot(snapshot Snapshot, run *Run) string {
 	out.WriteString(indentQuote(snapshot.markdown))
 	out.WriteString("\n---\n")
 
+	out.WriteString("\n## Plain Text rendering\n\n")
+	out.WriteString("Rendered directly from the canonical EntrySet by `internal/textrender`.\n\n```text\n")
+	out.WriteString(clip(snapshot.plain, 12000))
+	out.WriteString("\n```\n")
+
 	out.WriteString("\n## Parsed EntrySet (canonical IR)\n\n```json\n")
 	out.WriteString(clip(snapshot.irJSON, 24000))
 	out.WriteString("\n```\n")
