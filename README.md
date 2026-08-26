@@ -188,6 +188,7 @@ parts, while prose notes remain additions.
 | Presentation | Dictionary card | Choose Dictionary card, Plain Text or Markdown. Plain/Markdown documents—and automatic free-form fallback—are returned as one `toParagraphs` element, Bob's documented array-of-strings contract. Bob does not currently document Markdown rendering; the option guarantees a standards-compliant document, not formatted drawing by Bob. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
+| Show grammar | on | Show detailed grammatical qualifiers. Does not hide POS, labels, or patterns. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
 | Max examples per sense | `3` | Limit examples independently for each sense or subsense. |
 

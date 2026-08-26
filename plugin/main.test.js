@@ -50,6 +50,7 @@ test('blank ID uses first match and explicit ID restricts lookup', () => {
         const loaded = load({ dictionaryID }, request => {
             assert.equal(request.url, 'http://127.0.0.1:15321/v2/lookup');
             assert.equal(request.body.limit, 1);
+            assert.equal(request.body.includeGrammar, true);
             assert.equal(JSON.stringify(request.body.dictionaries), JSON.stringify(expected));
             request.handler(response(200, { bob: { word: 'flimber', parts: [] } }));
         });

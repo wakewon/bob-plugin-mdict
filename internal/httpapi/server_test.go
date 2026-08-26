@@ -218,6 +218,7 @@ func TestV2LookupReturnsRecordsAndMultiRecordBobCard(t *testing.T) {
 func TestV2LookupMarkdownIsAdditiveUserOutput(t *testing.T) {
 	root := t.TempDir()
 	markup := `<article><h1>flimber</h1><div class="sense"><span class="pos">noun</span>` +
+		`<span class="grammar">[synthetic grammar]</span>` +
 		`<span class="definition">synthetic definition</span>` +
 		`<span class="example">first synthetic example</span><span class="example">second synthetic example</span></div></article>`
 	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{{Key: "flimber", HTML: markup}}); err != nil {
@@ -240,6 +241,9 @@ func TestV2LookupMarkdownIsAdditiveUserOutput(t *testing.T) {
 	}
 	if len(payload.Matches) != 1 || payload.Markdown == "" || len(payload.Bob) != 0 {
 		t.Fatalf("markdown response lost IR or added Bob: %s", recorder.Body.String())
+	}
+	if !strings.Contains(payload.Markdown, "synthetic grammar") {
+		t.Errorf("omitted includeGrammar should preserve default true, but grammar is missing:\n%s", payload.Markdown)
 	}
 	for _, forbidden := range []string{"synthetic example", "generic:", "confidence", "validation"} {
 		if strings.Contains(payload.Markdown, forbidden) {

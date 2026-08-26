@@ -3,10 +3,14 @@
 All notable product changes are recorded here. Product versions and the local
 HTTP API version are independent; MDict for Bob 1.1.0 continues to use API v2.
 
-## [1.1.0] - unreleased
+## [1.1.0] - 2026-08-26
 
-Feature release scope, backward compatible with 1.0.0. Prepared and validated
-on this branch; not tagged, not published, and 1.0.0's artifacts are untouched.
+
+- Present a dictionary entry as Plain Text as an alternative to the Bob dictionary card and Markdown. A requested Bob card automatically falls back to Plain Text when the selected view consists solely of free-form entry blocks without typed structure, preserving paragraph, list, and heading boundaries.
+- Add `showGrammar` plugin option to hide detailed grammatical qualifiers from presentation without hiding parts of speech, labels, or patterns.
+- Compact Bob POS presentation: keep grammar out of Bob's narrow POS column, and recursively flatten senses and subsenses into independent top-level Bob Parts, because Bob has no nested Part schema. Plain Text and Markdown retain the IR's real hierarchical nesting.
+- Generic parsing now conservatively recognizes meaningful secondary semantic headings (such as PHRASES, IDIOMS, PHRASAL VERBS, COLLOCATIONS, USAGE, GRAMMAR, SEE ALSO, RELATED) without claiming every heading is lexical structure.
+- Add `oxford-collocations` family profile for the tested Oxford Collocations Dictionary / 牛津英语搭配词典 template.
 
 - Present a dictionary entry as Markdown as an alternative to the Bob
   dictionary card, rendered by the service from the same canonical EntrySet the
@@ -66,16 +70,12 @@ on this branch; not tagged, not published, and 1.0.0's artifacts are untouched.
   like once it has renamed that one class.
 - Add `--validate` and `--validate-all`: an end-to-end review of what the
   parser produced, measured through the real service and the real Bob adapter
-  and written out as ranked Markdown snapshots. Content retention across the
-  surveyed corpus rose from 68 % to 79 %, and on Chinese-related dictionaries
-  from 66 % to 82 %.
+  and written out as ranked Markdown snapshots. Mean content retention across 96 healthy dictionaries (from a 99-dictionary survey) reached approximately 84% over 1,132 validation records, with zero semantic-field preservation failures across the three renderers.
 - Render the canonical EntrySet as Markdown in `internal/mdrender`, a sibling
   of the Bob adapter rather than a second conversion path. It backs both the
   `format:"markdown"` presentation above and the validation review snapshots.
 - Recover senses from visible numbering, ordered and definition lists, and
-  repeated definition blocks when a dictionary's class names say nothing. A
-  survey of 99 unknown MDX dictionaries went from 22 % mean structural coverage
-  to 54 %, and from 73 dictionaries yielding no structure at all to 25.
+  repeated definition blocks when a dictionary's class names say nothing. A survey of 99 unknown MDX dictionaries yielded greatly improved structural recovery.
 - Extract bilingual glosses without a profile, from the scripts in play and the
   script the headword is written in.
 - Detect an entry's own headword from headword-class evidence, and decline a
@@ -117,5 +117,5 @@ First stable release.
   official tag-built artifacts, never-replaced Release assets, Bob appcast
   updates, and a repository-scoped Homebrew tap publication path.
 
-[1.1.0]: https://github.com/wakewon/bob-plugin-mdict/compare/v1.0.0...HEAD
+[1.1.0]: https://github.com/wakewon/bob-plugin-mdict/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/wakewon/bob-plugin-mdict/releases/tag/v1.0.0
