@@ -691,3 +691,44 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+func TestBobGrammarVisibility(t *testing.T) {
+	entry := &entryir.Entry{
+		Parts: []entryir.Part{
+			{
+				POS:     "transitive verb",
+				Grammar: "[used especially in negatives]",
+				Senses: []entryir.Sense{
+					{Definition: "test definition", Grammar: "[with object]"},
+				},
+			},
+		},
+	}
+	opts := DefaultOptions()
+	opts.IncludeGrammar = true
+	out := RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "test",
+		Records:   []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+	}, opts)
+	if len(out.Parts) == 0 {
+		t.Fatalf("no parts rendered")
+	}
+	if out.Parts[0].Part != "vt." {
+		t.Errorf("expected vt. POS, got %q", out.Parts[0].Part)
+	}
+	if !strings.Contains(out.Parts[0].Means[0], "[used especially in negatives]") || !strings.Contains(out.Parts[0].Means[0], "[with object]") {
+		t.Errorf("grammar should be visible when enabled:\n%s", out.Parts[0].Means[0])
+	}
+
+	opts.IncludeGrammar = false
+	out = RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "test",
+		Records:   []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+	}, opts)
+	if out.Parts[0].Part != "vt." {
+		t.Errorf("POS inference should remain unaffected, got %q", out.Parts[0].Part)
+	}
+	if strings.Contains(out.Parts[0].Means[0], "negatives") || strings.Contains(out.Parts[0].Means[0], "object") {
+		t.Errorf("grammar should be hidden when disabled:\n%s", out.Parts[0].Means[0])
+	}
+}

@@ -68,6 +68,9 @@ type Options struct {
 	// produced it. Development only; it is what makes a snapshot answer "which
 	// heuristic did this?".
 	IncludeProvenance bool
+	// IncludeGrammar preserves verbose linguistic rules (e.g. "[used in negatives]")
+	// in presentation. When false, they are omitted to reduce noise.
+	IncludeGrammar bool
 }
 
 // DefaultOptions renders a complete entry for a human reader.
@@ -77,6 +80,7 @@ func DefaultOptions() Options {
 		IncludeExtras:       true,
 		MaxExamplesPerSense: 8,
 		MultiRecordMode:     MultiRecordCombined,
+		IncludeGrammar:      true,
 	}
 }
 
@@ -296,13 +300,25 @@ func (d *document) renderEntry(entry *entryir.Entry, base int, lookupKey string)
 
 	for _, part := range entry.Parts {
 		label := strings.TrimSpace(part.POS)
+		hasGrammar := d.opts.IncludeGrammar && part.Grammar != ""
+
 		if label == "" {
-			label = "(unlabelled)"
+			if d.opts.IncludeProvenance {
+				label = "(unlabelled)"
+			}
 		}
-		if part.Grammar != "" {
-			label += " · " + part.Grammar
+
+		if hasGrammar {
+			if label != "" {
+				label += " · "
+			}
+			label += part.Grammar
 		}
-		d.headingWith(base, label, d.provenance(part.Rule, part.Confidence))
+
+		if label != "" {
+			d.headingWith(base, label, d.provenance(part.Rule, part.Confidence))
+		}
+
 		var lines []string
 		for i, sense := range part.Senses {
 			lines = append(lines, d.renderSense(sense, strconv.Itoa(i+1), 0)...)
@@ -418,7 +434,7 @@ func (d *document) renderSense(sense entryir.Sense, fallbackNumber string, depth
 		}
 		head.WriteString(" " + escape(sense.Translation))
 	}
-	if sense.Grammar != "" {
+	if d.opts.IncludeGrammar && sense.Grammar != "" {
 		head.WriteString(" · `" + escape(sense.Grammar) + "`")
 	}
 	if len(sense.Patterns) > 0 {

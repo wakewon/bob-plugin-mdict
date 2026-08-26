@@ -235,8 +235,8 @@ func TestEmptyStructuresAreNotInvented(t *testing.T) {
 			t.Errorf("rendered %q for an entry that has none:\n%s", absent, out)
 		}
 	}
-	if !strings.Contains(out, "## (unlabelled)") {
-		t.Errorf("a part with no POS should say so rather than guess:\n%s", out)
+	if strings.Contains(out, "(unlabelled)") {
+		t.Errorf("a part with no POS should omit the heading, got:\n%s", out)
 	}
 }
 
@@ -521,5 +521,67 @@ func TestExplicitTableHeaderIsUsedWhenTheSourceDeclaredOne(t *testing.T) {
 	})
 	if !strings.Contains(uneven, "| Tense |  |\n| --- | --- |\n| present | wexals |") {
 		t.Errorf("uneven declared header was not padded:\n%s", uneven)
+	}
+}
+
+func TestUnlabelledOmittedForNormalMarkdown(t *testing.T) {
+	entry := &entryir.Entry{
+		Parts: []entryir.Part{
+			{
+				POS: "",
+				Senses: []entryir.Sense{
+					{Definition: "a test definition"},
+				},
+			},
+		},
+	}
+	opts := mdrender.UserOptions()
+	out := mdrender.RenderEntry(entry, opts)
+	if strings.Contains(out, "(unlabelled)") {
+		t.Errorf("unlabelled should not appear in user markdown:\n%s", out)
+	}
+	if strings.Contains(out, "Meanings") {
+		t.Errorf("invented heading should not appear:\n%s", out)
+	}
+	if !strings.Contains(out, "a test definition") {
+		t.Errorf("senses must still render:\n%s", out)
+	}
+
+	opts.IncludeProvenance = true
+	out = mdrender.RenderEntry(entry, opts)
+	if !strings.Contains(out, "(unlabelled)") {
+		t.Errorf("unlabelled should appear when provenance is enabled:\n%s", out)
+	}
+}
+
+func TestMarkdownGrammarVisibility(t *testing.T) {
+	entry := &entryir.Entry{
+		Parts: []entryir.Part{
+			{
+				POS:     "adj.",
+				Grammar: "[used especially in negatives]",
+				Senses: []entryir.Sense{
+					{Definition: "test definition", Grammar: "[with object]"},
+				},
+			},
+		},
+	}
+	opts := mdrender.UserOptions()
+	opts.IncludeGrammar = true
+	out := mdrender.RenderEntry(entry, opts)
+	if !strings.Contains(out, "adj. · \\[used especially in negatives\\]") {
+		t.Errorf("Part grammar should be visible when enabled:\n%s", out)
+	}
+	if !strings.Contains(out, "· `\\[with object\\]`") {
+		t.Errorf("Sense grammar should be visible when enabled:\n%s", out)
+	}
+
+	opts.IncludeGrammar = false
+	out = mdrender.RenderEntry(entry, opts)
+	if strings.Contains(out, "negatives") || strings.Contains(out, "object") {
+		t.Errorf("Grammar should be hidden when disabled:\n%s", out)
+	}
+	if !strings.Contains(out, "adj.") {
+		t.Errorf("POS should remain visible:\n%s", out)
 	}
 }

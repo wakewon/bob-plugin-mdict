@@ -67,11 +67,12 @@ test('Markdown presentation returns the whole document as one toParagraphs eleme
     let completion;
     const markdown = '# flimber\n\n## noun\n\n- **1** synthetic definition\n\n---\n\n## verb\n';
     const loaded = load({
-        presentationMode: 'markdown', showExamples: 'disable', showExtras: 'disable', maxExamples: '2'
+        presentationMode: 'markdown', showExamples: 'disable', showExtras: 'disable', showGrammar: 'disable', maxExamples: '2'
     }, request => {
         assert.equal(request.body.format, 'markdown');
         assert.equal(request.body.includeExamples, false);
         assert.equal(request.body.includeExtras, false);
+        assert.equal(request.body.includeGrammar, false);
         assert.equal(request.body.maxExamples, 2);
         request.handler(response(200, { markdown, matches: [{}] }));
     });

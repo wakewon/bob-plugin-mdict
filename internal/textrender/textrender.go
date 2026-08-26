@@ -24,10 +24,11 @@ type Options struct {
 	MaxExamplesPerSense int
 	RecordOrdinal       int
 	MultiRecordMode     MultiRecordMode
+	IncludeGrammar      bool
 }
 
 func DefaultOptions() Options {
-	return Options{IncludeExamples: true, IncludeExtras: true, MaxExamplesPerSense: 8, MultiRecordMode: MultiRecordCombined}
+	return Options{IncludeExamples: true, IncludeExtras: true, MaxExamplesPerSense: 8, MultiRecordMode: MultiRecordCombined, IncludeGrammar: true}
 }
 
 func UserOptions() Options {
@@ -155,7 +156,7 @@ func (d *document) renderEntry(entry *entryir.Entry, lookupKey string) {
 		if label == "" {
 			label = "Meanings"
 		}
-		if grammar := strings.TrimSpace(part.Grammar); grammar != "" {
+		if grammar := strings.TrimSpace(part.Grammar); d.opts.IncludeGrammar && grammar != "" {
 			label += " · " + grammar
 		}
 		var lines []string
@@ -227,7 +228,7 @@ func (d *document) renderSense(sense entryir.Sense, fallback string, depth int) 
 	if sense.Topic != "" {
 		details = append(details, "["+sense.Topic+"]")
 	}
-	if sense.Grammar != "" {
+	if d.opts.IncludeGrammar && sense.Grammar != "" {
 		details = append(details, sense.Grammar)
 	}
 	if len(sense.Patterns) > 0 {

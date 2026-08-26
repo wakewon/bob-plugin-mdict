@@ -71,6 +71,7 @@ type Options struct {
 	MaxExamplesPerSense int
 	MultiRecordMode     MultiRecordMode
 	RecordOrdinal       int
+	IncludeGrammar      bool
 }
 
 // MultiRecordMode controls only Bob presentation. The service cache always
@@ -88,6 +89,7 @@ func DefaultOptions() Options {
 		IncludeExtras:       true,
 		MaxExamplesPerSense: 8,
 		MultiRecordMode:     MultiRecordSeparate,
+		IncludeGrammar:      true,
 	}
 }
 
@@ -527,7 +529,7 @@ func renderEntry(dict *Dict, entry *entryir.Entry, opts Options, ordinal string)
 		label := CompactPOS(part.POS)
 		label = ordinalLabel(ordinal, label)
 		for i, sense := range part.Senses {
-			appendFlattenedSenseParts(dict, label, part.Grammar, sense, []int{i + 1})
+			appendFlattenedSenseParts(dict, label, part.Grammar, sense, []int{i + 1}, opts.IncludeGrammar)
 		}
 		if opts.IncludeExamples {
 			appendExampleAdditions(dict, label, part.Senses, opts.MaxExamplesPerSense)
@@ -632,23 +634,25 @@ func superscriptOrdinal(value int) string {
 // appendFlattenedSenseParts recursively gives every semantic sense node its own
 // top-level Bob Part. Bob has no nested Part schema and concatenates Means, so
 // hierarchy is expressed only by the stable display number on each unit.
-func appendFlattenedSenseParts(dict *Dict, label, partGrammar string, sense entryir.Sense, displayPath []int) {
-	if line := renderSense(sense, displayPath, partGrammar); line != "" {
+func appendFlattenedSenseParts(dict *Dict, label, partGrammar string, sense entryir.Sense, displayPath []int, includeGrammar bool) {
+	if line := renderSense(sense, displayPath, partGrammar, includeGrammar); line != "" {
 		dict.Parts = append(dict.Parts, Part{Part: label, Means: []string{line}})
 	}
 	for i, sub := range sense.Subsenses {
 		path := append(append([]int(nil), displayPath...), i+1)
-		appendFlattenedSenseParts(dict, label, partGrammar, sub, path)
+		appendFlattenedSenseParts(dict, label, partGrammar, sub, path, includeGrammar)
 	}
 }
 
 // renderSense generates presentation numbering from position within the Bob
 // POS group. Source numbering remains untouched in entryir.Sense.Number.
-func renderSense(sense entryir.Sense, displayPath []int, partGrammar string) string {
+func renderSense(sense entryir.Sense, displayPath []int, partGrammar string, includeGrammar bool) string {
 	var builder strings.Builder
-	if grammar := combinedGrammar(partGrammar, sense.Grammar); grammar != "" {
-		builder.WriteString(grammar)
-		builder.WriteString(" ")
+	if includeGrammar {
+		if grammar := combinedGrammar(partGrammar, sense.Grammar); grammar != "" {
+			builder.WriteString(grammar)
+			builder.WriteString(" ")
+		}
 	}
 	builder.WriteString(formatDisplayNumber(displayPath))
 	builder.WriteString(". ")

@@ -233,6 +233,7 @@ function buildRequestBody(text, recordOrdinal) {
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
         includeExamples: getOption('showExamples', 'enable') === 'enable',
         includeExtras: getOption('showExtras', 'enable') === 'enable',
+        includeGrammar: getOption('showGrammar', 'enable') === 'enable',
         limit: 1
     };
     var dictionaryID = configuredDictionaryID();

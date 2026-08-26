@@ -95,3 +95,41 @@ func TestOptionsLimitExamplesAndExtras(t *testing.T) {
 		t.Fatalf("options were not honoured:\n%s", out)
 	}
 }
+
+func TestTextRenderGrammarVisibility(t *testing.T) {
+	entry := &entryir.Entry{
+		Parts: []entryir.Part{
+			{
+				POS:     "adj.",
+				Grammar: "[used especially in negatives]",
+				Senses: []entryir.Sense{
+					{Definition: "test definition", Grammar: "[with object]"},
+				},
+			},
+		},
+	}
+	opts := UserOptions()
+	opts.IncludeGrammar = true
+	out := RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "test",
+		Records:   []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+	}, opts)
+	if !strings.Contains(out, "adj. · [used especially in negatives]") {
+		t.Errorf("Part grammar should be visible when enabled:\n%s", out)
+	}
+	if !strings.Contains(out, "[with object]") {
+		t.Errorf("Sense grammar should be visible when enabled:\n%s", out)
+	}
+
+	opts.IncludeGrammar = false
+	out = RenderEntrySet(&entryir.EntrySet{
+		LookupKey: "test",
+		Records:   []entryir.EntryRecord{{RecordOrdinal: 1, Entry: entry}},
+	}, opts)
+	if strings.Contains(out, "negatives") || strings.Contains(out, "object") {
+		t.Errorf("Grammar should be hidden when disabled:\n%s", out)
+	}
+	if !strings.Contains(out, "adj.") {
+		t.Errorf("POS should remain visible:\n%s", out)
+	}
+}

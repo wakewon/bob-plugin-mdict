@@ -369,6 +369,7 @@ func plainOptionsFromBob(opts bobadapter.Options) textrender.Options {
 	plain.IncludeExtras = opts.IncludeExtras
 	plain.MaxExamplesPerSense = opts.MaxExamplesPerSense
 	plain.RecordOrdinal = opts.RecordOrdinal
+	plain.IncludeGrammar = opts.IncludeGrammar
 	if opts.MultiRecordMode == bobadapter.MultiRecordCombined {
 		plain.MultiRecordMode = textrender.MultiRecordCombined
 	} else {

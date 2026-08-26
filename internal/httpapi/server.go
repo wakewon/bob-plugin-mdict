@@ -202,6 +202,8 @@ type LookupRequest struct {
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
 	IncludeExtras   *bool `json:"includeExtras,omitempty"`
+	// IncludeGrammar lets the user hide detailed grammatical qualifiers from presentation.
+	IncludeGrammar *bool `json:"includeGrammar,omitempty"`
 	// MultiRecordMode controls presentation only, in both the Bob card and
 	// Plain/Markdown: "separate" selects one semantic record and offers sibling
 	// navigation; "combined" renders every record with explicit boundaries.
@@ -254,6 +256,9 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	if req.IncludeExtras != nil {
 		bobOpts.IncludeExtras = *req.IncludeExtras
 	}
+	if req.IncludeGrammar != nil {
+		bobOpts.IncludeGrammar = *req.IncludeGrammar
+	}
 	if strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordCombined)) {
 		bobOpts.MultiRecordMode = bobadapter.MultiRecordCombined
 	} else {
@@ -267,6 +272,7 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	markdownOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
 	markdownOpts.IncludeExamples = bobOpts.IncludeExamples
 	markdownOpts.IncludeExtras = bobOpts.IncludeExtras
+	markdownOpts.IncludeGrammar = bobOpts.IncludeGrammar
 	markdownOpts.RecordOrdinal = req.RecordOrdinal
 	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
 		markdownOpts.MultiRecordMode = mdrender.MultiRecordCombined
@@ -277,6 +283,7 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	plainOpts.MaxExamplesPerSense = bobOpts.MaxExamplesPerSense
 	plainOpts.IncludeExamples = bobOpts.IncludeExamples
 	plainOpts.IncludeExtras = bobOpts.IncludeExtras
+	plainOpts.IncludeGrammar = bobOpts.IncludeGrammar
 	plainOpts.RecordOrdinal = req.RecordOrdinal
 	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
 		plainOpts.MultiRecordMode = textrender.MultiRecordCombined

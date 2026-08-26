@@ -87,6 +87,23 @@
       ]
     },
     {
+      "identifier": "showGrammar",
+      "type": "menu",
+      "title": "显示语法限定说明",
+      "defaultValue": "enable",
+      "desc": "控制是否显示详细的语法限定说明（如 [with object] 或 [used especially in negatives and comparatives]）。这不会隐藏词性、释义标签、主题标签、模式、用法说明或例句。",
+      "menuValues": [
+        {
+          "title": "显示",
+          "value": "enable"
+        },
+        {
+          "title": "隐藏",
+          "value": "disable"
+        }
+      ]
+    },
+    {
       "identifier": "showExtras",
       "type": "menu",
       "title": "显示扩展内容",
