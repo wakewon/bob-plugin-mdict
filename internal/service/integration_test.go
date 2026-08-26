@@ -29,8 +29,20 @@ import (
 // These are the developer's own licensed dictionaries. They are never committed
 // to the repository, so CI and any other checkout simply skip these tests
 // instead of failing.
+// dictionaryDir locates the real dictionaries the integration tests read.
+//
+// Short mode skips them. These tests are corpus-scale by nature — the
+// development library is a hundred dictionaries and every test parses a fresh
+// service over all of them — which is fine at full speed and hopeless under
+// the race detector, where the package cannot finish inside an hour. The race
+// suite runs `-short`, where it exercises the synthetic concurrency fixtures in
+// concurrency_test.go instead: contention is what race detection needs, and
+// volume is what it cannot afford.
 func dictionaryDir(t *testing.T) string {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping corpus-scale integration test in short mode")
+	}
 	if dir := os.Getenv("BOB_MDICT_TEST_DICTIONARIES"); dir != "" {
 		if _, err := os.Stat(dir); err != nil {
 			t.Fatalf("BOB_MDICT_TEST_DICTIONARIES is set to %q but it does not exist", dir)

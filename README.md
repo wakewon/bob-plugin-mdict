@@ -300,7 +300,7 @@ The project is licensed under GPL-3.0-or-later. See [LICENSE](LICENSE) and
 gofmt -w .
 go vet ./...
 go test ./...
-go test -race ./...
+go test -short -race ./...
 node --test plugin/main.test.js
 ./scripts/release.sh doctor
 ./scripts/release.sh dev
@@ -312,6 +312,15 @@ that tracked source is unchanged. The development command labels dirty builds
 explicitly, safely updates the standalone LaunchAgent, and refuses to replace a
 Homebrew- or otherwise-managed daemon. Release operations are documented in
 [docs/RELEASE.md](docs/RELEASE.md).
+
+`go test ./...` runs everything, including the real-dictionary integration
+tests. The race suite uses `-short`, which skips those: they are corpus-scale by
+nature — a fresh service parsed over your whole library, once per test — and
+under the race detector a large library puts the package beyond any sensible
+timeout. What race detection actually needs is contention, and that comes from
+the synthetic fixtures in `internal/service/concurrency_test.go`, which drive
+concurrent lookups, a rescan racing lookups in flight, and concurrent resource
+resolution. `-short -race` covers every package in seconds.
 
 Real-dictionary integration tests never write entry content into tracked
 snapshots. Point them at a lawful local library:

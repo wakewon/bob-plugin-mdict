@@ -30,6 +30,13 @@ on this branch; not tagged, not published, and 1.0.0's artifacts are untouched.
   content between the two is no longer deleted.
 - Use a table's own `<th>` cells as its Markdown header instead of promoting
   whichever row came first.
+- Test the service under concurrency at all. Bob's requests each arrive on their
+  own goroutine and a rescan can land among them, but no test had ever run two
+  goroutines at once, so the race detector was inspecting single-threaded code.
+  Synthetic fixtures now drive concurrent lookups, a rescan racing lookups in
+  flight, and concurrent resource resolution; removing the cache mutex makes
+  them report 140 races, so they have teeth. The race suite runs `-short` and
+  finishes in seconds instead of exceeding an hour on a large local library.
 
 - Attach the material between one sense and the next to the sense that opens
   it. Many dictionaries keep the definition in one element and its examples in

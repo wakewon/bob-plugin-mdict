@@ -49,8 +49,11 @@ jobs:
       - name: Test Bob plugin contract
         run: node --test plugin/main.test.js
 
+      # -short skips the corpus-scale integration tests, which already skip
+      # themselves here for want of dictionaries. Race detection is carried by
+      # the synthetic concurrency fixtures, which -short keeps.
       - name: Test with race detector
-        run: go test ./... -race -count=1
+        run: go test ./... -short -race -count=1
 
       - name: Confirm no dictionary data is tracked
         run: ./scripts/security-check.sh
