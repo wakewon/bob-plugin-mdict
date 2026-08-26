@@ -2,6 +2,15 @@
   "identifier": "com.github.wakewon.mdict",
   "versions": [
     {
+      "version": "1.1.0",
+      "desc": "MDict for Bob 1.1.0",
+      "sha256": "21a1633e496d3c1f0624d1380cd20b5d26c8dfbf1e561783fb705bce9a9ade40",
+      "url": "https://github.com/wakewon/bob-plugin-mdict/releases/download/v1.1.0/MDict-v1.1.0.bobplugin",
+      "minBobVersion": "1.20.0",
+      "buildCommit": "48ae80aa11f0750a173a4dfabb1f1bfb0b79335d",
+      "timestamp": 1787754620000
+    },
+    {
       "version": "1.0.0",
       "desc": "MDict for Bob 1.0.0",
       "sha256": "5d27843ed2050bb939c8e2171ee18279d45a360b8c209753b5575032b3b1d63c",
