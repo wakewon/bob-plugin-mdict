@@ -205,6 +205,7 @@ func (d *Dictionary) Load() error {
 		d.markUnavailable(d.err)
 		return d.err
 	}
+	linkRecordEnds(entries)
 	d.exact = make(map[string]*mdx.MDictKeywordEntry, len(entries))
 	d.exactExtras = make(map[string][]*mdx.MDictKeywordEntry)
 	d.folded = make(map[string]*mdx.MDictKeywordEntry)
@@ -269,6 +270,7 @@ func (d *Dictionary) Load() error {
 				fmt.Sprintf("MDD %s entries unreadable: %v", filepath.Base(mddPath), err))
 			continue
 		}
+		linkRecordEnds(entries)
 		idx := len(d.mdds)
 		d.mdds = append(d.mdds, volume)
 		// Index every resource key up front. Without this the engine falls back
@@ -290,6 +292,34 @@ func (d *Dictionary) Load() error {
 	d.info.HasMDD = len(d.mdds) > 0
 	d.info.MDDVolumes = len(d.mdds)
 	return nil
+}
+
+// linkRecordEnds closes the record range of the last entry in each key block.
+//
+// The engine derives an entry's end from the next entry's start, but only
+// within one key block, so the last entry of every block keeps an end of 0,
+// which it reads as "to the end of the record block". Such an entry returns
+// its own record followed by every later one in the block: an MDD recording
+// that goes on to pronounce a dozen other words, or a headword whose HTML
+// runs into the next entries. Records are stored contiguously in key order,
+// so the next entry's start — in whichever key block it sits — is where this
+// record ends. The very last entry keeps 0, which is then correct.
+//
+// Aliases — consecutive keys that share one record — all end where the next
+// different record starts.
+func linkRecordEnds(entries []*mdx.MDictKeywordEntry) {
+	for i := 0; i+1 < len(entries); i++ {
+		current := entries[i]
+		if current == nil || current.RecordEndOffset != 0 {
+			continue
+		}
+		for j := i + 1; j < len(entries); j++ {
+			if next := entries[j]; next != nil && next.RecordStartOffset > current.RecordStartOffset {
+				current.RecordEndOffset = next.RecordStartOffset
+				break
+			}
+		}
+	}
 }
 
 func (d *Dictionary) markUnavailable(err error) {
