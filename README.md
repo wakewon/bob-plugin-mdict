@@ -151,9 +151,10 @@ one record and closes with an `Other entries` list of the other records'
 selectors. A typed record selector still selects exactly that record in either
 mode.
 
-Bob documents no Markdown lookup action, so those selectors — and cross
-references and related entries — are written as copyable query text in a code
-span rather than as links that would not work:
+Bob renders Markdown links as plain clickable URLs and documents no lookup
+action for them, so those selectors — and cross references and related entries
+— are written as copyable query text in a code span rather than as links that
+would not work:
 
 ```markdown
 ## Other entries
@@ -165,6 +166,10 @@ span rather than as links that would not work:
 This is presentation only. The navigation target stays in the parsed entry, so
 if Bob later publishes a real Markdown lookup mechanism, only this rendering
 changes.
+
+Markdown rendering needs Bob 1.21.0 or later on macOS 13 or later. The plugin
+still installs on Bob 1.20.0, where the Markdown option shows the document's raw
+source; Dictionary card and Plain Text are unaffected.
 
 **Plain Text** is rendered directly from the same EntrySet, using headings,
 paragraphs, indentation and blank lines rather than Markdown syntax. Combined
@@ -185,7 +190,7 @@ parts, while prose notes remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
-| Presentation | Dictionary card | Choose Dictionary card, Plain Text or Markdown. Plain/Markdown documents—and automatic free-form fallback—are returned as one `toParagraphs` element, Bob's documented array-of-strings contract. Bob does not currently document Markdown rendering; the option guarantees a standards-compliant document, not formatted drawing by Bob. |
+| Presentation | Dictionary card | Choose Dictionary card, Plain Text or Markdown. Markdown is declared to Bob as `content.format: "markdown"` and drawn natively by Bob 1.21.0+ on macOS 13+; Plain Text (and the automatic free-form fallback) is declared as `plain`. Older Bob versions ignore `content` and show the same document from `toParagraphs` as text, so Markdown appears as raw source there. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
 | Show examples | on | Show examples and bilingual translations. |
 | Show grammar | on | Show detailed grammatical qualifiers. Does not hide POS, labels, or patterns. |

@@ -246,6 +246,22 @@ function buildRequestBody(text, recordOrdinal) {
     return body;
 }
 
+/**
+ * presentedText 把一份已经排好版的文档交给 Bob。
+ *
+ * Bob 1.21.0 起，译文以 content = { format, text } 声明如何理解 text，且优先于
+ * toParagraphs：format 为 markdown 时按 Markdown 渲染，为 plain 时原样显示。
+ * 更早的 Bob 会忽略 content，只读 toParagraphs，所以两者同时给出：旧版本看到的
+ * 仍是同一份文本（单个元素，按纯文本显示），新版本得到明确的渲染格式。
+ * 不设 format 为 lines：那是逐行对应原文的机器翻译格式，词典词条不是。
+ */
+function presentedText(format, text) {
+    return {
+        content: { format: format, text: text },
+        toParagraphs: [text]
+    };
+}
+
 function dictionaryListParagraphs(body) {
     var dictionaries = body && body.dictionaries ? body.dictionaries : [];
     if (dictionaries.length === 0) {
@@ -286,13 +302,15 @@ function listDictionaries(query, serviceURL) {
                 query.onCompletion({ error: serviceErrorFor(statusCode, body, serviceURL) });
                 return;
             }
-            query.onCompletion({
-                result: {
-                    from: query.detectFrom,
-                    to: query.detectTo,
-                    toParagraphs: dictionaryListParagraphs(body)
-                }
-            });
+            // 1.21+ 会把多元素的 toParagraphs 当作逐行对应原文的 lines 格式，而 /list
+            // 没有对应的原文，所以 content 用一份段落间空一行的纯文本；旧版本仍读
+            // 原来的多段落 toParagraphs，显示不变。
+            var paragraphs = dictionaryListParagraphs(body);
+            var listing = presentedText('plain', paragraphs.join('\n\n'));
+            listing.toParagraphs = paragraphs;
+            listing.from = query.detectFrom;
+            listing.to = query.detectTo;
+            query.onCompletion({ result: listing });
         }
     });
 }
@@ -355,22 +373,17 @@ function translate(query, completion) {
                 return;
             }
 
-            var result = {
-                from: query.detectFrom,
-                to: query.detectTo
-            };
+            var result;
             if (effective === 'plain') {
-                result.toParagraphs = [body.plain];
+                result = presentedText('plain', body.plain);
             } else if (effective === 'markdown') {
-                // Bob's documented plugin contract types toParagraphs as an array of
-                // strings, so the service-rendered document travels as one element
-                // rather than as a bare string. Keeping the whole document together
-                // preserves its formatting as a single unit, and is the shape a future
-                // Bob Markdown renderer would consume without changing this plugin.
-                result.toParagraphs = [body.markdown];
+                // 服务端已经由同一份结构化词条排好版；插件原样转交，不解释 Markdown。
+                result = presentedText('markdown', body.markdown);
             } else {
-                result.toDict = body.bob;
+                result = { toDict: body.bob };
             }
+            result.from = query.detectFrom;
+            result.to = query.detectTo;
             query.onCompletion({
                 result: result
             });

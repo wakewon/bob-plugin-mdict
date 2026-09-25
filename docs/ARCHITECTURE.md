@@ -76,14 +76,20 @@ changed, and would have to relearn everything the parser already knows.
 Diagnostic rendering stays deterministic and may include provenance while
 omitting per-process resource URLs. User rendering contains only dictionary
 content and enables resolved loopback audio/image links where the format can
-express them. The plugin requests Plain or Markdown and returns the complete
-document as one `toParagraphs` element — Bob's documented array-of-strings
-shape. It never reparses EntrySet, Markdown or dictionary HTML.
+express them. The plugin requests Plain or Markdown and hands the complete
+document to Bob unchanged. It never reparses EntrySet, Markdown or dictionary
+HTML.
 
-Bob does not currently document Markdown rendering of `toParagraphs`. What this
-path provides is a standards-compliant Markdown document from the canonical IR;
-whether Bob eventually draws it as formatted text is Bob's decision, and this
-project does not depend on an undocumented API to claim that it will.
+Since 1.21.0, Bob reads `result.content = { format, text }` and, when present,
+prefers it over `toParagraphs`. The plugin sets `format` to `markdown` or
+`plain` and always sends the same text as a single `toParagraphs` element too:
+an older Bob ignores `content` and reads that element, so nothing regresses
+there and `minBobVersion` stays 1.20.0. Markdown is then drawn natively on
+macOS 13+; on older Bob or macOS 12 the reader sees the raw source. `lines` is
+never used — it maps output lines onto source lines, which a dictionary entry
+is not. The `/list` control result is likewise declared `plain`, because Bob
+1.21+ would read several `toParagraphs` elements as `lines` mapped onto the
+one-line query.
 
 #### Record boundaries in each presentation
 
@@ -103,7 +109,8 @@ boundary. A thematic break is the strongest separation Markdown has.
 #### Navigation targets
 
 Bob publishes a lookup action for related words in `toDict`. It publishes none
-for Markdown content. Rather than invent a private URL scheme Bob would not
+for Markdown content, whose links render as plain clickable URLs and whose
+`bob-plugin://` addresses do nothing in link position. Rather than invent a private URL scheme Bob would not
 honour, or emit an external link that would take the reader out of the
 dictionary, `mdrender` writes navigation targets as copyable query text inside a
 code span — sibling record selectors, cross-references, and related entries.

@@ -61,10 +61,11 @@ test('blank ID uses first match and explicit ID restricts lookup', () => {
     }
 });
 
-// Bob types toParagraphs as an array of strings. The whole Markdown document
-// travels as exactly one element so its formatting stays one unit; splitting it
-// into per-paragraph strings would break fenced blocks, lists and tables apart.
-test('Markdown presentation returns the whole document as one toParagraphs element', () => {
+// Bob 1.21.0+ reads result.content and renders format "markdown" natively. Older
+// Bob ignores content and reads toParagraphs, which must carry the same whole
+// document as one element: splitting it per paragraph would break fenced blocks,
+// lists and tables apart. Never "lines", which maps output lines onto source lines.
+test('Markdown presentation declares content format markdown and keeps a toParagraphs fallback', () => {
     let completion;
     const markdown = '# flimber\n\n## noun\n\n- **1** synthetic definition\n\n---\n\n## verb\n';
     const loaded = load({
@@ -78,13 +79,16 @@ test('Markdown presentation returns the whole document as one toParagraphs eleme
         request.handler(response(200, { markdown, matches: [{}] }));
     });
     loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
+    assert.equal(completion.result.content.format, 'markdown');
+    assert.equal(completion.result.content.text, markdown);
+    assert.deepEqual(Object.keys(completion.result.content).sort(), ['format', 'text']);
     assert.ok(Array.isArray(completion.result.toParagraphs));
     assert.equal(completion.result.toParagraphs.length, 1);
     assert.equal(completion.result.toParagraphs[0], markdown);
     assert.equal('toDict' in completion.result, false);
 });
 
-test('Plain presentation returns the whole document as one toParagraphs element', () => {
+test('Plain presentation declares content format plain and keeps a toParagraphs fallback', () => {
     let completion;
     const plain = 'flimber\n\nnoun\n1. synthetic definition\n';
     const loaded = load({ presentationMode: 'plain' }, request => {
@@ -92,6 +96,8 @@ test('Plain presentation returns the whole document as one toParagraphs element'
         request.handler(response(200, { effectiveFormat: 'plain', plain, matches: [{}] }));
     });
     loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
+    assert.equal(completion.result.content.format, 'plain');
+    assert.equal(completion.result.content.text, plain);
     assert.equal(Array.isArray(completion.result.toParagraphs), true);
     assert.equal(completion.result.toParagraphs.length, 1);
     assert.equal(completion.result.toParagraphs[0], plain);
@@ -106,6 +112,10 @@ test('Dictionary card honours the service effective Plain fallback', () => {
         request.handler(response(200, { effectiveFormat: 'plain', plain, matches: [{}] }));
     });
     loaded.context.translate(bobQuery({ text: '好', originalText: '好' }, value => { completion = value; }));
+    // The fallback must not be drawn as Markdown: free-form dictionary text is
+    // full of characters Markdown would consume.
+    assert.equal(completion.result.content.format, 'plain');
+    assert.equal(completion.result.content.text, plain);
     assert.equal(Array.isArray(completion.result.toParagraphs), true);
     assert.equal(completion.result.toParagraphs.length, 1);
     assert.equal(completion.result.toParagraphs[0], plain);
@@ -121,6 +131,7 @@ test('Markdown presentation forwards the configured multi-record mode', () => {
             request.handler(response(200, { markdown: '# wound\n', matches: [{}] }));
         });
         loaded.context.translate(bobQuery({ text: 'wound', originalText: 'wound' }, value => { completion = value; }));
+        assert.equal(completion.result.content.format, 'markdown');
         assert.equal(completion.result.toParagraphs.length, 1);
     }
 });
@@ -136,6 +147,7 @@ test('Markdown presentation forwards a reserved record selector', () => {
             request.handler(response(200, { markdown: '# wound\n', matches: [{}] }));
         });
         loaded.context.translate(bobQuery({ text: 'wound', originalText }, value => { completion = value; }));
+        assert.equal(completion.result.content.text, '# wound\n');
         assert.equal(completion.result.toParagraphs[0], '# wound\n');
     }
 });
@@ -149,6 +161,7 @@ test('dictionary card remains the default presentation', () => {
     loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
     assert.equal(completion.result.toDict.word, 'flimber');
     assert.equal('toParagraphs' in completion.result, false);
+    assert.equal('content' in completion.result, false);
 });
 
 test('Bob-preprocessed /list uses originalText and never performs a lookup', () => {
@@ -174,6 +187,10 @@ test('Bob-preprocessed /list uses originalText and never performs a lookup', () 
         assert.match(completion.result.toParagraphs[1], /ID: abc123/);
         assert.match(completion.result.toParagraphs[2], /状态：不可用/);
         assert.match(completion.result.toParagraphs[2], /test diagnostic/);
+        // Bob 1.21+ would read several toParagraphs elements as "lines" mapped
+        // onto the one-line query, so its content is a single plain document.
+        assert.equal(completion.result.content.format, 'plain');
+        assert.equal(completion.result.content.text, completion.result.toParagraphs.join('\n\n'));
         assert.equal('toDict' in completion.result, false);
     }
 });
@@ -237,6 +254,8 @@ test('/list reports an empty registry and transport failure clearly', () => {
     loaded.context.translate(bobQuery({ text: 'list', originalText: '/list' }, value => { completion = value; }));
     assert.equal(completion.result.toParagraphs[0], '未发现 MDict 词典');
     assert.match(completion.result.toParagraphs[1], /\/synthetic\/empty/);
+    assert.equal(completion.result.content.format, 'plain');
+    assert.match(completion.result.content.text, /^未发现 MDict 词典\n\n词典目录：\/synthetic\/empty$/);
 
     fail = true;
     loaded.context.translate(bobQuery({ text: 'list', originalText: '/list' }, value => { completion = value; }));

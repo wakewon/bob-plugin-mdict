@@ -5,6 +5,16 @@ HTTP API version are independent; MDict for Bob 1.1.0 continues to use API v2.
 
 ## [Unreleased]
 
+- Adapt Markdown presentation to Bob 1.21.0's native Markdown rendering. The
+  plugin now returns `content: { format: "markdown", text }`; Plain Text and the
+  automatic free-form fallback return `format: "plain"`. The same text is still
+  sent as one `toParagraphs` element, which older Bob versions read, so the
+  plugin keeps `minBobVersion` 1.20.0 and Markdown shows as raw source there.
+  Markdown rendering requires Bob 1.21.0+ on macOS 13+.
+- Declare the `/list` result as `plain` so Bob 1.21+ does not read its several
+  `toParagraphs` elements as `lines` mapped onto the one-line query.
+- Update the option description and documentation, which said Bob did not
+  render Markdown.
 - Keep numbers in a bilingual translation. Dictionaries such as Collins leave
   the digits of a translated sentence outside the gloss elements, so
   `每小时 7元。` used to lose its `7` and read `每小时 元。` in every

@@ -37,7 +37,7 @@
       "type": "menu",
       "title": "显示方式",
       "defaultValue": "dict",
-      "desc": "词典卡片优先使用 Bob 原生显示；自由排版词条会自动改用纯文本。纯文本和 Markdown 都由本地服务从同一结构化词条直接生成。Bob 当前未正式支持 Markdown 渲染。",
+      "desc": "词典卡片优先使用 Bob 原生显示；自由排版词条会自动改用纯文本。纯文本和 Markdown 都由本地服务从同一结构化词条直接生成。Markdown 由 Bob 1.21.0 及以上（macOS 13+）原生渲染；更早的版本会显示 Markdown 原文。",
       "menuValues": [
         {
           "title": "词典卡片",
