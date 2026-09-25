@@ -151,6 +151,7 @@ func (c *conversion) prepare(root *html.Node) {
 		}
 		return true
 	})
+	remove = append(remove, c.invisible(root)...)
 	removed := make(map[*html.Node]bool, len(remove))
 	for _, node := range remove {
 		removed[node] = true
@@ -161,7 +162,8 @@ func (c *conversion) prepare(root *html.Node) {
 		// it. Removing it outright would print "abandon shipto leave". A
 		// hidden syllable dot, by contrast, is punctuation inside one word
 		// and must leave nothing behind: "a·ban·don" reads "abandon".
-		if node.Type == html.ElementNode && !chrome[node.Data] && !blockTags[node.Data] &&
+		if (node.Type == html.ElementNode && !chrome[node.Data] && !blockTags[node.Data] ||
+			node.Type == html.TextNode) &&
 			separatesWords(node) &&
 			wordBoundary(adjacentRune(node, true, removed), adjacentRune(node, false, removed)) {
 			node.Parent.InsertBefore(&html.Node{Type: html.TextNode, Data: " "}, node)
@@ -196,16 +198,47 @@ func (c *conversion) normalizeSpaces(root *html.Node) {
 	})
 }
 
+// hidden reports whether an element and everything in it is not rendered.
+// Only display does that: visibility is inherited, and a descendant can set
+// it back to visible, so it is handled by invisible instead.
 func (c *conversion) hidden(node *html.Node) bool {
 	style := c.styles.of(node)
-	if style == nil {
-		return false
+	return style != nil && style["display"] == "none"
+}
+
+// invisible returns the text and images inside root that inherit, or set,
+// visibility hidden without a nearer ancestor setting it back to visible.
+// Their elements stay, because a descendant may be visible again.
+func (c *conversion) invisible(root *html.Node) []*html.Node {
+	var out []*html.Node
+	var visit func(node *html.Node, hidden bool)
+	visit = func(node *html.Node, hidden bool) {
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			switch child.Type {
+			case html.TextNode:
+				if hidden {
+					out = append(out, child)
+				}
+			case html.ElementNode:
+				childHidden := hidden
+				if style := c.styles.of(child); style != nil {
+					switch style["visibility"] {
+					case "hidden", "collapse":
+						childHidden = true
+					case "visible":
+						childHidden = false
+					}
+				}
+				if childHidden && voidElements[child.Data] {
+					out = append(out, child)
+					continue
+				}
+				visit(child, childHidden)
+			}
+		}
 	}
-	if style["display"] == "none" {
-		return true
-	}
-	visibility := style["visibility"]
-	return visibility == "hidden" || visibility == "collapse"
+	visit(root, false)
+	return out
 }
 
 // insertGeneratedContent materialises ::before and ::after strings as text.

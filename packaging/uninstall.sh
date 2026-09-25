@@ -22,6 +22,18 @@ fi
 rm -f "$AGENT" && echo "==> 已移除 LaunchAgent"
 rm -f "$BINARY" && echo "==> 已移除二进制"
 
+# 查词小助手由服务在本机生成，属于本项目安装的东西：先让它退出，
+# 再注销它的 bobmdict:// 链接，最后删除。
+HELPER="$SUPPORT_DIR/MDict Lookup.app"
+if [ -d "$HELPER" ]; then
+    if [ "${BOB_MDICT_INSTALL_SMOKE:-0}" != "1" ]; then
+        pkill -f "^$HELPER/Contents/MacOS/" 2>/dev/null || true
+        /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$HELPER" 2>/dev/null || true
+    fi
+    rm -rf "$HELPER" && echo "==> 已移除查词小助手"
+fi
+rm -f "$HOME/Library/Logs/bob-mdict-helper.log"
+
 # 转码缓存是可再生的派生数据，删掉没有损失。
 rm -rf "$CACHE_DIR" && echo "==> 已清除音频转码缓存"
 

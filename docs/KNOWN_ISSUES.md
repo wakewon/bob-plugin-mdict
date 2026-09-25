@@ -30,7 +30,7 @@ The setting applies to links from every service in Bob.
 ## Pronunciation playback
 
 **The start of a word can be lost on a Bluetooth headset.** When the helper's
-audio engine has been stopped (20 seconds after the last sound), starting it
+audio engine has been stopped (20 seconds after the last sound ended), starting it
 wakes the Bluetooth link. The system log has shown 0.15–0.9 s from starting
 output to `STREAMING`, while the helper precedes the word with 0.3 s of
 silence (`coldLeadInMillis`). A longer lead-in, or starting the engine before
@@ -59,6 +59,12 @@ certificate, but every rebuild — any change to its script, Info.plist edits
 or compile flags — changes its signature, and macOS asks again whether it may
 control Bob. Rebuilds happen only when the stamp changes, never on ordinary
 restarts.
+
+**`brew uninstall` leaves it behind.** `packaging/uninstall.sh` stops the
+helper, unregisters its `bobmdict://` scheme and deletes it, but a Homebrew
+formula cannot remove files outside its prefix, so after a Homebrew uninstall
+`~/Library/Application Support/bob-mdict/MDict Lookup.app` remains registered
+until it is deleted by hand.
 
 **Its bundle ID must not contain the service's launchd label.** The install
 scripts once matched that label as a substring among running jobs, and the

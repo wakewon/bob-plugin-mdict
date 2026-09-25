@@ -49,8 +49,11 @@ const bundleID = "com.github.wakewon.mdict-lookup"
 const idleQuitSeconds = 600
 
 // engineKeepSeconds is how long the helper keeps its audio engine, and with
-// it the audio device and any Bluetooth link, running after a sound.
+// it the audio device and any Bluetooth link, running after a sound ends.
 const engineKeepSeconds = 20
+
+// bobBundleID is the application the helper sends lookups to.
+const bobBundleID = "com.hezongyidev.Bob"
 
 // maxLogBytes bounds the helper's own log.
 const maxLogBytes = 256 << 10
@@ -133,8 +136,10 @@ var tokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,512}$`)
 // script is the applet. It handles two routes and reads nothing else:
 //
 //   - lookup?text=… asks Bob to translate the text, through Bob's documented
-//     AppleScript request. The request is sent by its raw event code so the
-//     applet compiles whether or not Bob's scripting dictionary is available.
+//     AppleScript request. The request is sent by its raw event code, to an
+//     application named at run time, so the applet compiles whether or not
+//     Bob is installed: osacompile resolves a literal application reference
+//     while compiling and fails when the application is absent.
 //     With from=… (or back=1) and port=…, it first tells the local service
 //     where the reader came from, so the page that opens can lead back.
 //   - play?port=…&token=…&volume=…&rate=…&normalize=… fetches the recording,
@@ -156,7 +161,7 @@ use scripting additions
 -- State lives in globals, not properties: an applet saves its properties
 -- back into its own bundle when it quits, which would rewrite the signed
 -- script and cannot store the audio objects at all.
-global lastUse, lastSound, audioEngine, playerNode, timePitch, lastFile, fileCounter
+global lastUse, soundEnds, audioEngine, playerNode, timePitch, lastFile, fileCounter
 
 on open location theURL
 	my initialise()
@@ -239,8 +244,9 @@ end route
 -- answer — would hold every later click, lookups and pronunciations alike,
 -- behind this one.
 on askBob(requestText)
+	set bobID to "%[7]s"
 	ignoring application responses
-		tell application id "com.hezongyidev.Bob" to «event bObSReQs» requestText
+		tell application id bobID to «event bObSReQs» requestText
 	end ignoring
 end askBob
 
@@ -290,7 +296,10 @@ on playFile(thePath, theRate)
 	playerNode's play()
 	if lastFile is not "" and lastFile is not thePath then do shell script "/bin/rm -f " & quoted form of lastFile
 	set lastFile to thePath
-	set lastSound to current date
+	-- The engine is kept for a while after the sound ends, not after it
+	-- starts: a long example read at half speed can outlast the keep time.
+	set theSeconds to ((audioFile's |length|()) as real) / %[3]d / theRate
+	set soundEnds to (current date) + (round theSeconds rounding up)
 	return true
 end playFile
 
@@ -328,7 +337,7 @@ on initialise()
 		lastFile
 	on error
 		set lastUse to current date
-		set lastSound to missing value
+		set soundEnds to missing value
 		set audioEngine to missing value
 		set playerNode to missing value
 		set timePitch to missing value
@@ -344,7 +353,7 @@ end initialise
 on idle
 	try
 		set now to current date
-		if (my engineRunning()) and lastSound is not missing value and (now - lastSound) > %[4]d then
+		if (my engineRunning()) and soundEnds is not missing value and (now - soundEnds) > %[4]d then
 			playerNode's |stop|()
 			audioEngine's |stop|()
 		end if
@@ -361,7 +370,7 @@ on quit
 	end try
 	continue quit
 end quit
-`, maxQueryRunes, coldLeadInMillis, playback.SampleRate, engineKeepSeconds, idleQuitSeconds, maxLogBytes)
+`, maxQueryRunes, coldLeadInMillis, playback.SampleRate, engineKeepSeconds, idleQuitSeconds, maxLogBytes, bobBundleID)
 
 // plistEdits are applied to the applet's Info.plist after compilation, in
 // plutil's "-replace key -type value" form.

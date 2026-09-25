@@ -97,7 +97,7 @@ func TestInstallBuildsSignedURLHandlerOnce(t *testing.T) {
 // they would have sent, so nothing is sent anywhere.
 func TestScriptRoutesLinks(t *testing.T) {
 	requireMacOS(t)
-	const bobCall = `tell application id "com.hezongyidev.Bob" to «event bObSReQs» requestText`
+	const bobCall = `tell application id bobID to «event bObSReQs» requestText`
 	const playCall = `do shell script "/usr/bin/curl -fsS -m 10 -X POST " & quoted form of audioURL & " -o " & quoted form of thePath`
 	if !strings.Contains(script, bobCall) || !strings.Contains(script, playCall) {
 		t.Fatal("a side effect in the applet moved; update this test")
@@ -156,7 +156,7 @@ func TestScriptReportsNavigation(t *testing.T) {
 		t.Fatal("the navigation report moved; update this test")
 	}
 	probe := strings.Replace(script, navCall, `return "NAV" & theArgs & " " & thePort`, 1)
-	probe = strings.Replace(probe, `tell application id "com.hezongyidev.Bob" to «event bObSReQs» requestText`, `return "BOB " & requestText`, 1)
+	probe = strings.Replace(probe, `tell application id bobID to «event bObSReQs» requestText`, `return "BOB " & requestText`, 1)
 	probe = strings.Replace(probe, "on run\n\tmy initialise()\nend run", "on run argv\n\tmy initialise()\n\ttell me to open location (item 1 of argv)\nend run", 1)
 	probe, _ = probeLog(t, probe)
 	source := filepath.Join(t.TempDir(), "probe.applescript")
@@ -295,5 +295,24 @@ end run`, 1)
 	}
 	if logged, _ := os.ReadFile(logPath); !strings.Contains(string(logged), "play failed") {
 		t.Fatalf("log = %q", logged)
+	}
+}
+
+// The applet must compile on a Mac without Bob — a build machine, or a user
+// who installs the service first. A literal application reference is
+// resolved by osacompile and fails when the application is absent.
+func TestScriptCompilesWithoutBob(t *testing.T) {
+	requireMacOS(t)
+	absent := strings.Replace(script, bobBundleID, "com.github.wakewon.bob-mdict.absent-test-app", 1)
+	if absent == script {
+		t.Fatal("the Bob bundle ID moved; update this test")
+	}
+	dir := t.TempDir()
+	source := filepath.Join(dir, "absent.applescript")
+	if err := os.WriteFile(source, []byte(absent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("/usr/bin/osacompile", "-o", filepath.Join(dir, "absent.scpt"), source).CombinedOutput(); err != nil {
+		t.Fatalf("the applet needs its target application to compile: %v: %s", err, out)
 	}
 }

@@ -263,3 +263,20 @@ func TestIconFontGlyphsInTextAreDropped(t *testing.T) {
 	got := convert(t, ``, "<p><span>/ˈwɛksl/</span> <span class=\"icon\">\uea27</span> <a href=\"sound://uk/w.mp3\"></a></p>")
 	expect(t, got, "/ˈwɛksl/ [🔊 UK](http://127.0.0.1:15321/v2/resource/AUDIO)")
 }
+
+// visibility is inherited and can be set back: a visible child of a hidden
+// element is shown, and a hidden label between words still separates them.
+func TestVisibilityIsInherited(t *testing.T) {
+	got := convert(t,
+		`.panel{visibility:hidden} .panel .shown{visibility:visible} .gap{visibility:hidden}`,
+		`<div class="panel">toggle <span class="shown">kept definition</span><img src="icon.png"></div>`+
+			`<p>abandon ship<span class="gap">ESCAPE</span>to leave</p>`)
+	expect(t, got, "kept definition\n\nabandon ship to leave")
+}
+
+// Generated text is added to an element that has no children at all.
+func TestGeneratedContentInAnEmptyElement(t *testing.T) {
+	got := convert(t, `.num:before{content:"1."} .sep:after{content:"; "}`,
+		`<p><span class="num"></span> a hook<span class="sep"></span>a fastening</p>`)
+	expect(t, got, "1\\. a hook; a fastening")
+}
