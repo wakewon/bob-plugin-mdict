@@ -1,6 +1,6 @@
 # MDict for Bob
 
-Current product version: **1.1.0** · local API: **v2**.
+Current product version: **1.2.0** · local API: **v2**.
 
 English | [简体中文](README_CN.md)
 

@@ -1,9 +1,9 @@
 # Changelog
 
 All notable product changes are recorded here. Product versions and the local
-HTTP API version are independent; MDict for Bob 1.1.0 continues to use API v2.
+HTTP API version are independent; MDict for Bob 1.2.0 continues to use API v2.
 
-## [Unreleased]
+## [1.2.0] - 2026-09-25
 
 - Adapt Markdown presentation to Bob 1.21.0's native Markdown rendering. The
   plugin now returns `content: { format: "markdown", text }`; Plain Text and the

@@ -1,6 +1,6 @@
 # MDict for Bob
 
-当前产品版本：**1.1.0** · 本地 API：**v2**。
+当前产品版本：**1.2.0** · 本地 API：**v2**。
 
 [English](README.md) | 简体中文
 

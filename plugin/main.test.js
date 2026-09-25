@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
-    .replace('__BOB_MDICT_PLUGIN_VERSION__', '1.1.0-test')
+    .replace('__BOB_MDICT_PLUGIN_VERSION__', '1.2.0-test')
     .replace('__BOB_MDICT_PLUGIN_COMMIT__', 'test123');
 
 function load(options, respond) {
