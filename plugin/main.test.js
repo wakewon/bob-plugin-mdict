@@ -4,8 +4,12 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+// The only place a version appears in this file: scripts/release.sh prepare
+// rewrites this quoted literal, and every assertion below derives from it.
+const PLUGIN_TEST_VERSION = '1.2.0-test';
+
 const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
-    .replace('__BOB_MDICT_PLUGIN_VERSION__', '1.2.0-test')
+    .replace('__BOB_MDICT_PLUGIN_VERSION__', PLUGIN_TEST_VERSION)
     .replace('__BOB_MDICT_PLUGIN_COMMIT__', 'test123');
 
 function load(options, respond) {
@@ -278,7 +282,7 @@ test('invalid configured dictionary is rejected during pluginValidate', () => {
     assert.equal(completion.result, false);
     assert.match(completion.error.message, /expired-id/);
     assert.match(completion.error.addition, /\/list/);
-    assert.match(loaded.logs[0], /MDict plugin 1\.1\.0-test \(test123\)/);
+    assert.ok(loaded.logs[0].includes('MDict plugin ' + PLUGIN_TEST_VERSION + ' (test123)'), loaded.logs[0]);
     assert.match(loaded.logs[0], /bob-mdict 1\.0\.0 \(service1\), API v2/);
 });
 
