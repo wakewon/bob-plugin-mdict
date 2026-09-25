@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 // The only place a version appears in this file: scripts/release.sh prepare
 // rewrites this quoted literal, and every assertion below derives from it.
-const PLUGIN_TEST_VERSION = '1.2.0-test';
+const PLUGIN_TEST_VERSION = '1.3.0-test';
 
 const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8')
     .replace('__BOB_MDICT_PLUGIN_VERSION__', PLUGIN_TEST_VERSION)

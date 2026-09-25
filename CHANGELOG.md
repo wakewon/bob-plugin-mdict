@@ -3,7 +3,7 @@
 All notable product changes are recorded here. Product versions and the local
 HTTP API version are independent; MDict for Bob 1.2.0 continues to use API v2.
 
-## [Unreleased]
+## [1.3.0] - 2026-09-25
 
 - Add a **Markdown (web layout)** presentation that shows the dictionary's own
   page instead of the parsed entry. The service reads the record's HTML with
