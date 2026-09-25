@@ -123,10 +123,22 @@ function configuredMultiRecordMode() {
 
 function configuredPresentationMode() {
     var mode = getOption('presentationMode', 'dict');
-    if (mode === 'plain' || mode === 'markdown') {
+    if (mode === 'plain' || mode === 'markdown' || mode === 'html') {
         return mode;
     }
     return 'dict';
+}
+
+// requestedFormat 把显示方式映射为服务端的 format。网页排版也是 Markdown，
+// 只是来源不同：由词典自己的 HTML 与样式表转换，而不是由结构化词条生成。
+function requestedFormat(presentation) {
+    if (presentation === 'dict') {
+        return 'bob';
+    }
+    if (presentation === 'html') {
+        return 'markdown';
+    }
+    return presentation;
 }
 
 /**
@@ -228,7 +240,7 @@ function buildRequestBody(text, recordOrdinal) {
     var body = {
         query: text,
         multiRecordMode: configuredMultiRecordMode(),
-        format: presentation === 'dict' ? 'bob' : presentation,
+        format: requestedFormat(presentation),
         mode: 'exact',
         maxExamples: parsePositiveInt(getOption('maxExamples', '3'), 3),
         includeExamples: getOption('showExamples', 'enable') === 'enable',
@@ -236,6 +248,14 @@ function buildRequestBody(text, recordOrdinal) {
         includeGrammar: getOption('showGrammar', 'enable') === 'enable',
         limit: 1
     };
+    if (presentation === 'html') {
+        // 较旧的服务会忽略这个字段并返回结构化 Markdown，不会报错。
+        body.markdownSource = 'html';
+    }
+    // 用于 Markdown 中的 🔊；词典卡片的发音由 Bob 自己播放，不受影响。
+    body.audioVolume = parsePositiveInt(getOption('audioVolume', '100'), 100);
+    body.audioRate = parsePositiveInt(getOption('audioRate', '100'), 100);
+    body.audioNormalize = getOption('audioNormalize', 'enable') === 'enable';
     var dictionaryID = configuredDictionaryID();
     if (dictionaryID !== '') {
         body.dictionaries = [dictionaryID];
@@ -279,6 +299,10 @@ function dictionaryListParagraphs(body) {
             if (dictionary.diagnostics && dictionary.diagnostics.length > 0) {
                 lines.push('诊断：' + dictionary.diagnostics.join('；'));
             }
+        }
+        if (dictionary.missingStylesheets && dictionary.missingStylesheets.length > 0) {
+            // 只影响“网页排版”显示；把这些文件放到 .mdx 同一文件夹即可。
+            lines.push('缺少样式表：' + dictionary.missingStylesheets.join('、'));
         }
         paragraphs.push(lines.join('\n'));
     }
@@ -360,9 +384,8 @@ function translate(query, completion) {
                 query.onCompletion({ error: serviceErrorFor(statusCode, body, serviceURL) });
                 return;
             }
-            var presentation = configuredPresentationMode();
             var effective = body && body.effectiveFormat ? body.effectiveFormat :
-                (presentation === 'dict' ? 'bob' : presentation);
+                requestedFormat(configuredPresentationMode());
             var hasPresentation = body && (
                 (effective === 'bob' && body.bob && body.bob.word) ||
                 (effective === 'plain' && body.plain) ||

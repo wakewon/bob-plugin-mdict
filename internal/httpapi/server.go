@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
+	"github.com/wakewon/bob-plugin-mdict/internal/htmlmd"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
+	"github.com/wakewon/bob-plugin-mdict/internal/playback"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
 	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/version"
@@ -44,6 +47,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v2/rescan", s.handleRescan)
 	mux.HandleFunc("GET /v2/resource/{token}", s.handleResource)
 	mux.HandleFunc("HEAD /v2/resource/{token}", s.handleResource)
+	mux.HandleFunc("POST /v2/audio/{token}", s.handleAudio)
+	mux.HandleFunc("POST /v2/navigation", s.handleNavigation)
 	return s.withGuards(mux)
 }
 
@@ -120,19 +125,22 @@ func writeError(w http.ResponseWriter, status int, code, message, hint string) {
 
 // StatusResponse describes the running service.
 type StatusResponse struct {
-	Service                string  `json:"service"`
-	ServiceVersion         string  `json:"serviceVersion"`
-	BuildCommit            string  `json:"buildCommit"`
-	APIVersion             string  `json:"apiVersion"`
-	Platform               string  `json:"platform"`
-	Architecture           string  `json:"architecture"`
-	DictionaryDirectory    string  `json:"dictionaryDirectory"`
-	DictionaryCount        int     `json:"dictionaryCount"`
-	HealthyDictionaryCount int     `json:"healthyDictionaryCount"`
-	AudioAvailable         bool    `json:"audioAvailable"`
-	SpeexAvailable         bool    `json:"speexAvailable"`
-	SpeexDecoder           string  `json:"speexDecoder,omitempty"`
-	UptimeSeconds          float64 `json:"uptimeSeconds"`
+	Service                string `json:"service"`
+	ServiceVersion         string `json:"serviceVersion"`
+	BuildCommit            string `json:"buildCommit"`
+	APIVersion             string `json:"apiVersion"`
+	Platform               string `json:"platform"`
+	Architecture           string `json:"architecture"`
+	DictionaryDirectory    string `json:"dictionaryDirectory"`
+	DictionaryCount        int    `json:"dictionaryCount"`
+	HealthyDictionaryCount int    `json:"healthyDictionaryCount"`
+	AudioAvailable         bool   `json:"audioAvailable"`
+	SpeexAvailable         bool   `json:"speexAvailable"`
+	SpeexDecoder           string `json:"speexDecoder,omitempty"`
+	// LookupLinks reports whether dictionary links in the web-layout view
+	// are clickable Bob lookups rather than text.
+	LookupLinks   bool    `json:"lookupLinks"`
+	UptimeSeconds float64 `json:"uptimeSeconds"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -157,6 +165,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		AudioAvailable:         audioAvailable,
 		SpeexAvailable:         s.svc.Transcoder().SpeexAvailable(),
 		SpeexDecoder:           s.svc.Transcoder().DecoderName(),
+		LookupLinks:            s.svc.LookupLinksEnabled(),
 		UptimeSeconds:          s.svc.Uptime().Seconds(),
 	})
 }
@@ -175,6 +184,7 @@ func (s *Server) handleDictionaries(w http.ResponseWriter, _ *http.Request) {
 	for _, dict := range dicts {
 		info := dict.Info()
 		info.Profile = s.svc.ProfileID(dict)
+		info.MissingStylesheets = s.svc.MissingStylesheets(dict)
 		infos = append(infos, info)
 	}
 	writeJSON(w, http.StatusOK, DictionariesResponse{
@@ -199,6 +209,12 @@ type LookupRequest struct {
 	// Format is "ir" (default), "bob", "plain", or "markdown". Presentation formats add
 	// a rendered sibling field while preserving the canonical IR matches.
 	Format string `json:"format,omitempty"`
+	// MarkdownSource chooses where format:"markdown" comes from: "entry"
+	// (default) renders the parsed EntrySet; "html" converts the record's own
+	// HTML and stylesheets, keeping the dictionary's layout. Example, extras
+	// and grammar options do not apply to "html": it shows the page as
+	// published. Older services ignore the field and return "entry".
+	MarkdownSource string `json:"markdownSource,omitempty"`
 	// IncludeExamples and IncludeExtras let the user trim what Bob displays.
 	IncludeExamples *bool `json:"includeExamples,omitempty"`
 	IncludeExtras   *bool `json:"includeExtras,omitempty"`
@@ -210,6 +226,13 @@ type LookupRequest struct {
 	MultiRecordMode string `json:"multiRecordMode,omitempty"`
 	// RecordOrdinal is one-based over the visible, deduplicated EntrySet.
 	RecordOrdinal int `json:"recordOrdinal,omitempty"`
+	// AudioVolume and AudioRate are percentages (default 100) and
+	// AudioNormalize matches recordings' loudness (default true). They are
+	// carried by 🔊 links that play in the background; they change nothing
+	// when those links are not available.
+	AudioVolume    int   `json:"audioVolume,omitempty"`
+	AudioRate      int   `json:"audioRate,omitempty"`
+	AudioNormalize *bool `json:"audioNormalize,omitempty"`
 }
 
 func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +257,12 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "badRequest", "format must be ir, bob, plain, or markdown", "")
 		return
 	}
+	markdownSource := strings.ToLower(strings.TrimSpace(req.MarkdownSource))
+	if markdownSource != "" && markdownSource != "entry" && markdownSource != "html" {
+		writeError(w, http.StatusBadRequest, "badRequest", "markdownSource must be entry or html", "")
+		return
+	}
+	htmlMarkdown := format == "markdown" && markdownSource == "html"
 	if req.MultiRecordMode != "" &&
 		!strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordSeparate)) &&
 		!strings.EqualFold(req.MultiRecordMode, string(bobadapter.MultiRecordCombined)) {
@@ -291,6 +320,14 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		plainOpts.MultiRecordMode = textrender.MultiRecordSeparate
 	}
 
+	htmlMarkdownOpts := service.HTMLMarkdownOptions{
+		MultiRecordMode: htmlmd.MultiRecordSeparate,
+		RecordOrdinal:   req.RecordOrdinal,
+	}
+	if bobOpts.MultiRecordMode == bobadapter.MultiRecordCombined {
+		htmlMarkdownOpts.MultiRecordMode = htmlmd.MultiRecordCombined
+	}
+
 	result, err := s.svc.Lookup(req.Query, service.LookupOptions{
 		DictionaryIDs:   req.Dictionaries,
 		Mode:            mode,
@@ -299,10 +336,14 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		Debug:           req.Debug,
 		RenderBob:       format == "bob",
 		BobOptions:      bobOpts,
-		RenderMarkdown:  format == "markdown",
+		RenderMarkdown:  format == "markdown" && !htmlMarkdown,
 		MarkdownOptions: markdownOpts,
 		RenderPlain:     format == "plain",
 		PlainOptions:    plainOpts,
+
+		RenderHTMLMarkdown:  htmlMarkdown,
+		HTMLMarkdownOptions: htmlMarkdownOpts,
+		Playback:            playbackSettings(req.AudioVolume, req.AudioRate, req.AudioNormalize),
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrNoDictionaries) {
@@ -355,6 +396,80 @@ func (s *Server) handleRescan(w http.ResponseWriter, _ *http.Request) {
 		"healthyDictionaryCount": healthy,
 		"elapsedSeconds":         time.Since(started).Seconds(),
 	})
+}
+
+// handleAudio returns a recording prepared for the link helper, which plays
+// it in its own audio engine so pronunciation needs no browser: decoded to
+// one format, matched in loudness, at the reader's volume and, when asked,
+// after a lead-in of silence. It is POST so that following a link can never
+// reach it, and the guards reject any browser page that tries.
+func (s *Server) handleAudio(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	volume, _ := strconv.Atoi(query.Get("volume"))
+	rate, _ := strconv.Atoi(query.Get("rate"))
+	var normalize *bool
+	if value := query.Get("normalize"); value != "" {
+		flag := value == "1"
+		normalize = &flag
+	}
+	settings := playbackSettings(volume, rate, normalize)
+	settings.LeadIn, _ = strconv.Atoi(query.Get("leadin"))
+	audio, err := s.svc.PrepareAudio(r.PathValue("token"), settings.Clamped())
+	switch {
+	case err == nil:
+		w.Header().Set("Content-Type", "audio/wav")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(audio)
+	case errors.Is(err, playback.ErrUnsupported):
+		writeError(w, http.StatusUnsupportedMediaType, "unsupportedAudio", "this recording cannot be played on this system", "")
+	case errors.Is(err, mdict.ErrNotFound):
+		writeError(w, http.StatusNotFound, "resourceNotFound", "resource not found", "")
+	default:
+		if _, _, resolveErr := s.svc.ResolveResource(r.PathValue("token")); resolveErr == nil {
+			s.log.Warn("audio preparation failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "audioFailed", "the recording could not be prepared", "")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "badToken", "invalid resource token", "")
+	}
+}
+
+// maxNavigationRunes matches what a lookup link may carry.
+const maxNavigationRunes = 200
+
+// handleNavigation records a step the reader took through a dictionary link,
+// reported by the link helper just before it asks Bob to look the word up:
+// to=…&from=… for a link, to=…&back=1 for the way back.
+func (s *Server) handleNavigation(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, "badRequest", "navigation must be a form", "")
+		return
+	}
+	to := strings.TrimSpace(r.PostFormValue("to"))
+	from := strings.TrimSpace(r.PostFormValue("from"))
+	back := r.PostFormValue("back") == "1"
+	if to == "" || (!back && from == "") ||
+		len([]rune(to)) > maxNavigationRunes || len([]rune(from)) > maxNavigationRunes {
+		writeError(w, http.StatusBadRequest, "badRequest", "navigation needs to and either from or back=1", "")
+		return
+	}
+	s.svc.Navigate(from, to, back)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// playbackSettings fills unset values with the defaults and clamps the rest.
+func playbackSettings(volume, rate int, normalize *bool) playback.Settings {
+	settings := playback.Defaults()
+	if volume > 0 {
+		settings.Volume = volume
+	}
+	if rate > 0 {
+		settings.Rate = rate
+	}
+	if normalize != nil {
+		settings.Normalize = *normalize
+	}
+	return settings.Clamped()
 }
 
 func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {

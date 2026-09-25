@@ -368,6 +368,189 @@ func TestV2LookupMarkdownHonoursMultiRecordMode(t *testing.T) {
 	}
 }
 
+// markdownSource "html" converts the record's own HTML with the stylesheet
+// beside the MDX, and keeps every record boundary and selector the structured
+// view has, so the two views name the same records.
+func TestV2LookupMarkdownFromRecordHTML(t *testing.T) {
+	root := t.TempDir()
+	markup := func(pos, definition string) string {
+		return `<link rel="stylesheet" href="synthetic.css"><link rel="stylesheet" href="absent.css">` +
+			`<span class="hw">flimber</span><span class="sense"><span class="pos">` + pos +
+			`</span> <span class="definition">` + definition + `</span><span class="zh">隐藏</span></span>` +
+			`<span class="sense">see <a href="entry://wexal">wexal</a></span>`
+	}
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{
+		{Key: "flimber", HTML: markup("noun", "synthetic noun definition")},
+		{Key: "flimber", HTML: markup("verb", "synthetic verb definition")},
+		{Key: "flimbers", HTML: "@@@LINK=flimber"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	css := `.hw{font-weight:bold} .sense{display:block} .pos{font-style:italic} .zh{display:none}`
+	if err := os.WriteFile(filepath.Join(root, "synthetic.css"), []byte(css), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler := newTestServerForDir(t, root)
+
+	markdownFor := func(body string) string {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup", strings.NewReader(body)))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		var payload struct {
+			Markdown        string `json:"markdown"`
+			EffectiveFormat string `json:"effectiveFormat"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.EffectiveFormat != "markdown" {
+			t.Fatalf("effectiveFormat = %q", payload.EffectiveFormat)
+		}
+		return payload.Markdown
+	}
+
+	separate := markdownFor(`{"query":"flimber","format":"markdown","markdownSource":"html"}`)
+	want := "**flimber**\n\n*noun* synthetic noun definition\n\nsee wexal\n\n## Other entries\n\n- `flimber²`\n"
+	if separate != want {
+		t.Errorf("separate:\n%s\nwant:\n%s", separate, want)
+	}
+
+	combined := markdownFor(`{"query":"flimbers","format":"markdown","markdownSource":"HTML","multiRecordMode":"combined"}`)
+	if !strings.Contains(combined, "## Record 1 of 2") || !strings.Contains(combined, "\n---\n\n## Record 2 of 2") ||
+		!strings.Contains(combined, "synthetic verb definition") {
+		t.Errorf("combined Markdown through a redirect lost a record boundary:\n%s", combined)
+	}
+
+	selected := markdownFor(`{"query":"flimber","format":"markdown","markdownSource":"html","recordOrdinal":2}`)
+	if !strings.Contains(selected, "synthetic verb definition") || !strings.Contains(selected, "- `flimber¹`") {
+		t.Errorf("record selector 2:\n%s", selected)
+	}
+
+	structured := markdownFor(`{"query":"flimber","format":"markdown","markdownSource":"entry"}`)
+	if !strings.HasPrefix(structured, "# flimber") {
+		t.Errorf("markdownSource entry must stay the structured view:\n%s", structured)
+	}
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
+		strings.NewReader(`{"query":"flimber","format":"markdown","markdownSource":"pdf"}`)))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "entry or html") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, newRequest(http.MethodGet, "/v2/dictionaries", nil))
+	var list httpapi.DictionariesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Dictionaries) != 1 || strings.Join(list.Dictionaries[0].MissingStylesheets, ",") != "absent.css" {
+		t.Errorf("missing stylesheets = %+v", list.Dictionaries)
+	}
+}
+
+// Prepared audio is reachable only by POST from a non-browser caller — the
+// link helper — and only for a token the service minted.
+func TestV2AudioIsGuarded(t *testing.T) {
+	handler := newTestServer(t)
+	for _, tc := range []struct {
+		method, origin string
+		want           int
+	}{
+		{http.MethodPost, "", http.StatusBadRequest},
+		{http.MethodGet, "", http.StatusMethodNotAllowed},
+		{http.MethodPost, "https://example.invalid", http.StatusForbidden},
+	} {
+		request := newRequest(tc.method, "/v2/audio/not-a-real-token", nil)
+		if tc.origin != "" {
+			request.Header.Set("Origin", tc.origin)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != tc.want {
+			t.Errorf("%s origin=%q: status %d, want %d", tc.method, tc.origin, recorder.Code, tc.want)
+		}
+	}
+}
+
+// A page reached through a dictionary link leads back to where the reader
+// came from, and every link on it says which page it is on.
+func TestV2NavigationOffersTheWayBack(t *testing.T) {
+	root := t.TempDir()
+	page := func(word, other string) string {
+		return `<p>` + word + ` see <a href="entry://` + other + `">` + other + `</a></p>`
+	}
+	if err := testmdx.Write(filepath.Join(root, "synthetic.mdx"), []testmdx.Entry{
+		{Key: "wexal", HTML: page("wexal", "flimber")},
+		{Key: "flimber", HTML: page("flimber", "wexal")},
+		{Key: "zorble", HTML: page("zorble", "wexal")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{DictionaryDir: root, CacheDir: t.TempDir(), Port: 15321}
+	svc, err := service.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Rescan(); err != nil {
+		t.Fatal(err)
+	}
+	svc.EnableLookupLinks()
+	handler := httpapi.New(svc, slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+
+	markdownFor := func(word string) string {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, newRequest(http.MethodPost, "/v2/lookup",
+			strings.NewReader(`{"query":"`+word+`","format":"markdown","markdownSource":"html"}`)))
+		var payload struct {
+			Markdown string `json:"markdown"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		return payload.Markdown
+	}
+	navigate := func(form string) {
+		t.Helper()
+		request := newRequest(http.MethodPost, "/v2/navigation", strings.NewReader(form))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusNoContent {
+			t.Fatalf("navigation %q: status %d %s", form, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	if got := markdownFor("wexal"); got != "wexal see [flimber](bobmdict://lookup?text=flimber&from=wexal&port=15321)\n" {
+		t.Fatalf("a page looked up by hand:\n%s", got)
+	}
+	navigate("to=flimber&from=wexal")
+	want := "flimber see [wexal](bobmdict://lookup?text=wexal&from=flimber&port=15321)\n\n---\n\n" +
+		"[← wexal](bobmdict://lookup?text=wexal&back=1&port=15321)\n"
+	if got := markdownFor("flimber"); got != want {
+		t.Fatalf("a page reached by a link:\n%s\nwant:\n%s", got, want)
+	}
+	if got := markdownFor("zorble"); strings.Contains(got, "←") {
+		t.Fatalf("a page off the path offers a way back:\n%s", got)
+	}
+	navigate("to=wexal&back=1")
+	if got := markdownFor("wexal"); strings.Contains(got, "←") {
+		t.Fatalf("back at the start of the path:\n%s", got)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := newRequest(http.MethodPost, "/v2/navigation", strings.NewReader("to=flimber"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("a step with no origin: status %d", recorder.Code)
+	}
+}
+
 func TestV2LookupRejectsUnknownFormat(t *testing.T) {
 	handler := newTestServer(t)
 	recorder := httptest.NewRecorder()

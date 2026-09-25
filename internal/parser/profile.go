@@ -31,6 +31,14 @@ type Profile struct {
 	// anything else runs.
 	Ignore []string `json:"ignore,omitempty"`
 
+	// PresentationCSS is a stylesheet for the dictionary-layout Markdown view,
+	// applied after the dictionary's own. It hides interface chrome that stays
+	// visible even with the real stylesheet — tab labels of collapsed panels,
+	// toggle buttons, script-drawn charts. It is not a substitute for a
+	// missing stylesheet, and deliberately not Ignore, which serves the parser
+	// and drops content the page view must keep, such as the printed headword.
+	PresentationCSS string `json:"presentationCSS,omitempty"`
+
 	// Headword locates the entry's own headword.
 	Headword []string `json:"headword,omitempty"`
 
@@ -268,6 +276,25 @@ func (p *Profile) Compile() {
 		})
 	}
 	p.compiled = c
+}
+
+// PresentationScope narrows a parsed record for the dictionary-layout view to
+// the profile's entry root. A nil profile leaves the document whole.
+//
+// Root applies here for the same reason it applies to parsing: a record that
+// ships several regional editions of one entry should show one of them.
+func (p *Profile) PresentationScope(doc *html.Node) *html.Node {
+	if p == nil || doc == nil {
+		return doc
+	}
+	p.Compile()
+	root := doc
+	if !p.compiled.root.IsEmpty() {
+		if matches := QueryAll(doc, p.compiled.root); len(matches) > 0 {
+			root = matches[0]
+		}
+	}
+	return root
 }
 
 // Fingerprint scores how well this profile matches a dictionary sample.

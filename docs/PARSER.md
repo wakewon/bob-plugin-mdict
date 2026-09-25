@@ -162,6 +162,7 @@ them.
 | `match.titleContains` | Weak hint. Repacks rename themselves, so never rely on it alone. |
 | `root` | Narrow to the first match. Use when one record holds several regional editions of the same entry. |
 | `ignore` | Chrome to delete before anything else runs: fold buttons, speaker icons, frequency bars. |
+| `presentationCSS` | A stylesheet for the web-layout Markdown view only, applied after the dictionary's own. Use it to hide interface chrome that stays visible with the real stylesheet — tab labels of collapsed panels, toggle buttons, script-drawn charts. It does not affect parsing, and it is not a substitute for a dictionary's missing stylesheet: `/v2/dictionaries` reports those so the user can install them. |
 | `headword` | The entry's own headword. |
 | `translation` | Nodes holding a translation of neighbouring text, lifted out instead of concatenated into it. |
 | `pronunciation[]` | `selector`, `region` (`uk`/`us`/`neutral`/`other`/`auto`), `ipa`, `audio` (attribute names), `noAudio`. IPA and audio provenance become separate IR fields. |

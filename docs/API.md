@@ -26,6 +26,7 @@ an older plugin.
   "audioAvailable": true,
   "speexAvailable": true,
   "speexDecoder": "speexdec",
+  "lookupLinks": true,
   "uptimeSeconds": 128.4
 }
 ```
@@ -54,11 +55,19 @@ port; it is not required to equal the independently packaged plugin commit.
       "mddVolumes": 1,
       "profile": "generic",
       "health": "ok",
-      "diagnostics": []
+      "diagnostics": [],
+      "missingStylesheets": ["switch.css"]
     }
   ]
 }
 ```
+
+`missingStylesheets` (omitted when empty) lists local stylesheets that the
+dictionary's sampled records link to but that are neither beside the MDX nor in
+an MDD. It is measured at rescan from the same records that choose the parser
+profile. Only `markdownSource: "html"` uses stylesheets, so a dictionary with
+missing ones is still fully usable; copying the named files next to the MDX and
+rescanning improves that view.
 
 `id` is a 16-character, path-independent fingerprint built from MDX file size,
 the header and three spread-out content samples. Moving or renaming the folder
@@ -99,6 +108,8 @@ a reason in `diagnostics`; the others stay usable.
 | `limit` | Stop after this many dictionaries answer. |
 | `maxExamples` | Cap parsed and displayed examples independently per sense or subsense. |
 | `includeExamples` / `includeExtras` | Trim all rendered presentation formats consistently. |
+| `audioVolume` / `audioRate` / `audioNormalize` | Pronunciation playback settings (percentages, default 100; matching default true). They are carried by 🔊 links that play in the background and change nothing else. |
+| `markdownSource` | With `format: "markdown"`: `entry` (default) renders the parsed EntrySet; `html` converts the first match's own record HTML and stylesheets (see below). `includeExamples`, `includeExtras`, `includeGrammar` and `maxExamples` do not apply to `html`. Older v2 services ignore the field and return `entry`. |
 | `multiRecordMode` | Presentation only. `separate` shows one record plus navigation to the others; `combined` shows every record with explicit boundaries. Bob uses ordinal labels/related words, Plain uses a textual separator/copyable selectors, and Markdown uses headings/`---`/code-spanned selectors. |
 | `recordOrdinal` | One-based ordinal in the visible EntrySet after resolved-byte dedupe and parser-empty filtering—not a raw MDX record index. It selects that record in every presentation and overrides `multiRecordMode`. |
 | `debug` | Attach parser provenance notes to each entry. |
@@ -232,6 +243,53 @@ names — and closes with the other records' selectors:
 - `wound³`
 ```
 
+### Markdown from record HTML
+
+`markdownSource: "html"` returns the dictionary's own layout instead of the
+parser's reading of it. The response has the same shape — `effectiveFormat:
+"markdown"`, the IR still in `matches`, the document in `markdown` — and the
+EntrySet still decides which records exist, so `recordOrdinal` and the record
+selectors name the same record in both views.
+
+Each shown record's HTML is converted by `internal/htmlmd`:
+
+- The record's `<link>` stylesheets are read from the dictionary folder, then
+  from the MDD, and inline `<style>` blocks apply too. Only `display`,
+  `visibility`, `font-weight`, `font-style`, `list-style`, horizontal
+  margins/padding and `::before`/`::after` string content are interpreted,
+  with the normal cascade (importance, inline style, specificity, order).
+  Conditional `@media` blocks and state selectors such as `:hover` are skipped.
+  A parser profile may add a `presentationCSS` stylesheet after the
+  dictionary's own, which hides interface chrome.
+- A profile's `root` narrows the record as it does for parsing.
+- `sound://` links and `<audio>` become `[🔊](loopback URL)` after the text
+  they wrapped; `entry://`, `bword://`, in-page and script links are unwrapped
+  to their text; MDD images use loopback URLs; remote and `data:` images and
+  remote stylesheets are dropped, so rendering never touches the network.
+- Tables without a header row that are not a full grid of simple cells are
+  layout, and are flattened into lines.
+
+When the link helper is ready (`lookupLinks: true` in `/v2/status`),
+`entry://` and `bword://` links become `bobmdict://lookup?text=…&from=…&port=…`
+links that look the target up in Bob, `from` naming the page they are on (with
+its record selector when one was used), and sibling selectors become the same
+kind of link. A page reached through such a link ends, after a `---`, with
+`[← previous](bobmdict://lookup?text=previous&back=1&port=…)`; the service
+keeps the path (at most 50 steps, forgotten after 30 idle minutes), so the way
+back can be followed more than one step. The way back is offered only on the
+page a step opens, within 30 seconds of it; the same word looked up later by
+hand shows none, though a link on it still continues the path.
+In both Markdown views, 🔊 becomes `bobmdict://play?port=…&token=…&volume=…&rate=…&normalize=…`
+for recordings the system can play; the helper fetches them from
+`/v2/audio/{token}`. In the web-layout view a 🔊 says UK or US
+when the recording's own markup does. Without the helper, links stay text and
+🔊 keeps its resource URL.
+
+Record boundaries and sibling selectors are exactly those of the structured
+Markdown below, without its `# key` title — the dictionary page prints its own
+headword. If a record converts to nothing, the structured Markdown is returned
+instead.
+
 ### Navigation targets
 
 Bob publishes no Markdown lookup-action contract, so a link in this content
@@ -271,6 +329,27 @@ fixed by configuration, so this endpoint cannot be aimed at the filesystem.
 ```
 
 ---
+
+## `POST /v2/audio/{token}`
+
+Returns one MDD recording as `audio/wav`, prepared for the link helper to play
+in its own audio engine: decoded to 44.1 kHz mono float, matched in loudness
+to -16 LUFS unless `normalize=0`, scaled by `volume` (percent, default 100,
+10–200) and never louder than a -1 dB peak, and preceded by `leadin`
+milliseconds of silence (default 0, at most 1000), shortened by `rate`
+(percent, 50–200) because the helper stretches it along with the word. The
+same guards as every route apply: a request carrying a non-loopback `Origin`
+is refused, and a GET cannot reach it. Bad tokens get `400`, unknown
+resources `404`, and formats the system cannot decode `415`.
+
+## `POST /v2/navigation`
+
+Records a step the reader took through a dictionary link. The link helper
+sends it, as a form, just before it asks Bob to look the word up: `to` and
+`from` for a link, `to` and `back=1` for the way back. Bob passes the plugin
+only the text to look up, so this is how the page that opens learns where the
+reader came from. Returns `204`; a step without `to`, or without either
+`from` or `back=1`, gets `400`.
 
 ## `GET /v2/resource/{token}`
 
