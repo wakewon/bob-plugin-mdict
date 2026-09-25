@@ -251,7 +251,7 @@ status() {
     tag_state=absent
     if git rev-parse "$tag" >/dev/null 2>&1; then tag_state=present; fi
     latest_ci=$(gh run list --workflow CI --branch main --limit 1 --json status,conclusion,url --jq '.[0] | "\(.status)/\(.conclusion // "-") \(.url)"' 2>/dev/null || printf unavailable)
-    latest_release=$(gh release list --repo wakewon/bob-plugin-mdict --limit 1 --json tagName,isDraft,isPrerelease,url --jq '.[0] // "none"' 2>/dev/null || printf none)
+    latest_release=$(gh release list --repo wakewon/bob-plugin-mdict --limit 1 --json tagName,isDraft,isPrerelease --jq '.[0] | if . then {tagName, isDraft, isPrerelease, url: ("https://github.com/wakewon/bob-plugin-mdict/releases/tag/" + .tagName)} else "none" end' 2>/dev/null || printf none)
     appcast=$(jq -r '.versions[0].version // "empty"' appcast.json)
     runtime=$(curl -fsS --max-time 1 http://127.0.0.1:15321/v2/status 2>/dev/null | jq -r '"\(.serviceVersion) (\(.buildCommit)) api=\(.apiVersion)"' || printf unavailable)
     tap=$(gh repo view wakewon/homebrew-tap --json visibility,url --jq '"\(.visibility) \(.url)"' 2>/dev/null || printf absent)
