@@ -14,7 +14,7 @@ CACHE_DIR="$HOME/Library/Caches/bob-mdict"
 
 echo "==> 卸载 bob-mdict"
 
-if [ "${BOB_MDICT_INSTALL_SMOKE:-0}" != "1" ] && launchctl list | grep -q "$LABEL"; then
+if [ "${BOB_MDICT_INSTALL_SMOKE:-0}" != "1" ] && launchctl list 2>/dev/null | awk -v label="$LABEL" '$3 == label { found = 1 } END { exit !found }'; then
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || launchctl unload "$AGENT" 2>/dev/null || true
     echo "==> 服务已停止"
 fi
