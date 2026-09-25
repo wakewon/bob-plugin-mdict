@@ -45,6 +45,10 @@ type Info struct {
 	Profile     string   `json:"profile"`
 	Health      Health   `json:"health"`
 	Diagnostics []string `json:"diagnostics,omitempty"`
+	// MissingStylesheets lists stylesheets the dictionary's records link to
+	// that are neither beside the MDX nor in an MDD. The service fills it in;
+	// the dictionary-layout Markdown view is poorer without them.
+	MissingStylesheets []string `json:"missingStylesheets,omitempty"`
 	// LoadedAt is when the index finished building.
 	LoadedAt time.Time `json:"loadedAt,omitzero"`
 }

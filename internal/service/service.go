@@ -7,17 +7,22 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wakewon/bob-plugin-mdict/internal/bobadapter"
 	"github.com/wakewon/bob-plugin-mdict/internal/config"
 	"github.com/wakewon/bob-plugin-mdict/internal/diagnose"
 	"github.com/wakewon/bob-plugin-mdict/internal/entryir"
+	"github.com/wakewon/bob-plugin-mdict/internal/htmlmd"
+	"github.com/wakewon/bob-plugin-mdict/internal/linkhandler"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdict"
 	"github.com/wakewon/bob-plugin-mdict/internal/mdrender"
 	"github.com/wakewon/bob-plugin-mdict/internal/parser"
+	"github.com/wakewon/bob-plugin-mdict/internal/playback"
 	"github.com/wakewon/bob-plugin-mdict/internal/resource"
 	"github.com/wakewon/bob-plugin-mdict/internal/textrender"
 )
@@ -36,10 +41,22 @@ type Service struct {
 	profileMu      sync.RWMutex
 	profileByDic   map[string]*parser.Profile
 	profileDone    map[string]bool
+	missingStyles  map[string][]string
 	parserOverride string
 
 	cacheMu sync.Mutex
 	cache   *entryCache
+
+	nav *navigation
+
+	// lookupLinks is set once the helper that opens dictionary links in Bob
+	// is installed; until then links render as text.
+	lookupLinks atomic.Bool
+
+	// styleCache holds each dictionary's parsed stylesheets, keyed by
+	// dictionary ID and then by lowercase dictionary-relative path.
+	styleMu    sync.Mutex
+	styleCache map[string]map[string]*htmlmd.Stylesheet
 }
 
 // New builds a service. Dictionaries are discovered but not yet indexed.
@@ -49,16 +66,59 @@ func New(cfg config.Config) (*Service, error) {
 		return nil, err
 	}
 	return &Service{
-		cfg:          cfg,
-		registry:     mdict.NewRegistry(cfg.DictionaryDir),
-		tokenizer:    tokenizer,
-		transcoder:   resource.NewTranscoder(cfg.CacheDir),
-		startedAt:    time.Now(),
-		baseURL:      fmt.Sprintf("http://127.0.0.1:%d", cfg.Port),
-		profileByDic: make(map[string]*parser.Profile),
-		profileDone:  make(map[string]bool),
-		cache:        newEntryCache(256),
+		cfg:           cfg,
+		registry:      mdict.NewRegistry(cfg.DictionaryDir),
+		tokenizer:     tokenizer,
+		transcoder:    resource.NewTranscoder(cfg.CacheDir),
+		startedAt:     time.Now(),
+		baseURL:       fmt.Sprintf("http://127.0.0.1:%d", cfg.Port),
+		profileByDic:  make(map[string]*parser.Profile),
+		profileDone:   make(map[string]bool),
+		missingStyles: make(map[string][]string),
+		cache:         newEntryCache(256),
+		styleCache:    make(map[string]map[string]*htmlmd.Stylesheet),
+		nav:           newNavigation(),
 	}, nil
+}
+
+// EnableLookupLinks makes dictionary links in the web-layout view clickable
+// lookups. The caller has made sure something handles them.
+func (s *Service) EnableLookupLinks() { s.lookupLinks.Store(true) }
+
+// LookupLinksEnabled reports whether dictionary links are rendered as links.
+func (s *Service) LookupLinksEnabled() bool { return s.lookupLinks.Load() }
+
+// playURL is the link that plays a recording in the background with the
+// reader's settings, or "" when the helper is not ready or the recording
+// cannot be played here; the caller then keeps the resource URL.
+func (s *Service) playURL(audio *entryir.Audio, settings playback.Settings) string {
+	if audio == nil || !s.LookupLinksEnabled() || !playback.Supported(audio.MIMEType) {
+		return ""
+	}
+	settings = settings.Clamped()
+	return linkhandler.PlayURL(s.cfg.Port, audio.Token, linkhandler.PlayOptions{
+		Volume: settings.Volume, Rate: settings.Rate, Normalize: settings.Normalize,
+	})
+}
+
+// Navigate records a step the reader took through a dictionary link: from
+// one page to another, or back to the page before.
+func (s *Service) Navigate(from, to string, back bool) {
+	if back {
+		s.nav.back(to)
+		return
+	}
+	s.nav.visit(from, to)
+}
+
+// PrepareAudio returns the recording behind a resource token as a WAV file
+// ready for the link helper to play.
+func (s *Service) PrepareAudio(token string, settings playback.Settings) ([]byte, error) {
+	data, contentType, err := s.ResolveResource(token)
+	if err != nil {
+		return nil, err
+	}
+	return playback.Prepare(filepath.Join(s.cfg.CacheDir, "playback"), data, contentType, settings)
 }
 
 // Config exposes the resolved configuration.
@@ -81,11 +141,16 @@ func (s *Service) Rescan() error {
 	s.profileMu.Lock()
 	s.profileByDic = make(map[string]*parser.Profile)
 	s.profileDone = make(map[string]bool)
+	s.missingStyles = make(map[string][]string)
 	s.profileMu.Unlock()
 
 	s.cacheMu.Lock()
 	s.cache = newEntryCache(256)
 	s.cacheMu.Unlock()
+
+	s.styleMu.Lock()
+	s.styleCache = make(map[string]map[string]*htmlmd.Stylesheet)
+	s.styleMu.Unlock()
 
 	s.registry.LoadAll()
 	// Resolve profiles up front so the first user lookup is not slowed by
@@ -107,13 +172,24 @@ func (s *Service) profileFor(dict *mdict.Dictionary) *parser.Profile {
 	}
 	s.profileMu.RUnlock()
 
-	profile := s.detectProfile(dict)
+	profile, missing := s.detectProfile(dict)
 
 	s.profileMu.Lock()
 	s.profileDone[id] = true
 	s.profileByDic[id] = profile
+	s.missingStyles[id] = missing
 	s.profileMu.Unlock()
 	return profile
+}
+
+// MissingStylesheets reports the stylesheets a dictionary's sampled records
+// link to but that cannot be found. It is measured from the same records
+// that choose the profile, so it costs nothing beyond the rescan.
+func (s *Service) MissingStylesheets(dict *mdict.Dictionary) []string {
+	s.profileFor(dict)
+	s.profileMu.RLock()
+	defer s.profileMu.RUnlock()
+	return append([]string(nil), s.missingStyles[dict.ID()]...)
 }
 
 // detectProfile fingerprints a dictionary from representative records.
@@ -122,18 +198,19 @@ func (s *Service) profileFor(dict *mdict.Dictionary) *parser.Profile {
 // probing English words — and several records vote, so one coincidental match
 // cannot decide. Ambiguous or minority evidence resolves to generic, which is
 // always a working parser rather than a wrong one.
-func (s *Service) detectProfile(dict *mdict.Dictionary) *parser.Profile {
+func (s *Service) detectProfile(dict *mdict.Dictionary) (*parser.Profile, []string) {
 	info := dict.Info()
 	if info.Health != mdict.HealthOK {
-		return nil
+		return nil, nil
 	}
 	samples := diagnose.Samples(dict, diagnose.DetectionSampling)
+	missing := missingStylesheets(dict, samples)
 	title := info.Title + " " + path.Base(dict.SourcePath())
 	profile, _ := diagnose.SelectProfile(title, samples)
 	if override := strings.TrimSpace(s.parserOverride); override != "" {
 		profile, _ = diagnose.ApplyProfileOverride(profile, override)
 	}
-	return profile
+	return profile, missing
 }
 
 // SetParserOverride forces every dictionary onto one parser, for development
@@ -220,7 +297,9 @@ type Result struct {
 	// and any other client can ignore Bob entirely.
 	Bob *bobadapter.Dict `json:"bob,omitempty"`
 	// Markdown is user-facing dictionary content, present only for
-	// format:"markdown". Diagnostic provenance is never enabled here.
+	// format:"markdown". Diagnostic provenance is never enabled here. With
+	// markdownSource:"html" it is converted from the record's own HTML
+	// instead of rendered from the EntrySet.
 	Markdown string `json:"markdown,omitempty"`
 	// Plain is a complete user-facing plain-text document. It is returned for
 	// explicit plain requests and when a requested Bob card conservatively
@@ -277,6 +356,13 @@ type LookupOptions struct {
 	// RenderPlain adds plain text rendered directly from the canonical EntrySet.
 	RenderPlain  bool
 	PlainOptions textrender.Options
+	// RenderHTMLMarkdown adds Markdown converted from the first match's own
+	// record HTML and stylesheets: the dictionary's layout rather than the
+	// parser's reading of it.
+	RenderHTMLMarkdown  bool
+	HTMLMarkdownOptions HTMLMarkdownOptions
+	// Playback is carried by 🔊 links that play in the background.
+	Playback playback.Settings
 }
 
 // Lookup resolves a query across the selected dictionaries.
@@ -321,10 +407,12 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 	if len(result.Matches) == 0 && opts.Mode == ModeSmart {
 		result.Suggestions = s.suggest(dicts, query, 8)
 	}
-	if (opts.RenderBob || opts.RenderMarkdown || opts.RenderPlain) && len(result.Matches) > 0 {
+	if (opts.RenderBob || opts.RenderMarkdown || opts.RenderPlain || opts.RenderHTMLMarkdown) && len(result.Matches) > 0 {
 		set := result.Matches[0].EntrySet()
 		ordinal := opts.BobOptions.RecordOrdinal
-		if opts.RenderMarkdown {
+		if opts.RenderHTMLMarkdown {
+			ordinal = opts.HTMLMarkdownOptions.RecordOrdinal
+		} else if opts.RenderMarkdown {
 			ordinal = opts.MarkdownOptions.RecordOrdinal
 		} else if opts.RenderPlain {
 			ordinal = opts.PlainOptions.RecordOrdinal
@@ -352,6 +440,7 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 			result.EffectiveFormat = "bob"
 		}
 	}
+	opts.MarkdownOptions.AudioURL = func(audio *entryir.Audio) string { return s.playURL(audio, opts.Playback) }
 	if opts.RenderMarkdown && len(result.Matches) > 0 {
 		result.Markdown = mdrender.RenderEntrySet(result.Matches[0].EntrySet(), opts.MarkdownOptions)
 		result.EffectiveFormat = "markdown"
@@ -359,6 +448,17 @@ func (s *Service) Lookup(query string, opts LookupOptions) (*Result, error) {
 	if opts.RenderPlain && len(result.Matches) > 0 {
 		result.Plain = textrender.RenderEntrySet(result.Matches[0].EntrySet(), opts.PlainOptions)
 		result.EffectiveFormat = "plain"
+	}
+	if opts.RenderHTMLMarkdown && len(result.Matches) > 0 {
+		match := result.Matches[0]
+		dict, _ := s.registry.ByID(match.DictionaryID)
+		result.Markdown = s.renderHTMLMarkdown(dict, match.EntrySet(), opts.HTMLMarkdownOptions, opts.Playback)
+		if result.Markdown == "" {
+			// A record whose HTML converts to nothing — a script-built page,
+			// say — still has its parsed reading to show.
+			result.Markdown = mdrender.RenderEntrySet(match.EntrySet(), opts.MarkdownOptions)
+		}
+		result.EffectiveFormat = "markdown"
 	}
 	return result, nil
 }

@@ -153,6 +153,7 @@
   {
     "id": "ldoce5pp",
     "name": "Longman Dictionary of Contemporary English 5++ (bilingual)",
+    "presentationCSS": ".asset_intro,.foldsign,.lm5ppMenu,.lm5pp_popup{display:none}",
     "match": {
       "titleContains": [
         "LDOCE",
@@ -294,6 +295,7 @@
   {
     "id": "collins-cobuild-overhaul",
     "name": "Collins COBUILD Advanced Learner's Dictionary (bilingual overhaul)",
+    "presentationCSS": ".trend{display:none} .word_entry>.pron .pron:after{content:\"/\"} .word_entry>.pron:after{content:none}",
     "match": {
       "titleContains": [
         "Collins",
@@ -391,6 +393,7 @@
   {
     "id": "ode-living-online",
     "name": "Oxford Living Dictionaries / Oxford Dictionary of English (online)",
+    "presentationCSS": ".moreInfo,.sectionswitch{display:none}",
     "match": {
       "titleContains": [
         "Oxford Living",

@@ -63,12 +63,16 @@ Three facts drove the choice:
 | `github.com/rodaine/table` | v1.3.0 | MIT | Pulled in by the engine |
 | `github.com/fatih/color` | v1.18.0 | MIT | Pulled in by the engine |
 | `github.com/mattn/go-colorable` | v0.1.14 | MIT | Transitive |
-| `github.com/mattn/go-isatty` | v0.0.20 | MIT | Transitive |
+| `github.com/mattn/go-isatty` | v0.0.22 | MIT | Transitive |
 | `github.com/redis/go-redis/v9` | v9.18.0 | BSD-2-Clause | Optional engine index store; unused here |
 | `github.com/cespare/xxhash/v2` | v2.3.0 | MIT | Transitive via go-redis |
 | `github.com/dgryski/go-rendezvous` | 2020-08-23 | MIT | Transitive via go-redis |
 | `go.uber.org/atomic` | v1.11.0 | MIT | Transitive |
 | `golang.org/x/net` | v0.58.0 | BSD-3-Clause | HTML tokenizer/parser |
+| `github.com/JohannesKaufmann/html-to-markdown/v2` | v2.5.2 | MIT | HTML-to-Markdown conversion for the web-layout view |
+| `github.com/JohannesKaufmann/dom` | v0.3.1 | MIT | Transitive via html-to-markdown |
+| `github.com/andybalholm/cascadia` | v1.3.5 | BSD-2-Clause | CSS selector matching for dictionary stylesheets |
+| `github.com/tdewolff/parse/v2` | v2.8.16 | MIT | CSS tokenizer/parser for dictionary stylesheets |
 | `golang.org/x/text` | v0.41.0 | BSD-3-Clause | Unicode normalization |
 | `golang.org/x/sys` | v0.47.0 | BSD-3-Clause | Transitive |
 

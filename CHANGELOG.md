@@ -3,6 +3,49 @@
 All notable product changes are recorded here. Product versions and the local
 HTTP API version are independent; MDict for Bob 1.2.0 continues to use API v2.
 
+## [Unreleased]
+
+- Add a **Markdown (web layout)** presentation that shows the dictionary's own
+  page instead of the parsed entry. The service reads the record's HTML with
+  the dictionary's stylesheets (beside the MDX, then in the MDD), applies what
+  decides what a reader sees — display, visibility, emphasis, list markers,
+  horizontal spacing and `::before`/`::after` text — and converts the result
+  with `html-to-markdown`. Layout tables are flattened, icon-font glyphs are
+  dropped, and nothing is fetched from the network. Record boundaries and
+  `Other entries` selectors match the structured Markdown. The API adds
+  `markdownSource: "html"` to `format: "markdown"`; older v2 services ignore it.
+- Report stylesheets a dictionary links to but that are not installed, as
+  `missingStylesheets` in `/v2/dictionaries` and `缺少样式表` in `/list`.
+  Profiles may declare `presentationCSS` to hide interface chrome in the web
+  layout; the built-in profiles hide LDOCE's menu bar and collapsed-panel
+  labels, Collins' usage-trend chart and ODE's toggle buttons.
+- Make dictionary links and `Other entries` in the web layout clickable
+  lookups in Bob, and end a page reached that way with a **← word** link back,
+  along a path that can be walked back step by step.
+- Play 🔊 in both Markdown views in the background instead of opening a
+  browser, labelled UK or US in the web layout when the recording's markup
+  says which. New settings: pronunciation volume, speed from 0.5× to 1.5×
+  with pitch preserved, and loudness matching (ITU-R BS.1770 to -16 LUFS,
+  peak-limited to -1 dB).
+- Links and playback go through a small helper app the service builds on the
+  Mac with `osacompile` and signs locally, so no developer certificate is
+  involved. It receives `bobmdict://` links, asks Bob to look words up through
+  Bob's AppleScript interface, and plays recordings prepared by the new
+  loopback `POST /v2/audio/{token}` in an audio engine it keeps running between
+  clicks. Steps through links reach the service by `POST /v2/navigation`.
+  Without the helper, links stay text. Bob asks before opening such links
+  unless **Opening Links in Translation Results** is set to **Never Ask**.
+- Fix recordings and entries at key-block boundaries running into the records
+  after them. The MDict engine left the last entry of each key block without
+  an end, so OALD8's UK "greeting" played fourteen seconds of other words and
+  a headword's HTML could include the entries after it; about 2,100 entries in
+  the four development dictionaries were affected.
+- Resource tokens are now lowercase base32, which stays intact inside Markdown
+  links. Tokens remain opaque; clients that treated them so are unaffected.
+- Fix the installer and uninstaller mistaking another launchd job whose name
+  contains the service's label for the service.
+- Document known issues and limitations in `docs/KNOWN_ISSUES.md`.
+
 ## [1.2.0] - 2026-09-25
 
 - Adapt Markdown presentation to Bob 1.21.0's native Markdown rendering. The

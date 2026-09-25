@@ -31,6 +31,7 @@ Bob plugin → http://127.0.0.1:15321 → MDX/MDD → semantic parser
                                               → EntrySet IR → Bob toDict
                                                             → Plain Text
                                                             → Markdown
+                          record HTML + dictionary CSS → web-layout Markdown
 ```
 
 `bob-mdict` is a native Go service that owns the indexes, parsing and MDD
@@ -171,6 +172,56 @@ Markdown rendering needs Bob 1.21.0 or later on macOS 13 or later. The plugin
 still installs on Bob 1.20.0, where the Markdown option shows the document's raw
 source; Dictionary card and Plain Text are unaffected.
 
+**Markdown (web layout)** shows the dictionary's own page instead of the
+parsed entry. The service reads the record's HTML together with the
+dictionary's stylesheets — beside the MDX, then inside the MDD — works out from
+them which parts start a new line, are hidden, bold or italic, and converts the
+result with [html-to-markdown](https://github.com/JohannesKaufmann/html-to-markdown).
+Pronunciation links become 🔊 links to the MDD audio, MDD illustrations are
+shown, and nothing is fetched from the network. It keeps the same record
+boundaries and `Other entries` selectors as the structured Markdown, but the
+example, grammar and extras options do not apply: it shows the page as
+published. If `/list` shows `缺少样式表` for a dictionary, copy those `.css`
+files next to its `.mdx` and rescan; the view is much closer to the original
+with them.
+
+#### Clickable lookups and background pronunciation
+
+In the web-layout view, a word the dictionary links to, and each `Other
+entries` selector, can be clicked to look it up in Bob; in both Markdown views
+a 🔊 plays the recording without opening a browser, labelled UK or US when the
+recording says which. Bob hands a clicked link to macOS, and only an app can
+receive one, so the service keeps a small helper for it:
+`~/Library/Application Support/bob-mdict/MDict Lookup.app`. It is an
+AppleScript applet that the service compiles on your Mac with the system's own
+`osacompile` and signs locally, so it needs no developer certificate and
+nothing extra is downloaded. It passes a word to Bob through Bob's documented
+AppleScript interface, and plays recordings, prepared by the service, in an
+audio engine it keeps running between clicks — so the next word plays at once
+and a Bluetooth headset is not woken again; when the engine had stopped, a
+short silence precedes the word so a waking headset does not swallow it. If
+the helper cannot be set up, links stay plain text and 🔊 opens the recording
+as before.
+
+The helper records each click, and anything that went wrong, in
+`~/Library/Logs/bob-mdict-helper.log`.
+
+A page reached this way ends with a **← word** link back to the page you came
+from, and following links further builds a path you can walk back step by
+step. A word you look up yourself starts no path.
+
+The first lookup click asks whether **MDict Lookup** may control Bob; allow
+it. Bob itself asks "Open this link?" for any link that is not http, https or
+mailto. To click without that prompt, set **Opening Links in Translation
+Results** to **Never Ask** in Bob's settings — this applies to links from every
+service in Bob.
+
+Pronunciation volume, speed (without a pitch change) and loudness matching
+are plugin settings. Matching measures each recording's loudness to ITU-R
+BS.1770 with macOS's own audio tools and brings it to -16 LUFS, the level of
+Apple's Sound Check, so dictionaries recorded at different levels sound alike;
+gain is always limited so the peak stays below -1 dB.
+
 **Plain Text** is rendered directly from the same EntrySet, using headings,
 paragraphs, indentation and blank lines rather than Markdown syntax. Combined
 mode uses a textual record separator; Separate mode lists copyable sibling
@@ -190,8 +241,11 @@ parts, while prose notes remain additions.
 |---|---|---|
 | Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
 | Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
-| Presentation | Dictionary card | Choose Dictionary card, Plain Text or Markdown. Markdown is declared to Bob as `content.format: "markdown"` and drawn natively by Bob 1.21.0+ on macOS 13+; Plain Text (and the automatic free-form fallback) is declared as `plain`. Older Bob versions ignore `content` and show the same document from `toParagraphs` as text, so Markdown appears as raw source there. |
+| Presentation | Dictionary card | Choose Dictionary card, Plain Text, Markdown (structured) or Markdown (web layout, converted from the dictionary's own HTML and CSS). Markdown is declared to Bob as `content.format: "markdown"` and drawn natively by Bob 1.21.0+ on macOS 13+; Plain Text (and the automatic free-form fallback) is declared as `plain`. Older Bob versions ignore `content` and show the same document from `toParagraphs` as text, so Markdown appears as raw source there. |
 | Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
+| Pronunciation volume | 100% | Volume of 🔊 in Markdown, played by the service; applied after loudness matching and always peak-limited. |
+| Pronunciation speed | 1.0× | Playback speed of 🔊 in Markdown, 0.5× to 1.5×, without a pitch change (Apple's time-stretch unit). |
+| Pronunciation loudness matching | on | Bring every recording to -16 LUFS (ITU-R BS.1770) so dictionaries sound alike. |
 | Show examples | on | Show examples and bilingual translations. |
 | Show grammar | on | Show detailed grammatical qualifiers. Does not hide POS, labels, or patterns. |
 | Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
@@ -346,4 +400,4 @@ BOB_MDICT_TEST_DICTIONARIES=/path/to/dictionaries go test ./internal/service -v
 ```
 
 More detail: [Architecture](docs/ARCHITECTURE.md) · [Parser](docs/PARSER.md) ·
-[HTTP API](docs/API.md)
+[HTTP API](docs/API.md) · [Known issues and limitations](docs/KNOWN_ISSUES.md)

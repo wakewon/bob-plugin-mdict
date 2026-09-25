@@ -21,6 +21,9 @@ bob-mdict  (127.0.0.1 only)
  ├── bobadapter    selected view → one Bob toDict (+ sibling navigation)
  ├── textrender    EntrySet → user Plain Text (sibling of bobadapter)
  ├── mdrender      EntrySet → user/diagnostic Markdown (sibling of bobadapter)
+ ├── htmlmd        record HTML + dictionary CSS → web-layout Markdown
+ ├── linkhandler   locally built helper app for bobmdict:// lookup and play links
+ ├── playback      recordings prepared for the helper: decoded, loudness-matched, padded
  ├── validate      development only: real backend over real records, ranked
  └── resource      opaque tokens, MIME, Range, SPX→WAV disk cache
 ```
@@ -73,6 +76,40 @@ None can see another adapter, and none reads entry HTML. A second semantic path
 — MDX HTML straight to Markdown — would drift from the parser the moment either
 changed, and would have to relearn everything the parser already knows.
 
+### The web-layout view is not a semantic path
+
+Once Bob could draw Markdown, a richly typeset dictionary read better in its
+own layout than in any layout this project imposes. `internal/htmlmd` provides
+that as a fourth presentation, and it stays out of the argument above by not
+understanding anything:
+
+```text
+EntrySet ─── which records, in what order ───┐
+record HTML + dictionary stylesheets ────────┴→ htmlmd → Markdown
+```
+
+It never decides what a definition or an example is. It reads the stylesheet
+for the few properties that decide what a reader sees — whether an element
+starts a line, is hidden, is bold or italic, is a list with markers, is
+separated by a margin, carries `::before` text — and hands plain HTML to
+`github.com/JohannesKaufmann/html-to-markdown`, which does the general
+conversion. Dictionary layout lives almost entirely in CSS (a sense, an example
+and a translation are all `<span>`s), so without this step a converter prints
+a record as one paragraph and shows both halves of every language switch.
+
+What it shares with the other presentations is the EntrySet's record list:
+records the parser found empty are absent here too, ordinals and sibling
+selectors are identical, and `multiRecordMode` means the same thing. What it
+shares with the parser is only a profile's `root`. A profile's `ignore` list
+serves parsing — it deliberately removes the printed headword or a grammar box —
+so the view has its own optional `presentationCSS`, a stylesheet applied after
+the dictionary's own that hides interface chrome such as collapsed-panel tabs.
+
+A dictionary's own stylesheet is not replaced when it is missing. The service
+reports missing stylesheets in `/v2/dictionaries` and `/list`, and the user
+installs them; a hand-written substitute would be a guess at someone else's
+layout.
+
 Diagnostic rendering stays deterministic and may include provenance while
 omitting per-process resource URLs. User rendering contains only dictionary
 content and enables resolved loopback audio/image links where the format can
@@ -121,6 +158,19 @@ replace one function here and would touch neither the parser nor the IR nor the
 API version. Semantic vocabulary lists — synonyms, antonyms, collocations, word
 family — are deliberately *not* code-spanned, so a code span keeps meaning "this
 is somewhere you can go".
+
+The web-layout view goes one step further. Bob does open a Markdown link
+through macOS, so a link to a URL scheme some app handles does work; the
+service keeps such an app — a locally compiled AppleScript applet — and, once
+it is ready, writes dictionary links and sibling selectors as
+`bobmdict://lookup?text=…`, which the applet passes to Bob's documented
+AppleScript request. 🔊 in both Markdown views becomes `bobmdict://play…` the
+same way: the applet fetches the recording, prepared by the service, and plays
+it in an AVAudioEngine it keeps running between clicks, so pronunciation needs
+no browser and a second click neither waits for a new player process nor
+restarts a Bluetooth stream. The structured view keeps its
+code spans for navigation for now; moving it over is the one-function change
+described above.
 
 Free-form sections may carry a deliberately small ordered rich vocabulary:
 paragraph text, explicit headings, list items, resolved MDD images and
@@ -400,3 +450,14 @@ something worth protecting even though it only listens on loopback:
   nothing else.
 - Request bodies are capped; no shell, no outbound fetch, no filesystem paths in
   any response.
+- `POST /v2/audio/{token}` serves prepared audio to the link helper, so it
+  accepts only a token the service minted, only by POST, and only without a
+  foreign `Origin`. The link helper that calls it checks port, token and settings
+  against exact patterns before anything reaches a shell, and contacts only
+  `127.0.0.1`. It is built on the user's machine rather than downloaded, so it
+  carries no quarantine and needs only an ad-hoc signature.
+- The web-layout view reads `.css` files from the dictionary's own folder, by a
+  path taken from the record, cleaned and confined to that folder and capped in
+  size. Their bytes never reach a response; only the handful of properties the
+  converter interprets affect the output. Remote stylesheets and images are
+  never fetched.

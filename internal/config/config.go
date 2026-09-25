@@ -20,6 +20,10 @@ type Config struct {
 	Port int
 	// Debug enables verbose logging and the debug lookup fields.
 	Debug bool
+	// SupportDir holds files the service maintains for itself, such as the
+	// helper that turns dictionary links into Bob lookups. Empty disables
+	// anything that needs it.
+	SupportDir string
 }
 
 // appSupportDir returns ~/Library/Application Support/bob-mdict.
@@ -63,6 +67,7 @@ func Default() Config {
 		CacheDir:      cacheDir,
 		Port:          port,
 		Debug:         os.Getenv("BOB_MDICT_DEBUG") == "1",
+		SupportDir:    base,
 	}
 }
 

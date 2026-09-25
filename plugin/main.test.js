@@ -92,6 +92,51 @@ test('Markdown presentation declares content format markdown and keeps a toParag
     assert.equal('toDict' in completion.result, false);
 });
 
+// The web-layout view is Markdown too; only its source differs. It must ask
+// for markdownSource "html" and hand the document to Bob exactly like the
+// structured Markdown view.
+test('Web-layout presentation requests HTML-sourced Markdown', () => {
+    for (const configured of [undefined, 'combined']) {
+        let completion;
+        const markdown = '**flimber** *noun*\n\n## Other entries\n\n- `flimber²`\n';
+        const loaded = load({ presentationMode: 'html', multiRecordMode: configured }, request => {
+            assert.equal(request.body.format, 'markdown');
+            assert.equal(request.body.markdownSource, 'html');
+            assert.equal(request.body.multiRecordMode, configured || 'separate');
+            request.handler(response(200, { effectiveFormat: 'markdown', markdown, matches: [{}] }));
+        });
+        loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, value => { completion = value; }));
+        assert.equal(completion.result.content.format, 'markdown');
+        assert.equal(completion.result.content.text, markdown);
+        assert.equal(completion.result.toParagraphs[0], markdown);
+    }
+});
+
+test('Playback settings travel with every lookup', () => {
+    for (const [options, expected] of [
+        [{}, { audioVolume: 100, audioRate: 100, audioNormalize: true }],
+        [{ audioVolume: '150', audioRate: '50', audioNormalize: 'disable' }, { audioVolume: 150, audioRate: 50, audioNormalize: false }],
+        [{ audioVolume: 'loud', audioRate: '-1' }, { audioVolume: 100, audioRate: 100, audioNormalize: true }]
+    ]) {
+        const loaded = load(Object.assign({ presentationMode: 'html' }, options), request => {
+            assert.equal(request.body.audioVolume, expected.audioVolume);
+            assert.equal(request.body.audioRate, expected.audioRate);
+            assert.equal(request.body.audioNormalize, expected.audioNormalize);
+            assert.equal('audioLeadIn' in request.body, false);
+            request.handler(response(200, { markdown: '# flimber\n', matches: [{}] }));
+        });
+        loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, () => {}));
+    }
+});
+
+test('Structured Markdown never asks for the HTML source', () => {
+    const loaded = load({ presentationMode: 'markdown' }, request => {
+        assert.equal('markdownSource' in request.body, false);
+        request.handler(response(200, { markdown: '# flimber\n', matches: [{}] }));
+    });
+    loaded.context.translate(bobQuery({ text: 'flimber', originalText: 'flimber' }, () => {}));
+});
+
 test('Plain presentation declares content format plain and keeps a toParagraphs fallback', () => {
     let completion;
     const plain = 'flimber\n\nnoun\n1. synthetic definition\n';
@@ -179,7 +224,7 @@ test('Bob-preprocessed /list uses originalText and never performs a lookup', () 
             request.handler(response(200, {
                 directory: '/synthetic/dictionaries',
                 dictionaries: [
-                    { id: 'abc123', title: 'Synthetic Learner Dictionary', health: 'ok' },
+                    { id: 'abc123', title: 'Synthetic Learner Dictionary', health: 'ok', missingStylesheets: ['synthetic.css', 'switch.css'] },
                     { id: 'broken1', title: 'Broken Synthetic Dictionary', health: 'unavailable', diagnostics: ['test diagnostic'] }
                 ]
             }));
@@ -189,6 +234,8 @@ test('Bob-preprocessed /list uses originalText and never performs a lookup', () 
         assert.equal(completion.result.toParagraphs[0], 'MDict dictionaries');
         assert.match(completion.result.toParagraphs[1], /Synthetic Learner Dictionary/);
         assert.match(completion.result.toParagraphs[1], /ID: abc123/);
+        assert.match(completion.result.toParagraphs[1], /缺少样式表：synthetic\.css、switch\.css/);
+        assert.doesNotMatch(completion.result.toParagraphs[2], /缺少样式表/);
         assert.match(completion.result.toParagraphs[2], /状态：不可用/);
         assert.match(completion.result.toParagraphs[2], /test diagnostic/);
         // Bob 1.21+ would read several toParagraphs elements as "lines" mapped

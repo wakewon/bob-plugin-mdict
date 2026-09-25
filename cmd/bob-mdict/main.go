@@ -25,6 +25,7 @@ import (
 
 	"github.com/wakewon/bob-plugin-mdict/internal/config"
 	"github.com/wakewon/bob-plugin-mdict/internal/httpapi"
+	"github.com/wakewon/bob-plugin-mdict/internal/linkhandler"
 	"github.com/wakewon/bob-plugin-mdict/internal/service"
 	"github.com/wakewon/bob-plugin-mdict/internal/version"
 )
@@ -247,6 +248,23 @@ func serve(svc *service.Service, log *slog.Logger) error {
 		"count", total,
 		"healthy", healthy,
 		"elapsed", elapsed.Round(time.Millisecond))
+
+	// The link helper is set up beside the running service rather than by an
+	// installer, so every installation path gets it and it is rebuilt only
+	// when it changes. Until it is ready, and if it cannot be, dictionary
+	// links are plain text.
+	go func() {
+		if cfg.SupportDir == "" {
+			return
+		}
+		app, err := linkhandler.Ensure(context.Background(), cfg.SupportDir)
+		if err != nil {
+			log.Warn("dictionary links stay plain text", "reason", err)
+			return
+		}
+		svc.EnableLookupLinks()
+		log.Info("dictionary links open in Bob", "helper", app)
+	}()
 
 	server := &http.Server{
 		Handler:           httpapi.New(svc, log).Handler(),

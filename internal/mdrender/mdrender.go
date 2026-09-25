@@ -54,6 +54,10 @@ type Options struct {
 	// every run and destroy snapshot comparison. With it off, an available
 	// recording is still reported — just as a fact rather than as a link.
 	AudioLinks bool
+	// AudioURL, when set, chooses the link for a recording in place of its
+	// resource URL; "" keeps the resource URL. The service uses it to play a
+	// recording in the background instead of opening it in a browser.
+	AudioURL func(*entryir.Audio) string
 	// ImageLinks writes resolved inline MDD illustrations at their original
 	// prose position. It is disabled for deterministic diagnostic snapshots.
 	ImageLinks bool
@@ -385,7 +389,13 @@ func (d *document) renderPronunciations(items []entryir.Pronunciation) {
 func (d *document) audio(item *entryir.Audio, region entryir.Region) string {
 	label := "audio " + regionLabel(region)
 	if d.opts.AudioLinks && item.URL != "" {
-		return "[🔊 " + label + "](" + item.URL + ")"
+		url := item.URL
+		if d.opts.AudioURL != nil {
+			if chosen := d.opts.AudioURL(item); chosen != "" {
+				url = chosen
+			}
+		}
+		return "[🔊 " + label + "](" + url + ")"
 	}
 	return "🔊 " + label
 }

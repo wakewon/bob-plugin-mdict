@@ -16,7 +16,7 @@
       "type": "text",
       "title": "本地服务地址",
       "defaultValue": "http://127.0.0.1:15321",
-      "desc": "bob-mdict 本地服务的地址。默认无需修改。\n\n只有在你用 --port 改过端口时才需要调整。",
+      "desc": "bob-mdict 本地服务的地址，一般无需修改。",
       "textConfig": {
         "type": "visible",
         "placeholderText": "http://127.0.0.1:15321"
@@ -26,7 +26,7 @@
       "identifier": "dictionaryID",
       "type": "text",
       "title": "词典 ID（可选）",
-      "desc": "留空：自动使用第一本包含查询词的词典。\n\n填写：固定只查询该 ID。请在 Bob 中使用 MDict 查询 /list 查看所有词典 ID。",
+      "desc": "留空时使用第一本收录该词的词典；填写后只查这一本。查询 /list 可查看词典 ID。",
       "textConfig": {
         "type": "visible",
         "placeholderText": "留空表示自动使用首个命中"
@@ -37,7 +37,7 @@
       "type": "menu",
       "title": "显示方式",
       "defaultValue": "dict",
-      "desc": "词典卡片优先使用 Bob 原生显示；自由排版词条会自动改用纯文本。纯文本和 Markdown 都由本地服务从同一结构化词条直接生成。Markdown 由 Bob 1.21.0 及以上（macOS 13+）原生渲染；更早的版本会显示 Markdown 原文。",
+      "desc": "Markdown 需要 Bob 1.21.0 及以上。网页排版保留词典原有版式，不受例句、语法、扩展内容设置影响。点击链接时若每次弹出确认，可在 Bob 设置中将“打开翻译结果中的链接”改为“从不确认”。",
       "menuValues": [
         {
           "title": "词典卡片",
@@ -48,8 +48,12 @@
           "value": "plain"
         },
         {
-          "title": "Markdown",
+          "title": "Markdown（结构化）",
           "value": "markdown"
+        },
+        {
+          "title": "Markdown（网页排版）",
+          "value": "html"
         }
       ]
     },
@@ -58,7 +62,7 @@
       "type": "menu",
       "title": "重复词条显示方式",
       "defaultValue": "separate",
-      "desc": "分条浏览：只显示一个词条记录，并提供可点击的其他记录入口。\n\n合并显示：在同一结果中使用 ¹ ² ³ 标记展示所有记录。",
+      "desc": "同一词头有多条记录时：分条浏览只显示一条并附其他记录入口；合并显示在同一结果中列出全部。",
       "menuValues": [
         {
           "title": "分条浏览",
@@ -67,6 +71,85 @@
         {
           "title": "合并显示",
           "value": "combined"
+        }
+      ]
+    },
+    {
+      "identifier": "audioVolume",
+      "type": "menu",
+      "title": "发音音量",
+      "defaultValue": "100",
+      "desc": "Markdown 中点击 🔊 时的音量。",
+      "menuValues": [
+        {
+          "title": "50%",
+          "value": "50"
+        },
+        {
+          "title": "75%",
+          "value": "75"
+        },
+        {
+          "title": "100%",
+          "value": "100"
+        },
+        {
+          "title": "125%",
+          "value": "125"
+        },
+        {
+          "title": "150%",
+          "value": "150"
+        },
+        {
+          "title": "200%",
+          "value": "200"
+        }
+      ]
+    },
+    {
+      "identifier": "audioRate",
+      "type": "menu",
+      "title": "发音语速",
+      "defaultValue": "100",
+      "desc": "Markdown 中点击 🔊 时的语速，变速不变调。",
+      "menuValues": [
+        {
+          "title": "0.5×",
+          "value": "50"
+        },
+        {
+          "title": "0.75×",
+          "value": "75"
+        },
+        {
+          "title": "1.0×",
+          "value": "100"
+        },
+        {
+          "title": "1.25×",
+          "value": "125"
+        },
+        {
+          "title": "1.5×",
+          "value": "150"
+        }
+      ]
+    },
+    {
+      "identifier": "audioNormalize",
+      "type": "menu",
+      "title": "发音音量均衡",
+      "defaultValue": "enable",
+      "desc": "把不同词典的录音调到相近的音量。",
+      "menuValues": [
+        {
+          "title": "开启",
+          "value": "enable"
+        },
+        {
+          "title": "关闭",
+          "value": "disable"
         }
       ]
     },
@@ -91,7 +174,7 @@
       "type": "menu",
       "title": "显示语法限定说明",
       "defaultValue": "enable",
-      "desc": "控制是否显示详细的语法限定说明（如 [with object] 或 [used especially in negatives and comparatives]）。这不会隐藏词性、释义标签、主题标签、模式、用法说明或例句。",
+      "desc": "如 [with object]、[used in negatives]。不影响词性、标签和例句。",
       "menuValues": [
         {
           "title": "显示",
@@ -108,7 +191,7 @@
       "type": "menu",
       "title": "显示扩展内容",
       "defaultValue": "enable",
-      "desc": "短语、习语、动词短语、搭配、用法说明、同义词、词源等。",
+      "desc": "短语、习语、搭配、用法说明、同义词、词源等。",
       "menuValues": [
         {
           "title": "显示",
@@ -125,7 +208,7 @@
       "type": "text",
       "title": "每个释义最多例句数",
       "defaultValue": "3",
-      "desc": "限制每个释义或子释义显示的例句数，避免大型语料区过长。",
+      "desc": "每个释义最多显示的例句数。",
       "textConfig": {
         "type": "visible",
         "placeholderText": "3"

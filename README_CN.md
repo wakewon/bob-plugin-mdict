@@ -159,6 +159,41 @@ Markdown 渲染需要 Bob 1.21.0 或更高版本，且系统为 macOS 13 或更�
 1.20.0 上仍可安装，但那里的 Markdown 选项只会显示文档原文；词典卡片和纯文本
 不受影响。
 
+“Markdown（网页排版）”显示的是词典自己的页面，而不是解析后的结构化词条。
+服务读取词条 HTML 和词典样式表（先找 `.mdx` 同一文件夹，再找 MDD），据此判断哪些
+内容换行、隐藏、加粗或斜体，再交给
+[html-to-markdown](https://github.com/JohannesKaufmann/html-to-markdown) 转换。
+发音链接变成指向 MDD 音频的 🔊 链接，MDD 插图照常显示，全程不访问网络。它与结构化
+Markdown 使用相同的记录分隔和 `Other entries` 选择符，但不受“例句、语法、扩展内容”
+选项影响，按词典原样显示。如果 `/list` 中某本词典提示“缺少样式表”，把列出的
+`.css` 文件复制到对应 `.mdx` 同一文件夹并重新扫描，显示会更接近原版。
+
+#### 可点击的查词与后台发音
+
+在“网页排版”里，词典内的词条跳转和 `Other entries` 选择符可以直接点击，在 Bob 中
+查这个词；两种 Markdown 显示中的 🔊 都在后台直接播放，不再打开浏览器，并在录音自身
+标明时显示 UK 或 US。Bob 会把点击的链接交给 macOS，而只有 App 能接收链接，所以服务会
+维护一个小助手：`~/Library/Application Support/bob-mdict/MDict Lookup.app`。它是
+服务在你的 Mac 上用系统自带的 `osacompile` 生成、在本机签名的 AppleScript 小程序，
+不需要开发者证书，也不额外下载任何东西。它通过 Bob 公开的 AppleScript 接口查词；
+录音由本地服务处理好后，在小助手常驻的音频引擎里播放——连续点击时下一个词立即出声，
+蓝牙耳机也不必反复唤醒；引擎停下后的第一次播放会先垫一小段静音，避免耳机唤醒时吞掉
+声音。如果小助手无法建立，链接会保持为普通文字，🔊 仍按原来的方式打开。
+
+小助手会把每次点击和出错信息记录在 `~/Library/Logs/bob-mdict-helper.log`。
+
+通过链接打开的页面末尾会有“← 原词”链接，可以回到上一个词；连续跳转会形成一条路径，
+可以一步步返回。自己手动查的词不会出现返回链接。
+
+第一次点击查词链接时，系统会询问是否允许 **MDict Lookup** 控制 Bob，请选择允许。
+对于 http、https、mailto 以外的链接，Bob 自己会先弹出“是否打开此链接？”。如果不想
+每次确认，可在 Bob 设置中把“打开翻译结果中的链接”改为“从不确认”——该设置对 Bob 中
+所有翻译服务的链接生效。
+
+发音的音量、语速（变速不变调）和音量均衡都可以在插件设置中调整。音量均衡使用 macOS
+自带的音频工具按 ITU-R BS.1770 测量每段录音的响度，并调到 -16 LUFS（与 Apple 的
+Sound Check 相同），让不同词典的录音音量相近；增益始终受峰值限制，保持在 -1 dB 以下。
+
 例句会直接按展示释义分块，例如 `Examples · verb 1`、
 `Examples · verb 2`。See also 交叉引用会在适用时使用 Bob 的结构化
 `relatedWordParts` 表达；短语和其它带解释的扩展内容仍使用 additions。
@@ -169,8 +204,11 @@ Markdown 渲染需要 Bob 1.21.0 或更高版本，且系统为 macOS 13 或更�
 |---|---|---|
 | 本地服务地址 | `http://127.0.0.1:15321` | 只有服务改过端口时才需修改。 |
 | 词典 ID（可选） | 留空 | 留空使用首个命中；填写后固定一本。用 `/list` 查看 ID。 |
-| 显示方式 | 词典卡片 | 可选词典卡片、纯文本或 Markdown。Markdown 以 `content.format: "markdown"` 交给 Bob，由 Bob 1.21.0 及以上（macOS 13+）原生渲染；纯文本（以及自由排版词条的自动降级）声明为 `plain`。更早版本的 Bob 会忽略 `content`，按 `toParagraphs` 把同一份文档显示为文本，所以 Markdown 在那里会显示为原文。 |
+| 显示方式 | 词典卡片 | 可选词典卡片、纯文本、Markdown（结构化）或 Markdown（网页排版，由词典自带 HTML 与样式表转换）。Markdown 以 `content.format: "markdown"` 交给 Bob，由 Bob 1.21.0 及以上（macOS 13+）原生渲染；纯文本（以及自由排版词条的自动降级）声明为 `plain`。更早版本的 Bob 会忽略 `content`，按 `toParagraphs` 把同一份文档显示为文本，所以 Markdown 在那里会显示为原文。 |
 | 重复词条显示方式 | 分条浏览 | 完整显示一条并提供可点击的 `Other entries`；“合并显示”会在同一卡片展示全部带序号记录。 |
+| 发音音量 | 100% | Markdown 中点击 🔊 时由本地服务播放的音量；在音量均衡之后调整，始终限制峰值、不会破音。 |
+| 发音语速 | 1.0× | Markdown 中 🔊 的播放速度，0.5×～1.5×，变速不变调。 |
+| 发音音量均衡 | 开启 | 按 ITU-R BS.1770 把每段录音调到 -16 LUFS，不同词典音量相近。 |
 | 显示例句 | 显示 | 显示例句及双语翻译。 |
 | 显示语法限定说明 | 显示 | 控制是否显示详细的语法限定说明。这不会隐藏词性、释义标签、主题标签或模式。 |
 | 显示扩展内容 | 显示 | 显示短语、习语、短语动词、结构化交叉引用、词形和说明。 |
@@ -303,4 +341,4 @@ BOB_MDICT_TEST_DICTIONARIES=/path/to/dictionaries go test ./internal/service -v
 ```
 
 更多说明：[架构](docs/ARCHITECTURE.md) · [Parser](docs/PARSER.md) ·
-[HTTP API](docs/API.md)
+[HTTP API](docs/API.md) · [已知问题与局限](docs/KNOWN_ISSUES.md)
