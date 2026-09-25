@@ -61,8 +61,9 @@ func hiddenByStyle(node *html.Node) bool {
 type TextOptions struct {
 	// Skip matches nodes whose subtree is excluded entirely.
 	Skip Selector
-	// SkipNodes excludes specific subtrees by identity, for callers that have
-	// already decided which nodes to leave out rather than how to select them.
+	// SkipNodes excludes specific subtrees, or text nodes, by identity, for
+	// callers that have already decided which nodes to leave out rather than
+	// how to select them.
 	SkipNodes map[*html.Node]struct{}
 	// SkipHidden drops nodes hidden with inline styles.
 	SkipHidden bool
@@ -91,6 +92,9 @@ func collectText(node *html.Node, opts TextOptions, builder *strings.Builder, is
 	}
 	switch node.Type {
 	case html.TextNode:
+		if _, skipped := opts.SkipNodes[node]; skipped {
+			return
+		}
 		writeBoundaryAware(builder, node.Data)
 		return
 	case html.ElementNode:

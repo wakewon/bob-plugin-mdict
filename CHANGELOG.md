@@ -3,6 +3,16 @@
 All notable product changes are recorded here. Product versions and the local
 HTTP API version are independent; MDict for Bob 1.1.0 continues to use API v2.
 
+## [Unreleased]
+
+- Keep numbers in a bilingual translation. Dictionaries such as Collins leave
+  the digits of a translated sentence outside the gloss elements, so
+  `每小时 7元。` used to lose its `7` and read `每小时 元。` in every
+  presentation. A number-only text node directly beside a gloss element, with a
+  gloss element or the edge of the parent on its other side, is now part of the
+  translation. Numbers next to English prose, and a numeral that is itself the
+  definition (`14 十四`), are left where they were.
+
 ## [1.1.0] - 2026-08-26
 
 

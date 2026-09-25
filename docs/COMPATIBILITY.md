@@ -196,6 +196,17 @@ bob-mdict --dictionary-dir /path/to/mdxs --validate-all --validate-out /private/
   British transcription under an American flag.
 - **Collins labels its phrase senses as a part of speech** (`PHRASE`), so they
   appear as a part rather than under Idioms. The content is present either way.
+- **Collins can drop a Latin word between two gloss spans.** Bilingual
+  dictionaries with a named gloss element (the Collins profile's
+  `.chinese-text` / `.def_cn`) build the translation from the text inside those
+  elements. A number sitting directly beside a gloss element is recognised and
+  kept, but a Latin *word* between two of them — the source markup
+  `<span>不要混淆</span> cost <span>和</span> costs` — does not reach the
+  translation. Such a word cannot be reliably told apart from the English
+  definition, so it is left out rather than risk moving English prose into the
+  Chinese translation. Found by reading the raw markup while fixing lost digits;
+  a live lookup of `cost` did not reproduce it, so the exact visible effect
+  depends on the entry.
 - **Images reach Markdown, not the Bob card.** Bob's `toDict` has no image
   slot, so the card can only address a resource; Markdown presentation embeds a
   resolved MDD illustration inline at its original position in the prose.

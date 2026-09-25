@@ -207,12 +207,14 @@ func (s *parseState) splitTranslation(node *html.Node) (string, string) {
 		}
 		return text, ""
 	}
-	main := s.textOf(node)
-	var parts []string
-	for _, match := range QueryAll(node, sel) {
-		if text := Text(match, TextOptions{SkipHidden: true}); text != "" {
-			parts = append(parts, text)
-		}
+	parts, claimed := glossParts(node, sel, true)
+	main := Text(node, TextOptions{Skip: sel, SkipHidden: true, SkipNodes: claimed})
+	if main == "" && len(claimed) > 0 {
+		// A translated node always has source-language text. When the numbers
+		// are all it has, they are that text — a numeral glossed by its name,
+		// "14 <span class=cn>十四</span>" — and not part of the translation.
+		parts, _ = glossParts(node, sel, false)
+		main = s.textOf(node)
 	}
 	if len(parts) == 0 {
 		// The profile names the gloss element and it is not here. Repacks of a
@@ -233,6 +235,102 @@ func (s *parseState) splitTranslation(node *html.Node) (string, string) {
 	// the reader never sees.
 	dedupeStrings(&parts)
 	return main, Normalize(strings.Join(parts, " "))
+}
+
+// glossParts collects the translation under node, one string per run of gloss
+// elements, and, when numbers is set, the number text nodes it absorbed.
+//
+// Dictionaries leave the numbers of a translated sentence outside the gloss
+// spans (`<span class="cn">每小时</span> 7<span class="cn">元。</span>`), so
+// taking only the spans drops "7" and leaves a hole in the sentence. A number
+// belongs to the gloss when it sits directly beside a gloss element and the
+// other side of it is another gloss element or the edge of the parent. Beside
+// source-language prose it stays with that prose. The absorbed nodes are
+// returned so the own-language text can leave them out.
+func glossParts(node *html.Node, sel Selector, numbers bool) ([]string, map[*html.Node]struct{}) {
+	var (
+		parts   []string
+		run     strings.Builder
+		joint   *html.Node // number that closed the previous gloss element
+		claimed map[*html.Node]struct{}
+	)
+	flush := func() {
+		if text := Normalize(run.String()); text != "" {
+			parts = append(parts, text)
+		}
+		run.Reset()
+		joint = nil
+	}
+	absorb := func(number *html.Node) {
+		if claimed == nil {
+			claimed = make(map[*html.Node]struct{})
+		}
+		claimed[number] = struct{}{}
+		run.WriteString(number.Data)
+	}
+	for _, match := range QueryAll(node, sel) {
+		var text strings.Builder
+		collectText(match, TextOptions{SkipHidden: true}, &text, true)
+		if Normalize(text.String()) == "" {
+			continue
+		}
+		var before *html.Node
+		if numbers {
+			before = glossNumber(match, false, sel)
+		}
+		if before == nil || before != joint {
+			flush()
+			if before != nil {
+				absorb(before)
+			}
+		}
+		run.WriteString(text.String())
+		joint = nil
+		if numbers {
+			if joint = glossNumber(match, true, sel); joint != nil {
+				absorb(joint)
+			}
+		}
+	}
+	flush()
+	return parts, claimed
+}
+
+// glossNumber returns the number text directly before or after a gloss element
+// when it is part of that gloss, or nil.
+func glossNumber(gloss *html.Node, after bool, sel Selector) *html.Node {
+	step := func(n *html.Node) *html.Node {
+		if after {
+			return n.NextSibling
+		}
+		return n.PrevSibling
+	}
+	number := step(gloss)
+	if number == nil || !isNumberText(number) {
+		return nil
+	}
+	if far := step(number); far != nil && (far.Type != html.ElementNode || !sel.Matches(far)) {
+		return nil
+	}
+	return number
+}
+
+// isNumberText reports whether a node is text made of digits and punctuation
+// only ("7", "1,000", "30%"), with no word in it.
+func isNumberText(node *html.Node) bool {
+	if node.Type != html.TextNode {
+		return false
+	}
+	digits := false
+	for _, r := range node.Data {
+		switch {
+		case unicode.IsLetter(r):
+			return false
+		case unicode.IsDigit(r):
+			digits = true
+		}
+	}
+	return digits
 }
 
 func (s *parseState) parseHeadword() {
