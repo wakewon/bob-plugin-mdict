@@ -77,3 +77,24 @@ func TestEmptyFieldsAreRejected(t *testing.T) {
 		t.Error("a token with empty fields was accepted")
 	}
 }
+
+// Tokens travel inside Markdown links, where "_" and "-" are not inert: two
+// underscores in one link of several on a line can break it in a lenient
+// renderer. Only lowercase letters and the digits 2–7 may appear.
+func TestTokensAreMarkdownSafe(t *testing.T) {
+	tokenizer, _ := NewTokenizer()
+	for i := 0; i < 200; i++ {
+		token, err := tokenizer.Mint(Ref{DictionaryID: "abc123", ResourceRef: "sound://synthetic/uk/a.mp3"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range token {
+			if !(r >= 'a' && r <= 'z') && !(r >= '2' && r <= '7') {
+				t.Fatalf("token %q contains %q", token, r)
+			}
+		}
+		if _, err := tokenizer.Open(token); err != nil {
+			t.Fatalf("Open(%q): %v", token, err)
+		}
+	}
+}
