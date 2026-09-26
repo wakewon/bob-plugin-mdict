@@ -19,8 +19,14 @@ this project never generates or uses TTS as a fallback.
   request. The companion service listens on loopback only.
 - Structured entries: POS groups, senses and subsenses, bilingual definitions,
   examples, forms, phrases, idioms, phrasal verbs, cross-references and notes.
+- Four presentations: Dictionary card, Plain Text, Markdown (structured) and
+  Markdown (web layout), which shows the dictionary's own page with its own
+  stylesheet. See [Presentation modes](#presentation-modes-at-a-glance).
+- Clickable lookups in the web layout, with a path back to the previous word.
 - MDD-backed pronunciation only. UK, US, shared and unlabelled provenance is
-  preserved. There is no text-to-speech fallback anywhere in the project.
+  preserved. In both Markdown views 🔊 plays in the background with adjustable
+  volume, speed and loudness matching. There is no text-to-speech fallback
+  anywhere in the project.
 - Simple Bob setup: leave Dictionary ID empty for the first dictionary that
   contains the word, or set one ID to pin that service instance.
 
@@ -34,9 +40,12 @@ Bob plugin → http://127.0.0.1:15321 → MDX/MDD → semantic parser
                           record HTML + dictionary CSS → web-layout Markdown
 ```
 
-`bob-mdict` is a native Go service that owns the indexes, parsing and MDD
-resources. The Bob plugin is a small JavaScript client; it does not parse MDX,
-HTML or audio. The two components advertise a versioned local API.
+`bob-mdict` is a native Go service that owns the indexes, parsing, MDD
+resources, HTML-to-Markdown conversion and audio playback. The Bob plugin is a
+small JavaScript client; it does not parse MDX, HTML or audio. The two
+components are installed and updated separately and agree on a versioned local
+API. Clickable lookups and background playback go through a small helper app
+(`MDict Lookup.app`) that the service builds on your Mac.
 
 ## Install
 
@@ -99,6 +108,43 @@ Download `MDict-vX.Y.Z.bobplugin` from the latest release and double-click it.
 In Bob, open **Preferences → Translation → Services**, select **Text
 Translation**, click `+`, choose **MDict**, enable it and save.
 
+## Updating
+
+The service and the plugin are two separate components with separate update
+paths, and **new features usually need both**. Update them together.
+
+1. **Update the service.** With Homebrew:
+
+   ```bash
+   brew update
+   brew upgrade bob-mdict
+   brew services restart bob-mdict
+   ```
+
+   Restarting matters: upgrading installs a new binary, but the process already
+   running keeps serving the old version until it is restarted. With the
+   standalone installer, download the new `bob-mdict-X.Y.Z-macos-installer.tar.gz`,
+   extract it and run `./install.sh` again; it replaces the binary and restarts
+   the LaunchAgent.
+2. **Update the plugin.** Download the new `MDict-vX.Y.Z.bobplugin` from the
+   [latest release](https://github.com/wakewon/bob-plugin-mdict/releases) and
+   double-click it. Bob may also offer the update itself.
+3. **Check both versions.** `bob-mdict --version` shows the installed binary;
+   `curl http://127.0.0.1:15321/v2/status` shows the running process
+   (`serviceVersion`). If they differ, the service was not restarted.
+
+What happens when only one side is updated:
+
+| Combination | Result |
+|---|---|
+| New plugin, old service | The settings appear, but the old service ignores them. Markdown (web layout) falls back to structured Markdown, and volume, speed and loudness matching have no effect. |
+| Old plugin, new service | Works; the newer options are simply not shown in the plugin settings. |
+| Different API version (currently `v2`) | The plugin refuses to query and says which side to update. |
+
+After a service update the helper app may be rebuilt. macOS then asks once more
+whether **MDict Lookup** may control Bob; allow it. Dictionary IDs, your
+dictionaries and your plugin settings are kept.
+
 ## Dictionary selection
 
 The plugin deliberately produces one dictionary result per Bob service card.
@@ -131,6 +177,31 @@ Lookup prefers an exactly cased headword and uses case-insensitive matching
 only after an exact miss. Result titles and multi-record aliases use the actual
 selected MDX key: if only `china` exists, `China` and `CHINA` still display and
 navigate as `china`; if both `China` and `china` exist, they remain distinct.
+
+## Presentation modes at a glance
+
+Choose the mode in the plugin's **Display** setting. Every mode reads the same
+dictionary; they differ in how the entry is shown and what can be done with it.
+
+| | Dictionary card | Plain Text | Markdown (structured) | Markdown (web layout) |
+|---|---|---|---|---|
+| Shows | Bob's native card, built from the parsed entry | Parsed entry as plain text | Parsed entry as Markdown | The dictionary's own page, converted from its HTML and CSS |
+| Minimum Bob | 1.20.0 | 1.20.0 | 1.21.0 (macOS 13+) | 1.21.0 (macOS 13+) |
+| Pronunciation | Bob's own buttons | Listed as text, not playable | 🔊 plays in the background | 🔊 plays in the background |
+| Volume, speed, loudness matching | ❌ Bob plays the audio | ❌ no audio | ✅ | ✅ |
+| Clickable lookups | Bob's related words | ❌ copy selectors | ❌ copy selectors | ✅ dictionary links and `Other entries`, with a way back |
+| Show examples / grammar / extras, max examples | ✅ | ✅ | ✅ | ❌ shown as published |
+| Combined / Separate records | ✅ | ✅ | ✅ | ✅ |
+| Needs dictionary stylesheets | no | no | no | recommended |
+| Needs the link helper | no | no | for 🔊 playback | for links and 🔊 playback |
+
+Volume, speed and loudness matching are done by the service, so they apply only
+where the service plays the audio: the 🔊 in the two Markdown views. In the
+dictionary card the pronunciation buttons are played by Bob, which offers no
+such controls. Plain Text carries no audio at all.
+
+Dictionary card also switches to Plain Text on its own for a free-form record
+with no useful structure; see below.
 
 ## Multiple records for one headword
 
@@ -237,19 +308,25 @@ parts, while prose notes remain additions.
 
 ## Plugin settings
 
-| Setting | Default | Meaning |
+Open **Bob → Preferences → Translation → Services → MDict** to change these.
+
+| Setting | Default | What it does |
 |---|---|---|
-| Service URL | `http://127.0.0.1:15321` | Change only when the daemon uses another port. |
-| Dictionary ID | empty | Empty uses the first match; a value pins one dictionary. Query `/list` to discover IDs. |
-| Presentation | Dictionary card | Choose Dictionary card, Plain Text, Markdown (structured) or Markdown (web layout, converted from the dictionary's own HTML and CSS). Markdown is declared to Bob as `content.format: "markdown"` and drawn natively by Bob 1.21.0+ on macOS 13+; Plain Text (and the automatic free-form fallback) is declared as `plain`. Older Bob versions ignore `content` and show the same document from `toParagraphs` as text, so Markdown appears as raw source there. |
-| Duplicate entry display | Separate | Show one complete record with clickable `Other entries`; Combined keeps every ordinal-labelled record in one card. |
-| Pronunciation volume | 100% | Volume of 🔊 in Markdown, played by the service; applied after loudness matching and always peak-limited. |
-| Pronunciation speed | 1.0× | Playback speed of 🔊 in Markdown, 0.5× to 1.5×, without a pitch change (Apple's time-stretch unit). |
-| Pronunciation loudness matching | on | Bring every recording to -16 LUFS (ITU-R BS.1770) so dictionaries sound alike. |
-| Show examples | on | Show examples and bilingual translations. |
-| Show grammar | on | Show detailed grammatical qualifiers. Does not hide POS, labels, or patterns. |
-| Show extras | on | Show phrases, idioms, phrasal verbs, structured cross-references, forms and notes. |
-| Max examples per sense | `3` | Limit examples independently for each sense or subsense. |
+| Service URL | `http://127.0.0.1:15321` | Where the plugin finds the local service. Change it only if you started the service on another port. |
+| Dictionary ID | empty | Empty looks the word up in the first dictionary that contains it. Enter an ID to search only that dictionary. Query `/list` to see the IDs. |
+| Display | Dictionary card | How a result is shown; see [Presentation modes](#presentation-modes-at-a-glance). **Dictionary card** and **Plain Text** work on every supported Bob. The two **Markdown** options need Bob 1.21.0 or later on macOS 13 or later; on Bob 1.20.0 they show the raw Markdown source. **Markdown (web layout)** ignores the example, grammar and extras settings below. |
+| Duplicate entry display | Separate | For a headword with several records: **Separate** shows the first record and lists the others as `Other entries` (type `word²` to open one); **Combined** shows every record in one result. |
+| Pronunciation volume | 100% | How loud 🔊 plays, 50% to 200%. Applied after loudness matching, and the sound is peak-limited so a high value does not distort. Markdown views only. |
+| Pronunciation speed | 1.0× | How fast 🔊 plays, 0.5× to 1.5×. The pitch does not change. Markdown views only. |
+| Pronunciation loudness matching | on | Evens out recordings so that dictionaries recorded at different levels sound alike (-16 LUFS, the level of Apple's Sound Check). Turn it off to hear recordings at their original level. Markdown views only. |
+| Show examples | on | Show example sentences and their translations. Not used by the web layout. |
+| Show grammar | on | Show grammatical notes such as `[with object]`. Parts of speech, labels and patterns are always shown. Not used by the web layout. |
+| Show extras | on | Show phrases, idioms, phrasal verbs, cross-references, word forms and usage notes. Not used by the web layout. |
+| Max examples per sense | `3` | The most examples shown under each meaning. Not used by the web layout. |
+
+Clicking a link in the web layout may make Bob ask "Open this link?" every time.
+To stop that, set **Opening Links in Translation Results** to **Never Ask** in
+Bob's settings; it applies to every service in Bob.
 
 `pluginValidate` checks service identity and API version, the presence of a
 healthy dictionary, and a configured Dictionary ID before the first lookup.
@@ -336,11 +413,20 @@ removed and the cache is capped at 256 MiB.
 
 ### Plugin and service versions are incompatible
 
+Update both, as described in [Updating](#updating):
+
 ```bash
 brew upgrade bob-mdict
+brew services restart bob-mdict
 ```
 
-Then update the Bob plugin from the release page.
+Then install the latest plugin from the release page.
+
+### A new setting or presentation has no effect
+
+The running service is probably still the old version. Compare
+`bob-mdict --version` with `serviceVersion` from
+`curl http://127.0.0.1:15321/v2/status`, and restart the service if they differ.
 
 ## Privacy and security
 
